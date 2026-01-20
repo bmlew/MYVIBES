@@ -1,8 +1,0 @@
-﻿@"
-{
-  "buildCommand": "npx vite build",
-  "outputDirectory": "dist",
-  "installCommand": "npm install",
-  "framework": "vite"
-}
-"@ | Out-File -FilePath vercel.json -Encoding UTF8 -NoNewline
