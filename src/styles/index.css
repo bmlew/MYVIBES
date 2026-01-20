@@ -1,0 +1,70 @@
+@import './fonts.css';
+@import './tailwind.css';
+@import './theme.css';
+
+/* Print styles for ROI Calculator */
+@media print {
+  /* Hide non-essential elements when printing */
+  button,
+  .no-print {
+    display: none !important;
+  }
+
+  /* Ensure proper page breaks */
+  .page-break-before {
+    page-break-before: always;
+  }
+
+  .page-break-after {
+    page-break-after: always;
+  }
+
+  .avoid-break {
+    page-break-inside: avoid;
+  }
+
+  /* Optimize colors for printing */
+  body {
+    background: white !important;
+  }
+
+  /* Make tables more readable */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  table th,
+  table td {
+    border: 1px solid #ddd;
+    padding: 8px;
+  }
+
+  /* Ensure proper margins */
+  @page {
+    margin: 2cm;
+  }
+
+  /* Make text black for better printing */
+  * {
+    color: black !important;
+    background: white !important;
+  }
+
+  /* Keep borders visible */
+  .border,
+  .border-b,
+  .border-t {
+    border-color: #ddd !important;
+  }
+
+  /* Make gradients print as solid colors */
+  .bg-gradient-to-r {
+    background: #8B5CF6 !important;
+    color: white !important;
+  }
+
+  .bg-gradient-to-r * {
+    color: white !important;
+  }
+}

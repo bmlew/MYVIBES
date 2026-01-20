@@ -1,0 +1,54 @@
+================================================================================
+                    MYVIBES - Windows Quick Start
+================================================================================
+
+STEP 1: Open Command Prompt
+----------------------------
+Press: Windows Key + R
+Type:  cmd
+Press: Enter
+
+STEP 2: Navigate to Project
+----------------------------
+cd C:\User\MyVibes
+
+STEP 3: Run Setup
+----------------------------
+quick-setup.bat
+
+STEP 4: Start App
+----------------------------
+npm run dev
+
+STEP 5: Open Browser
+----------------------------
+http://localhost:5173
+
+================================================================================
+
+QUICK COMMANDS:
+----------------------------
+npm install              - Install dependencies
+npm run dev             - Start development server
+npm run build           - Build for production
+quick-setup.bat         - Auto setup everything
+check-secrets.bat       - Security check
+pre-upload.bat          - Pre-GitHub verification
+
+GIT COMMANDS:
+----------------------------
+git init                - Initialize Git
+git status              - Check status
+git add .               - Stage all files
+git commit -m "msg"     - Commit changes
+git push                - Push to GitHub
+
+HELP:
+----------------------------
+See WINDOWS-SETUP.md for detailed instructions
+See QUICK-DEPLOY.md for deployment guide
+See INDEX.md for all documentation
+
+================================================================================
+                         You're Ready! 🚀
+================================================================================
