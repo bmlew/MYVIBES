@@ -121,6 +121,7 @@ export function CustomerApp() {
   const [error, setError] = useState<string | null>(null);
   const [hasInitialized, setHasInitialized] = useState(false);
   const hasInitializedRef = useRef(false); // Prevent double initialization
+  const isRequestingLocationRef = useRef(false); // Prevent multiple location requests
 
   // User profile states
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
@@ -289,6 +290,64 @@ export function CustomerApp() {
       openVenueDetail(businessId);
     }
   }, [openVenueDetail, incrementSpecialViewCount]);
+
+  // Function to request location permission
+  const requestLocation = useCallback(() => {
+    if (!navigator.geolocation) {
+      alert('Geolocation is not supported by your browser');
+      return;
+    }
+
+    // Prevent multiple simultaneous requests
+    if (isRequestingLocationRef.current) {
+      console.log('⏳ Location request already in progress');
+      return;
+    }
+
+    isRequestingLocationRef.current = true;
+    setLocationName('Detecting location...');
+    setLocationError(null);
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setUserLocation({ 
+          latitude: position.coords.latitude, 
+          longitude: position.coords.longitude 
+        });
+        setLocationError(null);
+        setLocationName('Your location');
+        isRequestingLocationRef.current = false;
+        console.log('📍 Location found:', position.coords.latitude, position.coords.longitude);
+      },
+      (error) => {
+        const isPolicyError = error.message.includes('permissions policy');
+        
+        setUserLocation({ latitude: -26.2041, longitude: 28.0473 });
+        setLocationName('Johannesburg');
+        setLocationError('PERMISSION_DENIED');
+        isRequestingLocationRef.current = false;
+        
+        // Show user-friendly error message
+        if (error.code === 1) { // PERMISSION_DENIED
+          alert('📍 Location access denied. Please enable location in your browser settings to see nearby venues.');
+        } else if (error.code === 2) { // POSITION_UNAVAILABLE
+          alert('📍 Location unavailable. Please check your device settings.');
+        } else if (error.code === 3) { // TIMEOUT
+          alert('📍 Location request timed out. Please try again.');
+        }
+        
+        console.log('🚨 LOCATION ERROR:', {
+          code: error.code,
+          message: error.message
+        });
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 0
+      }
+    );
+  }, []); // Empty dependencies - stable function
 
   // Fetch user location once (no live tracking to prevent loops)
   useEffect(() => {
@@ -750,10 +809,20 @@ export function CustomerApp() {
               </div>
 
               {/* Location */}
-              <div className="flex items-center gap-2 text-sm mb-4">
+              <button 
+                onClick={requestLocation}
+                className={`flex items-center gap-2 text-sm mb-4 px-3 py-1.5 rounded-full transition-colors ${
+                  locationError === 'PERMISSION_DENIED' 
+                    ? 'bg-red-100 text-red-700 hover:bg-red-200' 
+                    : 'bg-white/20 hover:bg-white/30 text-white'
+                }`}
+              >
                 <MapPin className="w-4 h-4" />
                 <span>{locationName || 'Detecting location...'}</span>
-              </div>
+                {locationError === 'PERMISSION_DENIED' && (
+                  <span className="text-xs ml-1">(tap to enable)</span>
+                )}
+              </button>
             </div>
 
             {/* Main Content */}
@@ -762,6 +831,27 @@ export function CustomerApp() {
               {/* Home View */}
               {currentView === 'home' && (
                 <div className="p-4">
+                  {/* Location Permission Banner */}
+                  {locationError === 'PERMISSION_DENIED' && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4 flex items-start gap-3">
+                      <MapPin className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-amber-900 mb-1">
+                          Enable location for nearby venues
+                        </p>
+                        <p className="text-xs text-amber-700 mb-2">
+                          We're showing results for Johannesburg. Enable location to see venues near you.
+                        </p>
+                        <button
+                          onClick={requestLocation}
+                          className="text-xs font-semibold text-amber-800 bg-amber-100 hover:bg-amber-200 px-3 py-1.5 rounded-md transition-colors"
+                        >
+                          Enable Location
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Filter Chips */}
                   <div className="flex gap-2 overflow-x-auto mb-4 pb-2 scrollbar-hide">
                     <FilterChip label="All" active={activeFilters.includes('All')} onClick={() => setActiveFilters(['All'])} />
