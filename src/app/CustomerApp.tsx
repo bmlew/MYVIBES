@@ -126,6 +126,7 @@ export function CustomerApp() {
   const isRequestingLocationRef = useRef(false); // Prevent multiple location requests
   const hasRequestedInitialLocationRef = useRef(false); // Prevent initial location request loop
   const locationNameSetRef = useRef(false); // Track if location name has been successfully set
+  const lastLocationSuccessTime = useRef<number>(0); // Track when location last succeeded
 
   // User profile states
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
@@ -304,20 +305,43 @@ export function CustomerApp() {
   }, [openVenueDetail, incrementSpecialViewCount]);
 
   // Function to request location permission
-  const requestLocation = useCallback((source = 'unknown') => {
+  const requestLocation = useCallback((source = 'unknown', event?: any) => {
     console.log('🔴 requestLocation() CALLED - This should only happen when user clicks button!');
     console.log('🔴 SOURCE:', source);
     console.trace('🔍 Call stack trace:');
     
-    // GUARD: Prevent auto-calls by checking if this is a genuine user interaction
-    // If the initial location was already set, this should only run on explicit user action
-    console.log('🛡️ GUARD CHECK:', {
+    // ENHANCED GUARD: Check time since last location success
+    const timeSinceLastSuccess = Date.now() - lastLocationSuccessTime.current;
+    const hasRecentSuccess = timeSinceLastSuccess < 15000; // Within 15 seconds
+    
+    // Check pointer coordinates (synthetic clicks often have 0,0)
+    const hasValidPointer = event && (
+      (event.clientX !== undefined && event.clientX !== 0) || 
+      (event.clientY !== undefined && event.clientY !== 0) ||
+      event.pointerType === 'mouse' ||
+      event.pointerType === 'touch'
+    );
+    
+    console.log('🛡️ ENHANCED GUARD CHECK:', {
       locationNameSetRef: locationNameSetRef.current,
+      timeSinceLastSuccess: `${timeSinceLastSuccess}ms`,
+      hasRecentSuccess,
+      hasValidPointer,
+      pointerCoords: event ? `(${event.clientX}, ${event.clientY})` : 'no event',
+      pointerType: event?.pointerType || 'unknown',
       activeElement: document.activeElement?.tagName,
       activeElementText: document.activeElement?.textContent?.substring(0, 50),
       closestButton: document.activeElement?.closest('button') ? 'YES' : 'NO'
     });
     
+    // Block if location was just set recently AND (no valid pointer OR suspicious activity)
+    if (hasRecentSuccess && locationNameSetRef.current) {
+      console.log('⚠️ BLOCKED: Suspicious click detected within 15s of location success');
+      console.log('⚠️ This appears to be an auto-triggered event, not a real user click');
+      return;
+    }
+    
+    // Secondary guard: no button context
     if (locationNameSetRef.current && !document.activeElement?.closest('button')) {
       console.log('⚠️ BLOCKED: requestLocation called without button click after initial location was set');
       return;
@@ -345,9 +369,47 @@ export function CustomerApp() {
           longitude: position.coords.longitude 
         });
         setLocationError(null);
-        setLocationName('Your location');
         isRequestingLocationRef.current = false;
+        lastLocationSuccessTime.current = Date.now(); // Record timestamp
         console.log('📍 Location found:', position.coords.latitude, position.coords.longitude);
+        
+        // Get human-readable location name
+        (async () => {
+          try {
+            const apiKey = 'AIzaSyBvAB6TR_zE_iWF4GG6kF0-T-lnEXNZQj8';
+            const response = await fetch(
+              `https://maps.googleapis.com/maps/api/geocode/json?latlng=${position.coords.latitude},${position.coords.longitude}&key=${apiKey}`
+            );
+            const data = await response.json();
+            
+            console.log('🗺️ Geocoding response:', data);
+            
+            if (data.status === 'OK' && data.results.length > 0) {
+              const result = data.results[0];
+              
+              // Try to get suburb/locality first
+              const locality = result.address_components.find((comp: any) => 
+                comp.types.includes('sublocality') || comp.types.includes('locality')
+              );
+              
+              if (locality) {
+                setLocationName(locality.long_name);
+                console.log('📍 Location name set to:', locality.long_name);
+              } else {
+                // Fallback to first part of address
+                const parts = result.formatted_address.split(',');
+                setLocationName(parts[0] || 'Your location');
+                console.log('📍 Location name set to:', parts[0] || 'Your location');
+              }
+            } else {
+              setLocationName('Your location');
+              console.log('📍 Location name fallback: Your location');
+            }
+          } catch (error) {
+            console.error('🚨 Reverse geocoding error:', error);
+            setLocationName('Your location');
+          }
+        })();
       },
       (error) => {
         const isPolicyError = error.message.includes('permissions policy');
@@ -431,13 +493,51 @@ export function CustomerApp() {
             longitude: position.coords.longitude 
           });
           setLocationError(null);
+          lastLocationSuccessTime.current = Date.now(); // Record timestamp
           // Only set location name if it hasn't been set yet (prevent resets)
           if (!locationNameSetRef.current) {
-            setLocationName('Your location');
             locationNameSetRef.current = true;
+            
+            // Get human-readable location name
+            (async () => {
+              try {
+                const apiKey = 'AIzaSyBvAB6TR_zE_iWF4GG6kF0-T-lnEXNZQj8';
+                const response = await fetch(
+                  `https://maps.googleapis.com/maps/api/geocode/json?latlng=${position.coords.latitude},${position.coords.longitude}&key=${apiKey}`
+                );
+                const data = await response.json();
+                
+                console.log('🗺️ Geocoding response:', data);
+                
+                if (data.status === 'OK' && data.results.length > 0) {
+                  const result = data.results[0];
+                  
+                  // Try to get suburb/locality first
+                  const locality = result.address_components.find((comp: any) => 
+                    comp.types.includes('sublocality') || comp.types.includes('locality')
+                  );
+                  
+                  if (locality) {
+                    setLocationName(locality.long_name);
+                    console.log('📍 State updated: locationName =', locality.long_name);
+                  } else {
+                    // Fallback to first part of address
+                    const parts = result.formatted_address.split(',');
+                    setLocationName(parts[0] || 'Your location');
+                    console.log('📍 State updated: locationName =', parts[0] || 'Your location');
+                  }
+                } else {
+                  setLocationName('Your location');
+                  console.log('📍 State updated: locationName = "Your location"');
+                }
+              } catch (error) {
+                console.error('🚨 Reverse geocoding error:', error);
+                setLocationName('Your location');
+                console.log('📍 State updated: locationName = "Your location"');
+              }
+            })();
           }
           isRequestingLocationRef.current = false;
-          console.log('📍 State updated: locationName = "Your location"');
         },
         (error) => {
           // Clear safety timeout
@@ -926,7 +1026,7 @@ export function CustomerApp() {
                     return;
                   }
                   
-                  requestLocation('header-button');
+                  requestLocation('header-button', e);
                 }}
                 onFocus={() => console.log('🎯 HEADER BUTTON FOCUSED')}
                 onBlur={() => console.log('🎯 HEADER BUTTON BLURRED')}
