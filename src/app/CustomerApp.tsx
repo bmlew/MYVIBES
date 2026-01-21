@@ -310,6 +310,12 @@ export function CustomerApp() {
     
     // GUARD: Prevent auto-calls by checking if this is a genuine user interaction
     // If the initial location was already set, this should only run on explicit user action
+    console.log('🛡️ GUARD CHECK:', {
+      locationNameSetRef: locationNameSetRef.current,
+      activeElement: document.activeElement?.tagName,
+      closestButton: document.activeElement?.closest('button') ? 'YES' : 'NO'
+    });
+    
     if (locationNameSetRef.current && !document.activeElement?.closest('button')) {
       console.log('⚠️ BLOCKED: requestLocation called without button click after initial location was set');
       return;
