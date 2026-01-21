@@ -68,18 +68,18 @@ export function CustomerProfileSetup({ onComplete }: CustomerProfileSetupProps) 
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-300">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-300 flex flex-col">
         {/* Header */}
-        <div className="bg-gradient-to-r from-cyan-500 to-blue-600 p-8 text-center text-white">
-          <div className="w-16 h-16 bg-white/20 backdrop-blur-sm rounded-full mx-auto flex items-center justify-center mb-4">
-            <Sparkles className="w-8 h-8" />
+        <div className="bg-gradient-to-r from-cyan-500 to-blue-600 p-5 text-center text-white flex-shrink-0">
+          <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-full mx-auto flex items-center justify-center mb-2">
+            <Sparkles className="w-6 h-6" />
           </div>
-          <h2 className="text-2xl font-bold mb-2">Welcome to MYVIBE!</h2>
-          <p className="text-cyan-100 text-sm">Let's set up your profile to get started</p>
+          <h2 className="text-xl font-bold mb-1">Welcome to MYVIBES!</h2>
+          <p className="text-cyan-100 text-xs">Let's set up your profile to get started</p>
         </div>
 
-        {/* Form */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-5">
+        {/* Form - Scrollable */}
+        <form onSubmit={handleSubmit} className="p-6 space-y-5 overflow-y-auto flex-1">
           {/* Name */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
