@@ -93,6 +93,8 @@ interface Event {
 }
 
 export function CustomerApp() {
+  console.log('🔵 CustomerApp component rendered');
+  
   const [currentView, setCurrentView] = useState<View>('home');
   const [activeFilters, setActiveFilters] = useState<string[]>(['All']);
   const [showFiltersModal, setShowFiltersModal] = useState(false);
@@ -122,6 +124,8 @@ export function CustomerApp() {
   const [hasInitialized, setHasInitialized] = useState(false);
   const hasInitializedRef = useRef(false); // Prevent double initialization
   const isRequestingLocationRef = useRef(false); // Prevent multiple location requests
+  const hasRequestedInitialLocationRef = useRef(false); // Prevent initial location request loop
+  const locationNameSetRef = useRef(false); // Track if location name has been successfully set
 
   // User profile states
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
@@ -132,6 +136,14 @@ export function CustomerApp() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const previousCountRef = useRef(0);
+
+  // Debug: Track component mount/unmount
+  useEffect(() => {
+    console.log('🟢 CustomerApp MOUNTED');
+    return () => {
+      console.log('🔴 CustomerApp UNMOUNTED');
+    };
+  }, []);
 
   // Live date/time state
   const [currentDateTime, setCurrentDateTime] = useState(new Date());
@@ -351,30 +363,55 @@ export function CustomerApp() {
 
   // Fetch user location once (no live tracking to prevent loops)
   useEffect(() => {
+    // Prevent running this effect multiple times
+    if (hasRequestedInitialLocationRef.current) {
+      console.log('⏭️ Skipping duplicate location request');
+      return;
+    }
+    
+    hasRequestedInitialLocationRef.current = true;
+    isRequestingLocationRef.current = true;
+    console.log('📍 Requesting initial location...');
+    
     if (navigator.geolocation) {
       // Request location once using WiFi/cellular
       navigator.geolocation.getCurrentPosition(
         (position) => {
+          // Guard against multiple callbacks
+          if (!isRequestingLocationRef.current && locationNameSetRef.current) {
+            console.log('⚠️ DUPLICATE geolocation callback detected - ignoring');
+            return;
+          }
+          
           // Batch all state updates
+          console.log('✅ SUCCESS: Location found:', position.coords.latitude, position.coords.longitude);
           setUserLocation({ 
             latitude: position.coords.latitude, 
             longitude: position.coords.longitude 
           });
           setLocationError(null);
-          setLocationName('Your location');
-          console.log('📍 Location found:', position.coords.latitude, position.coords.longitude);
+          // Only set location name if it hasn't been set yet (prevent resets)
+          if (!locationNameSetRef.current) {
+            setLocationName('Your location');
+            locationNameSetRef.current = true;
+          }
+          isRequestingLocationRef.current = false;
+          console.log('📍 State updated: locationName = "Your location"');
         },
         (error) => {
           // Use Johannesburg as fallback
+          console.log('❌ ERROR: Location failed', error);
           const isPolicyError = error.message.includes('permissions policy');
           
           setUserLocation({ latitude: -26.2041, longitude: 28.0473 });
           setLocationName(isPolicyError ? 'Johannesburg (iframe)' : 'Johannesburg');
           setLocationError(isPolicyError ? null : 'PERMISSION_DENIED');
+          isRequestingLocationRef.current = false;
           
           console.log('🚨 LOCATION BLOCKED:', {
             reason: isPolicyError ? 'Iframe/Permissions Policy' : 'User Denied',
             message: error.message,
+            code: error.code,
             solution: isPolicyError 
               ? 'Deploy app and access directly (not in iframe)' 
               : 'Grant browser permission in address bar'
@@ -387,11 +424,18 @@ export function CustomerApp() {
         }
       );
     } else {
+      console.log('⚠️ Geolocation not supported');
       setUserLocation({ latitude: -26.2041, longitude: 28.0473 });
       setLocationName('Johannesburg');
       setLocationError(null);
+      isRequestingLocationRef.current = false;
     }
   }, []);
+
+  // Debug: Track locationName changes
+  useEffect(() => {
+    console.log('🏷️ locationName changed to:', locationName);
+  }, [locationName]);
 
   // Seed database and fetch data on mount - OPTIMIZED FOR FAST LOADING
   useEffect(() => {

@@ -45,9 +45,9 @@ export default defineConfig({
     minify: 'terser',
     terserOptions: {
       compress: {
-        drop_console: true, // Remove console.logs in production
+        drop_console: false, // TEMPORARILY ENABLED FOR DEBUGGING - Remove console.logs in production
         drop_debugger: true,
-        pure_funcs: ['console.log', 'console.info', 'console.debug'],
+        pure_funcs: [], // TEMPORARILY DISABLED FOR DEBUGGING
       },
       mangle: {
         safari10: true

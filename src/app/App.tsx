@@ -38,6 +38,8 @@ const LoadingFallback = () => (
 type AppMode = 'landing' | 'customer' | 'business' | 'roi' | 'admin';
 
 export default function App() {
+  console.log('🟦 Main App component rendered');
+  
   const [currentView, setCurrentView] = useState<'landing' | 'customer-app' | 'business-dashboard' | 'business-auth' | 'platform-admin' | 'whatsapp-review' | 'faq' | 'popia' | 'disclaimers' | 'affiliate-portal'>('landing');
   const [reviewData, setReviewData] = useState<{ businessId?: string; customerName?: string; customerPhone?: string }>({});
   
