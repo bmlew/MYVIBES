@@ -2,7 +2,10 @@
 
 declare const self: ServiceWorkerGlobalScope;
 
-const CACHE_VERSION = 'vibespot-v1.0.1'; // Bumped version to clear old cache
+// Workbox will inject the manifest here - DO NOT REMOVE
+const precacheManifest = self.__WB_MANIFEST;
+
+const CACHE_VERSION = 'myvibes-v1.0.1'; // Bumped version to clear old cache
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const DYNAMIC_CACHE = `${CACHE_VERSION}-dynamic`;
 const IMAGE_CACHE = `${CACHE_VERSION}-images`;
@@ -26,7 +29,9 @@ self.addEventListener('install', (event: ExtendableEvent) => {
   event.waitUntil(
     caches.open(STATIC_CACHE).then((cache) => {
       console.log('[Service Worker] Caching static assets');
-      return cache.addAll(STATIC_ASSETS);
+      // Cache both static assets and workbox precache manifest
+      const urlsToCache = [...STATIC_ASSETS, ...precacheManifest.map((entry: any) => entry.url)];
+      return cache.addAll(urlsToCache);
     }).then(() => {
       console.log('[Service Worker] Skip waiting');
       return self.skipWaiting();
@@ -41,7 +46,7 @@ self.addEventListener('activate', (event: ExtendableEvent) => {
     caches.keys().then((keys) => {
       return Promise.all(
         keys
-          .filter((key) => key.startsWith('vibespot-') && key !== STATIC_CACHE && key !== DYNAMIC_CACHE && key !== IMAGE_CACHE)
+          .filter((key) => key.startsWith('myvibes-') && key !== STATIC_CACHE && key !== DYNAMIC_CACHE && key !== IMAGE_CACHE)
           .map((key) => {
             console.log('[Service Worker] Deleting old cache:', key);
             return caches.delete(key);
@@ -166,7 +171,7 @@ self.addEventListener('message', (event: ExtendableMessageEvent) => {
       caches.keys().then((keys) => {
         return Promise.all(
           keys
-            .filter((key) => key.startsWith('vibespot-'))
+            .filter((key) => key.startsWith('myvibes-'))
             .map((key) => caches.delete(key))
         );
       })
@@ -197,7 +202,7 @@ async function syncReservations(): Promise<void> {
 // Push notification handler
 self.addEventListener('push', (event: any) => {
   const data = event.data ? event.data.json() : {};
-  const title = data.title || 'VIBESPOT';
+  const title = data.title || 'MYVIBES';
   const options = {
     body: data.body || 'New update available',
     icon: '/icons/icon-192x192.png',

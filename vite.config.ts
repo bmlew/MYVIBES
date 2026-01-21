@@ -22,7 +22,9 @@ export default defineConfig({
       filename: 'service-worker.ts',
       injectManifest: {
         globPatterns: ['**/*.{js,css,html,png,jpg,jpeg,svg,webp,ico}'],
-        maximumFileSizeToCacheInBytes: 5000000 // 5MB
+        maximumFileSizeToCacheInBytes: 5000000, // 5MB
+        // Ensure the service worker is built correctly
+        swDest: 'dist/service-worker.js'
       },
       manifest: false, // Use /public/manifest.json instead
       devOptions: {

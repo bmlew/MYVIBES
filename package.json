@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "build": "vite build",
+    "dev": "vite",
+    "preview": "npx vite preview",
     "cap:init": "cap init",
     "cap:add:ios": "cap add ios",
     "cap:add:android": "cap add android",
@@ -13,8 +15,7 @@
     "cap:open:android": "cap open android",
     "cap:build": "npm run build && cap sync",
     "cap:build:ios": "npm run build && cap sync ios && cap open ios",
-    "cap:build:android": "npm run build && cap sync android && cap open android",
-    "dev": "vite"
+    "cap:build:android": "npm run build && cap sync android && cap open android"
   },
   "dependencies": {
     "@babel/core": "^7.28.6",
