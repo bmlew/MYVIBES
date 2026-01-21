@@ -308,6 +308,13 @@ export function CustomerApp() {
     console.log('🔴 requestLocation() CALLED - This should only happen when user clicks button!');
     console.trace('🔍 Call stack trace:');
     
+    // GUARD: Prevent auto-calls by checking if this is a genuine user interaction
+    // If the initial location was already set, this should only run on explicit user action
+    if (locationNameSetRef.current && !document.activeElement?.closest('button')) {
+      console.log('⚠️ BLOCKED: requestLocation called without button click after initial location was set');
+      return;
+    }
+    
     if (!navigator.geolocation) {
       alert('Geolocation is not supported by your browser');
       return;
@@ -387,7 +394,7 @@ export function CustomerApp() {
       // Manual safety timeout in case browser doesn't respect timeout parameter
       const safetyTimeout = setTimeout(() => {
         if (isRequestingLocationRef.current) {
-          console.log('⏰ SAFETY TIMEOUT: Geolocation took too long (6s), using fallback');
+          console.log('⏰ SAFETY TIMEOUT: Geolocation took too long (16s), using fallback');
           setUserLocation({ latitude: -26.2041, longitude: 28.0473 });
           setLocationName('Johannesburg');
           setLocationError('TIMEOUT');
@@ -396,7 +403,7 @@ export function CustomerApp() {
             locationNameSetRef.current = true;
           }
         }
-      }, 6000); // 6 seconds - slightly longer than the 5s timeout
+      }, 16000); // 16 seconds - slightly longer than the 15s timeout
       
       navigator.geolocation.getCurrentPosition(
         (position) => {
@@ -450,7 +457,7 @@ export function CustomerApp() {
         },
         {
           enableHighAccuracy: false,
-          timeout: 5000, // 5 seconds - reduced from 10s to fail faster
+          timeout: 15000, // 15 seconds - increased to handle slow GPS/network
           maximumAge: 0
         }
       );
