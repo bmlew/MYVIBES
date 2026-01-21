@@ -907,7 +907,17 @@ export function CustomerApp() {
                     type: e.type,
                     eventPhase: e.eventPhase,
                     timeStamp: e.timeStamp,
-                    detail: e.detail
+                    detail: e.detail,
+                    pointerType: (e as any).pointerType,
+                    clientX: (e as any).clientX,
+                    clientY: (e as any).clientY
+                  });
+                  console.log('🎯 Active element:', document.activeElement?.tagName);
+                  console.log('⌨️ Keys pressed:', {
+                    ctrlKey: e.ctrlKey,
+                    shiftKey: e.shiftKey,
+                    altKey: e.altKey,
+                    metaKey: e.metaKey
                   });
                   
                   // BLOCK if not a trusted user event
@@ -918,6 +928,10 @@ export function CustomerApp() {
                   
                   requestLocation('header-button');
                 }}
+                onFocus={() => console.log('🎯 HEADER BUTTON FOCUSED')}
+                onBlur={() => console.log('🎯 HEADER BUTTON BLURRED')}
+                onKeyDown={(e) => console.log('⌨️ HEADER BUTTON KEY DOWN:', e.key)}
+                tabIndex={-1}
                 className={`flex items-center gap-2 text-sm mb-4 px-3 py-1.5 rounded-full transition-colors ${
                   locationError === 'PERMISSION_DENIED' 
                     ? 'bg-red-100 text-red-700 hover:bg-red-200' 
