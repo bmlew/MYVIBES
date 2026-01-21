@@ -900,8 +900,22 @@ export function CustomerApp() {
 
               {/* Location */}
               <button 
-                onClick={() => {
+                onClick={(e) => {
                   console.log('🔵 HEADER BUTTON CLICKED - onClick handler fired');
+                  console.log('📊 Event details:', {
+                    isTrusted: e.isTrusted,
+                    type: e.type,
+                    eventPhase: e.eventPhase,
+                    timeStamp: e.timeStamp,
+                    detail: e.detail
+                  });
+                  
+                  // BLOCK if not a trusted user event
+                  if (!e.isTrusted) {
+                    console.log('⛔ BLOCKED: Not a trusted user event!');
+                    return;
+                  }
+                  
                   requestLocation('header-button');
                 }}
                 className={`flex items-center gap-2 text-sm mb-4 px-3 py-1.5 rounded-full transition-colors ${
