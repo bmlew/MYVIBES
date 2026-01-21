@@ -305,6 +305,9 @@ export function CustomerApp() {
 
   // Function to request location permission
   const requestLocation = useCallback(() => {
+    console.log('🔴 requestLocation() CALLED - This should only happen when user clicks button!');
+    console.trace('🔍 Call stack trace:');
+    
     if (!navigator.geolocation) {
       alert('Geolocation is not supported by your browser');
       return;
@@ -363,6 +366,9 @@ export function CustomerApp() {
 
   // Fetch user location once (no live tracking to prevent loops)
   useEffect(() => {
+    console.log('🟣 INITIAL LOCATION EFFECT TRIGGERED');
+    console.log('🟣 hasRequestedInitialLocationRef.current =', hasRequestedInitialLocationRef.current);
+    
     // Prevent running this effect multiple times
     if (hasRequestedInitialLocationRef.current) {
       console.log('⏭️ Skipping duplicate location request');
@@ -375,8 +381,28 @@ export function CustomerApp() {
     
     if (navigator.geolocation) {
       // Request location once using WiFi/cellular
+      console.log('🌐 navigator.geolocation is available, calling getCurrentPosition...');
+      console.log('⏱️ Timeout set to 5000ms (5 seconds)');
+      
+      // Manual safety timeout in case browser doesn't respect timeout parameter
+      const safetyTimeout = setTimeout(() => {
+        if (isRequestingLocationRef.current) {
+          console.log('⏰ SAFETY TIMEOUT: Geolocation took too long (6s), using fallback');
+          setUserLocation({ latitude: -26.2041, longitude: 28.0473 });
+          setLocationName('Johannesburg');
+          setLocationError('TIMEOUT');
+          isRequestingLocationRef.current = false;
+          if (!locationNameSetRef.current) {
+            locationNameSetRef.current = true;
+          }
+        }
+      }, 6000); // 6 seconds - slightly longer than the 5s timeout
+      
       navigator.geolocation.getCurrentPosition(
         (position) => {
+          // Clear safety timeout
+          clearTimeout(safetyTimeout);
+          
           // Guard against multiple callbacks
           if (!isRequestingLocationRef.current && locationNameSetRef.current) {
             console.log('⚠️ DUPLICATE geolocation callback detected - ignoring');
@@ -399,8 +425,13 @@ export function CustomerApp() {
           console.log('📍 State updated: locationName = "Your location"');
         },
         (error) => {
+          // Clear safety timeout
+          clearTimeout(safetyTimeout);
+          
           // Use Johannesburg as fallback
           console.log('❌ ERROR: Location failed', error);
+          console.log('❌ ERROR CODE:', error.code, '| MESSAGE:', error.message);
+          console.log('❌ ERROR CODES: 1=PERMISSION_DENIED, 2=POSITION_UNAVAILABLE, 3=TIMEOUT');
           const isPolicyError = error.message.includes('permissions policy');
           
           setUserLocation({ latitude: -26.2041, longitude: 28.0473 });
@@ -419,7 +450,7 @@ export function CustomerApp() {
         },
         {
           enableHighAccuracy: false,
-          timeout: 10000,
+          timeout: 5000, // 5 seconds - reduced from 10s to fail faster
           maximumAge: 0
         }
       );
