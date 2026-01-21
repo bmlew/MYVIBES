@@ -304,8 +304,9 @@ export function CustomerApp() {
   }, [openVenueDetail, incrementSpecialViewCount]);
 
   // Function to request location permission
-  const requestLocation = useCallback(() => {
+  const requestLocation = useCallback((source = 'unknown') => {
     console.log('🔴 requestLocation() CALLED - This should only happen when user clicks button!');
+    console.log('🔴 SOURCE:', source);
     console.trace('🔍 Call stack trace:');
     
     // GUARD: Prevent auto-calls by checking if this is a genuine user interaction
@@ -313,6 +314,7 @@ export function CustomerApp() {
     console.log('🛡️ GUARD CHECK:', {
       locationNameSetRef: locationNameSetRef.current,
       activeElement: document.activeElement?.tagName,
+      activeElementText: document.activeElement?.textContent?.substring(0, 50),
       closestButton: document.activeElement?.closest('button') ? 'YES' : 'NO'
     });
     
@@ -395,7 +397,7 @@ export function CustomerApp() {
     if (navigator.geolocation) {
       // Request location once using WiFi/cellular
       console.log('🌐 navigator.geolocation is available, calling getCurrentPosition...');
-      console.log('⏱️ Timeout set to 5000ms (5 seconds)');
+      console.log('⏱️ Timeout set to 15000ms (15 seconds)');
       
       // Manual safety timeout in case browser doesn't respect timeout parameter
       const safetyTimeout = setTimeout(() => {
@@ -898,7 +900,10 @@ export function CustomerApp() {
 
               {/* Location */}
               <button 
-                onClick={requestLocation}
+                onClick={() => {
+                  console.log('🔵 HEADER BUTTON CLICKED - onClick handler fired');
+                  requestLocation('header-button');
+                }}
                 className={`flex items-center gap-2 text-sm mb-4 px-3 py-1.5 rounded-full transition-colors ${
                   locationError === 'PERMISSION_DENIED' 
                     ? 'bg-red-100 text-red-700 hover:bg-red-200' 
@@ -931,7 +936,10 @@ export function CustomerApp() {
                           We're showing results for Johannesburg. Enable location to see venues near you.
                         </p>
                         <button
-                          onClick={requestLocation}
+                          onClick={() => {
+                            console.log('🟡 ERROR BANNER BUTTON CLICKED - onClick handler fired');
+                            requestLocation('error-banner-button');
+                          }}
                           className="text-xs font-semibold text-amber-800 bg-amber-100 hover:bg-amber-200 px-3 py-1.5 rounded-md transition-colors"
                         >
                           Enable Location
