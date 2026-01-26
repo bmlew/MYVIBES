@@ -105,6 +105,10 @@ export const AdvancedInsights: React.FC<AdvancedInsightsProps> = ({
         const data = await response.json();
         alert(`✅ Database reseeded successfully! Fresh data loaded.`);
         window.location.reload(); // Reload to show updated data
+      } else if (response.status === 429) {
+        const error = await response.json();
+        console.warn('⚠️ Seeding already in progress:', error);
+        alert('Seeding is already in progress. Please wait for it to complete.');
       } else {
         throw new Error('Failed to reseed database');
       }

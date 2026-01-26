@@ -19,6 +19,8 @@ interface Recommendation {
   confidence: number;
   image: string;
   tags: string[];
+  business?: any; // Business object from backend
+  score?: number; // Score from backend
 }
 
 export function AIRecommendations({ userLocation, currentTime = new Date(), onVenueClick }: AIRecommendationsProps) {
@@ -34,7 +36,22 @@ export function AIRecommendations({ userLocation, currentTime = new Date(), onVe
           userLocation?.lat,
           userLocation?.lng
         );
-        setRecommendations(recs);
+        
+        // Transform backend recommendations to match our interface
+        const transformedRecs = Array.isArray(recs) ? recs.map((rec: any) => ({
+          id: rec.id || rec.business?.id || `rec-${Date.now()}-${Math.random()}`,
+          type: 'special' as const,
+          title: rec.title || rec.business?.name || 'Special Offer',
+          venue: rec.business?.name || rec.venue || 'Local Restaurant',
+          reason: rec.reason || 'Recommended for you',
+          confidence: rec.score ? Math.min(99, Math.max(60, Math.round(rec.score))) : 85,
+          image: rec.image || rec.business?.image || 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=400',
+          tags: rec.tags || [],
+          business: rec.business,
+          score: rec.score
+        })) : [];
+        
+        setRecommendations(transformedRecs);
       } catch (error) {
         console.error('Error fetching AI recommendations:', error);
         setRecommendations([]);

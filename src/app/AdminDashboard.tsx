@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { ArrowLeft, LayoutDashboard, Building2, CreditCard, FileCheck, Settings, TrendingUp, Users, DollarSign, Calendar, Search, Filter, Download, Eye, Ban, CheckCircle, XCircle, MoreVertical, RefreshCw, Bell, Send, ExternalLink, AlertCircle, Brain, BarChart3, Video } from 'lucide-react';
+import { ArrowLeft, LayoutDashboard, Building2, CreditCard, FileCheck, Settings, TrendingUp, Users, DollarSign, Calendar, Search, Filter, Download, Eye, Ban, CheckCircle, XCircle, MoreVertical, RefreshCw, Bell, Send, ExternalLink, AlertCircle, Brain, BarChart3, Video, BookOpen } from 'lucide-react';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import MLInsightsDashboard from '@/app/components/MLInsightsDashboard';
 import { AdvancedInsights } from '@/app/components/AdvancedInsights';
 import { AdminAdsManagement } from '@/app/components/AdminAdsManagement';
+import { Toast, useToast } from '@/app/components/Toast';
+import { BusinessVisibilityFixer } from '@/app/components/BusinessVisibilityFixer';
 
 // Types
 interface Business {
@@ -24,8 +26,11 @@ interface Business {
   subscription_start_date?: string;
   last_payment_date?: string;
   next_payment_due?: string;
-  payment_status?: 'paid' | 'pending' | 'overdue' | 'reminder_sent';
+  payment_status?: 'paid' | 'pending' | 'overdue' | 'reminder_sent' | 'grace' | 'unpaid';
   payment_link?: string;
+  // Override fields
+  override_applied?: boolean;
+  override_date?: string;
 }
 
 interface Payment {
@@ -93,6 +98,7 @@ interface AdminDashboardProps {
 }
 
 const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
+  const { toast, showSuccess, showError, hideToast } = useToast();
   const [currentSection, setCurrentSection] = useState<'overview' | 'businesses' | 'payments' | 'settings' | 'subscriptions' | 'ml-insights' | 'advanced-insights' | 'affiliates' | 'ads'>('overview');
   const [stats, setStats] = useState<PlatformStats>({
     total_businesses: 0,
@@ -138,10 +144,23 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
   const [payments, setPayments] = useState<Payment[]>([]);
   const [affiliates, setAffiliates] = useState<any[]>([]);
   const [commissions, setCommissions] = useState<any[]>([]);
+  const [expenses, setExpenses] = useState<any[]>([]);
+  const [expenseSummary, setExpenseSummary] = useState<any>({ total: 0, by_category: {}, count: 0 });
+  const [ledger, setLedger] = useState<any[]>([]);
+  const [ledgerSummary, setLedgerSummary] = useState<any>({ total_revenue: 0, total_payouts: 0, total_expenses: 0, current_balance: 0 });
+  const [reconciliationData, setReconciliationData] = useState<any>(null);
+  const [showManualPaymentModal, setShowManualPaymentModal] = useState(false);
+  const [manualPaymentBusiness, setManualPaymentBusiness] = useState<Business | null>(null);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [selectedBusiness, setSelectedBusiness] = useState<Business | null>(null);
+  const [editingBusiness, setEditingBusiness] = useState<Business | null>(null);
+  const [seedingProgress, setSeedingProgress] = useState<{isSeeding: boolean, message: string} | null>(null);
+  
+  // Business diagnostic state
+  const [diagnosticData, setDiagnosticData] = useState<any>(null);
+  const [diagnosticLoading, setDiagnosticLoading] = useState(false);
   
   // Platform analytics state
   const [platformAnalytics, setPlatformAnalytics] = useState<any>(null);
@@ -153,6 +172,37 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
     reminder_days_before_due: 7,
     overdue_grace_period: 5
   });
+
+  // Expense form state
+  const [showAddExpense, setShowAddExpense] = useState(false);
+  const [expenseForm, setExpenseForm] = useState({
+    category: 'marketing',
+    amount: '',
+    description: '',
+    date: new Date().toISOString().split('T')[0],
+    receipt_url: ''
+  });
+  const [submittingExpense, setSubmittingExpense] = useState(false);
+
+  // Manual payment form state
+  const [paymentForm, setPaymentForm] = useState({
+    months_paid: '1',
+    payment_method: 'EFT',
+    amount: '',
+    reference: '',
+    payment_date: new Date().toISOString().split('T')[0]
+  });
+  const [submittingPayment, setSubmittingPayment] = useState(false);
+
+  // Override visibility state
+  const [showOverrideModal, setShowOverrideModal] = useState(false);
+  const [overrideBusinessId, setOverrideBusinessId] = useState<string | null>(null);
+  const [overrideForm, setOverrideForm] = useState({
+    is_active: true,
+    payment_status: 'paid',
+    subscription_status: 'active'
+  });
+  const [submittingOverride, setSubmittingOverride] = useState(false);
 
   const fetchAffiliates = useCallback(async () => {
     try {
@@ -189,18 +239,63 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
     }
   }, []); // Empty dependencies since it only uses constants
 
-  useEffect(() => {
-    fetchAdminData();
-  }, []); // Only run once on mount
+  const fetchExpenses = useCallback(async () => {
+    try {
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-175b2872/expenses`,
+        {
+          headers: {
+            'Authorization': `Bearer ${publicAnonKey}`
+          }
+        }
+      );
 
-  useEffect(() => {
-    if (currentSection === 'affiliates') {
-      fetchAffiliates();
+      if (response.ok) {
+        const data = await response.json();
+        setExpenses(data.expenses || []);
+      }
+
+      // Fetch expense summary
+      const summaryResponse = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-175b2872/expenses/summary`,
+        {
+          headers: {
+            'Authorization': `Bearer ${publicAnonKey}`
+          }
+        }
+      );
+
+      if (summaryResponse.ok) {
+        const summaryData = await summaryResponse.json();
+        setExpenseSummary(summaryData.summary || { total: 0, by_category: {}, count: 0 });
+      }
+    } catch (error) {
+      console.error('Error fetching expenses:', error);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentSection]); // Fetch affiliates when switching to that section
+  }, []); // Empty dependencies since it only uses constants
 
-  const fetchAdminData = async () => {
+  const fetchLedger = useCallback(async () => {
+    try {
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-175b2872/transactions/ledger`,
+        {
+          headers: {
+            'Authorization': `Bearer ${publicAnonKey}`
+          }
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        setLedger(data.ledger || []);
+        setLedgerSummary(data.summary || { total_revenue: 0, total_payouts: 0, total_expenses: 0, current_balance: 0 });
+      }
+    } catch (error) {
+      console.error('Error fetching ledger:', error);
+    }
+  }, []); // Empty dependencies since it only uses constants
+
+  const fetchAdminData = useCallback(async () => {
     try {
       setLoading(true);
 
@@ -346,7 +441,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
         if (settingsResponse.ok) {
           const settingsData = await settingsResponse.json();
           console.log('[Admin] Platform settings loaded:', settingsData);
-          setPlatformSettings(settingsData.settings);
+          setPlatformSettings({
+            monthly_subscription_fee: settingsData.settings?.monthly_subscription_fee ?? 299,
+            auto_approve_businesses: settingsData.settings?.auto_approve_businesses ?? false,
+            reminder_days_before_due: settingsData.settings?.reminder_days_before_due ?? 7,
+            overdue_grace_period: settingsData.settings?.overdue_grace_period ?? 5
+          });
         }
       } catch (error) {
         console.error('Error fetching platform settings:', error);
@@ -357,7 +457,23 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []); // Empty dependencies since it only uses constants
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    fetchAdminData();
+  }, []); // Run only once on mount - fetchAdminData is stable via useCallback
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (currentSection === 'affiliates') {
+      fetchAffiliates();
+    }
+    if (currentSection === 'reconciliation') {
+      fetchExpenses();
+      fetchLedger();
+    }
+  }, [currentSection]); // Only depend on currentSection - callbacks are stable via useCallback
 
   const handleApproveAffiliate = async (affiliateId: string) => {
     try {
@@ -407,6 +523,113 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
     }
   };
 
+  const handleAddExpense = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmittingExpense(true);
+
+    try {
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-175b2872/expenses`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${publicAnonKey}`
+          },
+          body: JSON.stringify(expenseForm)
+        }
+      );
+
+      if (response.ok) {
+        setShowAddExpense(false);
+        setExpenseForm({
+          category: 'marketing',
+          amount: '',
+          description: '',
+          date: new Date().toISOString().split('T')[0],
+          receipt_url: ''
+        });
+        fetchExpenses(); // Refresh expenses
+      } else {
+        alert('Failed to add expense');
+      }
+    } catch (error) {
+      console.error('Error adding expense:', error);
+      alert('Error adding expense');
+    } finally {
+      setSubmittingExpense(false);
+    }
+  };
+
+  const handleDeleteExpense = async (expenseId: string) => {
+    if (!confirm('Are you sure you want to delete this expense?')) return;
+
+    try {
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-175b2872/expenses/${expenseId}`,
+        {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${publicAnonKey}`
+          }
+        }
+      );
+
+      if (response.ok) {
+        fetchExpenses(); // Refresh expenses
+      } else {
+        alert('Failed to delete expense');
+      }
+    } catch (error) {
+      console.error('Error deleting expense:', error);
+      alert('Error deleting expense');
+    }
+  };
+
+  const handleManualPaymentSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!manualPaymentBusiness) return;
+    
+    setSubmittingPayment(true);
+
+    try {
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-175b2872/businesses/${manualPaymentBusiness.id}/manual-payment`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${publicAnonKey}`
+          },
+          body: JSON.stringify(paymentForm)
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        alert(`Payment recorded! ${data.commissions?.length || 0} affiliate commission(s) generated.`);
+        setShowManualPaymentModal(false);
+        setManualPaymentBusiness(null);
+        setPaymentForm({
+          months_paid: '1',
+          payment_method: 'EFT',
+          amount: '',
+          reference: '',
+          payment_date: new Date().toISOString().split('T')[0]
+        });
+        fetchAdminData(); // Refresh data
+      } else {
+        const error = await response.json();
+        alert(`Failed to record payment: ${error.error}`);
+      }
+    } catch (error) {
+      console.error('Error recording payment:', error);
+      alert('Error recording payment');
+    } finally {
+      setSubmittingPayment(false);
+    }
+  };
+
   const handleToggleBusinessStatus = async (businessId: string, currentStatus: boolean) => {
     try {
       const response = await fetch(
@@ -442,6 +665,79 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
     }
   };
 
+  const handleOverrideVisibility = async () => {
+    if (!overrideBusinessId) return;
+    
+    setSubmittingOverride(true);
+    try {
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-175b2872/admin/businesses/${overrideBusinessId}/override-visibility`,
+        {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${publicAnonKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(overrideForm)
+        }
+      );
+
+      if (response.ok) {
+        alert('✅ Visibility settings updated successfully!');
+        setShowOverrideModal(false);
+        fetchAdminData(); // Refresh data
+      } else {
+        const error = await response.json();
+        alert(`Failed to update: ${error.error}`);
+      }
+    } catch (error) {
+      console.error('Error updating visibility:', error);
+      alert('Error updating visibility settings');
+    } finally {
+      setSubmittingOverride(false);
+    }
+  };
+
+  const handleUpdateBusinessDetails = async (businessId: string, updates: Partial<Business>) => {
+    try {
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-175b2872/admin/businesses/${businessId}/update`,
+        {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${publicAnonKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(updates)
+        }
+      );
+
+      if (response.ok) {
+        const updatedBusiness = await response.json();
+        
+        // Update local state
+        setBusinesses(prev => prev.map(b => 
+          b.id === businessId ? { ...b, ...updates } : b
+        ));
+        
+        // Update selected business if it's the one being edited
+        if (selectedBusiness?.id === businessId) {
+          setSelectedBusiness({ ...selectedBusiness, ...updates });
+        }
+        
+        setEditingBusiness(null);
+        showSuccess('Business updated successfully');
+        console.log(`✅ Business updated successfully`);
+      } else {
+        const error = await response.json();
+        showError(`Failed to update business: ${error.error}`);
+      }
+    } catch (error) {
+      console.error('Error updating business:', error);
+      showError('Error updating business');
+    }
+  };
+
   const handleExportData = () => {
     const csvContent = businesses.map(b => 
       `${b.name},${b.type},${b.email},${b.subscription_plan},${b.subscription_status},R${b.total_revenue}`
@@ -453,6 +749,98 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
     a.href = url;
     a.download = `vibespot-businesses-${new Date().toISOString().split('T')[0]}.csv`;
     a.click();
+  };
+
+  const handleDiagnoseBusinesses = async () => {
+    setDiagnosticLoading(true);
+    try {
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-175b2872/admin/diagnose-businesses`,
+        {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${publicAnonKey}`
+          }
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        setDiagnosticData(data);
+        console.log('📊 Diagnostic data:', data);
+      } else {
+        const error = await response.json();
+        showError(`Failed to diagnose: ${error.error}`);
+      }
+    } catch (error) {
+      console.error('Error diagnosing businesses:', error);
+      showError('Error running diagnostics');
+    } finally {
+      setDiagnosticLoading(false);
+    }
+  };
+
+  const handleFixAllBusinesses = async () => {
+    if (!confirm('This will make ALL businesses visible in the customer app. Continue?')) {
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-175b2872/admin/fix-all-businesses`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${publicAnonKey}`
+          }
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        showSuccess(data.message);
+        // Refresh both diagnostic and business data
+        await handleDiagnoseBusinesses();
+        await fetchData();
+      } else {
+        const error = await response.json();
+        showError(`Failed to fix businesses: ${error.error}`);
+      }
+    } catch (error) {
+      console.error('Error fixing businesses:', error);
+      showError('Error fixing businesses');
+    }
+  };
+
+  const handleFixSingleBusiness = async (businessId: string, businessName: string) => {
+    try {
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-175b2872/admin/fix-business-visibility/${businessId}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${publicAnonKey}`
+          }
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        showSuccess(data.message);
+        // Refresh both diagnostic and business data
+        await handleDiagnoseBusinesses();
+        await fetchData();
+      } else {
+        const error = await response.json();
+        showError(`Failed to fix ${businessName}: ${error.error}`);
+      }
+    } catch (error) {
+      console.error('Error fixing business:', error);
+      showError(`Error fixing ${businessName}`);
+    }
   };
 
   const handleSaveSettings = async () => {
@@ -514,6 +902,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
   // Overview Section
   const renderOverview = () => (
     <div className="space-y-6">
+      {/* Business Visibility Diagnostic Tool */}
+      <BusinessVisibilityFixer />
+      
       {/* Primary Subscription Metrics - Top Row */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {/* Total Establishments */}
@@ -612,7 +1003,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
         <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
           <h3 className="text-lg font-semibold mb-4">Top Performing Businesses</h3>
           <div className="space-y-4">
-            {businesses.slice(0, 5).map((business, index) => (
+            {[...businesses]
+              .sort((a, b) => (b.total_revenue || 0) - (a.total_revenue || 0))
+              .slice(0, 5)
+              .map((business, index) => (
               <div key={business.id} className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-full flex items-center justify-center text-white font-bold text-sm">
@@ -642,25 +1036,25 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
           <div className="bg-white/10 backdrop-blur rounded-lg p-4">
             <p className="text-sm opacity-90 mb-1">Total Clicks</p>
-            <p className="text-3xl font-bold">{loadingAnalytics ? '...' : (platformAnalytics?.platform_metrics.total_clicks || 0).toLocaleString()}</p>
+            <p className="text-3xl font-bold">{loadingAnalytics ? '...' : (platformAnalytics?.platform_metrics?.total_clicks || 0).toLocaleString()}</p>
             <p className="text-xs opacity-75 mt-1">Carousel & venue clicks</p>
           </div>
           
           <div className="bg-white/10 backdrop-blur rounded-lg p-4">
             <p className="text-sm opacity-90 mb-1">Platform CTR</p>
-            <p className="text-3xl font-bold">{loadingAnalytics ? '...' : (platformAnalytics?.platform_metrics.platform_ctr || 0)}%</p>
-            <p className="text-xs opacity-75 mt-1">{loadingAnalytics ? '' : `${(platformAnalytics?.platform_metrics.total_views || 0).toLocaleString()} total views`}</p>
+            <p className="text-3xl font-bold">{loadingAnalytics ? '...' : (platformAnalytics?.platform_metrics?.platform_ctr || 0)}%</p>
+            <p className="text-xs opacity-75 mt-1">{loadingAnalytics ? '' : `${(platformAnalytics?.platform_metrics?.total_views || 0).toLocaleString()} total views`}</p>
           </div>
           
           <div className="bg-white/10 backdrop-blur rounded-lg p-4">
             <p className="text-sm opacity-90 mb-1">Total Reservations</p>
-            <p className="text-3xl font-bold">{loadingAnalytics ? '...' : (platformAnalytics?.platform_metrics.total_reservations || 0)}</p>
-            <p className="text-xs opacity-75 mt-1">{loadingAnalytics ? '' : `${platformAnalytics?.platform_metrics.reservation_conversion || 0}% conversion`}</p>
+            <p className="text-3xl font-bold">{loadingAnalytics ? '...' : (platformAnalytics?.platform_metrics?.total_reservations || 0)}</p>
+            <p className="text-xs opacity-75 mt-1">{loadingAnalytics ? '' : `${platformAnalytics?.platform_metrics?.reservation_conversion || 0}% conversion`}</p>
           </div>
           
           <div className="bg-white/10 backdrop-blur rounded-lg p-4">
             <p className="text-sm opacity-90 mb-1">Total Value Created</p>
-            <p className="text-3xl font-bold">R{loadingAnalytics ? '...' : (platformAnalytics?.platform_metrics.total_estimated_revenue || 0).toLocaleString()}</p>
+            <p className="text-3xl font-bold">R{loadingAnalytics ? '...' : (platformAnalytics?.platform_metrics?.total_estimated_revenue || 0).toLocaleString()}</p>
             <p className="text-xs opacity-75 mt-1">Estimated revenue generated</p>
           </div>
         </div>
@@ -670,27 +1064,27 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
           <div className="flex items-center gap-4 text-sm">
             <div>
               <p className="opacity-75">Views</p>
-              <p className="text-2xl font-bold">{loadingAnalytics ? '...' : (platformAnalytics?.platform_metrics.total_views || 0).toLocaleString()}</p>
+              <p className="text-2xl font-bold">{loadingAnalytics ? '...' : (platformAnalytics?.platform_metrics?.total_views || 0).toLocaleString()}</p>
             </div>
             <div className="flex-1 flex items-center">
               <div className="flex-1 h-2 bg-white/20 rounded-full overflow-hidden">
-                <div className="h-full bg-white/60" style={{ width: `${platformAnalytics?.platform_metrics.platform_ctr || 0}%` }}></div>
+                <div className="h-full bg-white/60" style={{ width: `${platformAnalytics?.platform_metrics?.platform_ctr || 0}%` }}></div>
               </div>
-              <span className="ml-2 opacity-75">{platformAnalytics?.platform_metrics.platform_ctr || 0}%</span>
+              <span className="ml-2 opacity-75">{platformAnalytics?.platform_metrics?.platform_ctr || 0}%</span>
             </div>
             <div>
               <p className="opacity-75">Clicks</p>
-              <p className="text-2xl font-bold">{loadingAnalytics ? '...' : (platformAnalytics?.platform_metrics.total_clicks || 0).toLocaleString()}</p>
+              <p className="text-2xl font-bold">{loadingAnalytics ? '...' : (platformAnalytics?.platform_metrics?.total_clicks || 0).toLocaleString()}</p>
             </div>
             <div className="flex-1 flex items-center">
               <div className="flex-1 h-2 bg-white/20 rounded-full overflow-hidden">
-                <div className="h-full bg-white/60" style={{ width: `${platformAnalytics?.platform_metrics.reservation_conversion || 0}%` }}></div>
+                <div className="h-full bg-white/60" style={{ width: `${platformAnalytics?.platform_metrics?.reservation_conversion || 0}%` }}></div>
               </div>
-              <span className="ml-2 opacity-75">{platformAnalytics?.platform_metrics.reservation_conversion || 0}%</span>
+              <span className="ml-2 opacity-75">{platformAnalytics?.platform_metrics?.reservation_conversion || 0}%</span>
             </div>
             <div>
               <p className="opacity-75">Reservations</p>
-              <p className="text-2xl font-bold">{loadingAnalytics ? '...' : (platformAnalytics?.platform_metrics.total_reservations || 0)}</p>
+              <p className="text-2xl font-bold">{loadingAnalytics ? '...' : (platformAnalytics?.platform_metrics?.total_reservations || 0)}</p>
             </div>
           </div>
         </div>
@@ -728,10 +1122,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
                       </div>
                     </td>
                     <td className="p-3 font-medium">{biz.name}</td>
-                    <td className="p-3 text-right">{biz.clicks.toLocaleString()}</td>
-                    <td className="p-3 text-right">{biz.reservations}</td>
+                    <td className="p-3 text-right">{(biz.clicks || 0).toLocaleString()}</td>
+                    <td className="p-3 text-right">{biz.reservations || 0}</td>
                     <td className="p-3 text-right">
-                      <span className="font-bold text-green-600">R{biz.revenue.toLocaleString()}</span>
+                      <span className="font-bold text-green-600">R{(biz.revenue || 0).toLocaleString()}</span>
                     </td>
                   </tr>
                 ))}
@@ -780,7 +1174,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
                     </td>
                     <td className="p-3 text-right">{res.party_size}</td>
                     <td className="p-3 text-right">
-                      <span className="font-semibold text-green-600">R{res.estimated_value.toLocaleString()}</span>
+                      <span className="font-semibold text-green-600">R{(res.estimated_value || 0).toLocaleString()}</span>
                     </td>
                     <td className="p-3">
                       <span className={`inline-block px-2 py-1 rounded-full text-xs font-medium ${
@@ -1059,16 +1453,30 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
                       {formatCurrency(business.total_revenue)}
                     </td>
                     <td className="px-6 py-4">
-                      <span className={`flex items-center gap-1 text-sm font-medium ${
-                        business.is_active ? 'text-green-600' : 'text-red-600'
-                      }`}>
-                        {business.is_active ? (
-                          <CheckCircle className="w-4 h-4" />
-                        ) : (
-                          <XCircle className="w-4 h-4" />
+                      <div className="flex flex-col gap-1">
+                        <span className={`flex items-center gap-1 text-sm font-medium ${
+                          business.is_active ? 'text-green-600' : 'text-red-600'
+                        }`}>
+                          {business.is_active ? (
+                            <CheckCircle className="w-4 h-4" />
+                          ) : (
+                            <XCircle className="w-4 h-4" />
+                          )}
+                          {business.is_active ? 'Active' : 'Inactive'}
+                        </span>
+                        {(business.payment_status === 'grace' || business.subscription_status === 'grace') && (
+                          <span className="text-xs text-purple-600 flex items-center gap-1">
+                            <Settings className="w-3 h-3" />
+                            Grace Period
+                          </span>
                         )}
-                        {business.is_active ? 'Active' : 'Inactive'}
-                      </span>
+                        {business.override_applied && (
+                          <span className="text-xs text-purple-600 flex items-center gap-1">
+                            <Settings className="w-3 h-3" />
+                            Override
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-2">
@@ -1089,6 +1497,40 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
                           ) : (
                             <CheckCircle className="w-4 h-4 text-green-600" />
                           )}
+                        </button>
+                        <button
+                          onClick={() => {
+                            setManualPaymentBusiness(business);
+                            const monthlyFee = platformSettings.monthly_subscription_fee || 499;
+                            const initialAmount = (monthlyFee * 1).toString(); // 1 month by default
+                            setPaymentForm({
+                              months_paid: '1',
+                              payment_method: 'EFT',
+                              amount: initialAmount,
+                              reference: '',
+                              payment_date: new Date().toISOString().split('T')[0]
+                            });
+                            setShowManualPaymentModal(true);
+                          }}
+                          className="p-2 hover:bg-green-100 rounded-lg transition-colors"
+                          title="Record Manual Payment"
+                        >
+                          <DollarSign className="w-4 h-4 text-green-600" />
+                        </button>
+                        <button
+                          onClick={() => {
+                            setOverrideBusinessId(business.id);
+                            setOverrideForm({
+                              is_active: business.is_active ?? true,
+                              payment_status: business.payment_status || 'paid',
+                              subscription_status: business.subscription_status || 'active'
+                            });
+                            setShowOverrideModal(true);
+                          }}
+                          className="p-2 hover:bg-purple-100 rounded-lg transition-colors"
+                          title="Override Visibility Settings"
+                        >
+                          <Settings className="w-4 h-4 text-purple-600" />
                         </button>
                       </div>
                     </td>
@@ -1204,30 +1646,368 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
   );
 
   // Reconciliation Section
-  const renderReconciliation = () => (
-    <div className="space-y-6">
-      <div className="bg-white rounded-xl p-8 shadow-sm border border-gray-100 text-center">
-        <FileCheck className="w-16 h-16 mx-auto mb-4 text-gray-400" />
-        <h3 className="text-xl font-semibold mb-2">Financial Reconciliation</h3>
-        <p className="text-gray-600 mb-6">
-          Match and reconcile platform transactions with bank statements
-        </p>
-        <button className="px-6 py-3 bg-gradient-to-r from-cyan-500 to-blue-600 text-white rounded-lg hover:shadow-lg transition-all">
-          Start Reconciliation Process
-        </button>
-      </div>
+  const renderReconciliation = () => {
+    // Calculate financial summary
+    const totalRevenue = stats.subscription_revenue || 0;
+    const totalCommissions = commissions.filter((c: any) => c.status === 'pending').reduce((sum: number, c: any) => sum + c.amount, 0);
+    const totalExpenses = expenseSummary.total || 0;
+    const netProfit = totalRevenue - totalCommissions - totalExpenses;
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-          <h3 className="text-lg font-semibold mb-4">Unreconciled Transactions</h3>
-          <div className="text-center py-8">
-            <p className="text-4xl font-bold text-cyan-600 mb-2">0</p>
-            <p className="text-sm text-gray-600">All transactions reconciled</p>
+    const categoryColors: Record<string, string> = {
+      marketing: 'bg-purple-100 text-purple-700',
+      software: 'bg-blue-100 text-blue-700',
+      operations: 'bg-green-100 text-green-700',
+      legal: 'bg-red-100 text-red-700',
+      infrastructure: 'bg-orange-100 text-orange-700',
+      other: 'bg-gray-100 text-gray-700'
+    };
+
+    return (
+      <div className="space-y-6">
+        {/* Financial Overview Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          <div className="bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl p-6 text-white shadow-lg">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-medium opacity-90">Total Revenue</h3>
+              <DollarSign className="w-5 h-5 opacity-75" />
+            </div>
+            <p className="text-3xl font-bold">R{totalRevenue.toFixed(2)}</p>
+            <p className="text-xs opacity-75 mt-1">Subscription fees (monthly)</p>
+          </div>
+
+          <div className="bg-gradient-to-br from-orange-500 to-red-600 rounded-xl p-6 text-white shadow-lg">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-medium opacity-90">Affiliate Payouts</h3>
+              <Users className="w-5 h-5 opacity-75" />
+            </div>
+            <p className="text-3xl font-bold">R{totalCommissions.toFixed(2)}</p>
+            <p className="text-xs opacity-75 mt-1">Pending commissions</p>
+          </div>
+
+          <div className="bg-gradient-to-br from-purple-500 to-pink-600 rounded-xl p-6 text-white shadow-lg">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-medium opacity-90">Total Expenses</h3>
+              <TrendingUp className="w-5 h-5 opacity-75" />
+            </div>
+            <p className="text-3xl font-bold">R{totalExpenses.toFixed(2)}</p>
+            <p className="text-xs opacity-75 mt-1">{expenseSummary.count} expense items</p>
+          </div>
+
+          <div className={`bg-gradient-to-br ${netProfit >= 0 ? 'from-cyan-500 to-blue-600' : 'from-red-500 to-rose-600'} rounded-xl p-6 text-white shadow-lg`}>
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-medium opacity-90">Net Profit</h3>
+              <BarChart3 className="w-5 h-5 opacity-75" />
+            </div>
+            <p className="text-3xl font-bold">R{netProfit.toFixed(2)}</p>
+            <p className="text-xs opacity-75 mt-1">{netProfit >= 0 ? 'Profitable' : 'Loss'}</p>
           </div>
         </div>
 
+        {/* Action Buttons */}
+        <div className="flex gap-4">
+          <button
+            onClick={async () => {
+              if (!confirm('Generate commissions for all active affiliate-referred businesses for this month?')) return;
+              try {
+                const response = await fetch(
+                  `https://${projectId}.supabase.co/functions/v1/make-server-175b2872/commissions/generate-monthly`,
+                  {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'Authorization': `Bearer ${publicAnonKey}`
+                    },
+                    body: JSON.stringify({
+                      month: new Date().getMonth() + 1,
+                      year: new Date().getFullYear()
+                    })
+                  }
+                );
+                if (response.ok) {
+                  const data = await response.json();
+                  alert(`✅ Generated ${data.commissions_generated} commission(s) for ${data.month}/${data.year}`);
+                  fetchAffiliates(); // Refresh commissions
+                } else {
+                  alert('Failed to generate commissions');
+                }
+              } catch (error) {
+                console.error('Error generating commissions:', error);
+                alert('Error generating commissions');
+              }
+            }}
+            className="flex-1 px-6 py-4 bg-gradient-to-r from-purple-500 to-pink-600 text-white rounded-xl hover:shadow-lg transition-all font-medium text-center"
+          >
+            <div className="flex items-center justify-center gap-2">
+              <RefreshCw className="w-5 h-5" />
+              Generate Monthly Commissions
+            </div>
+            <p className="text-xs opacity-90 mt-1">Auto-create recurring affiliate commissions</p>
+          </button>
+
+          <button
+            onClick={async () => {
+              try {
+                const response = await fetch(
+                  `https://${projectId}.supabase.co/functions/v1/make-server-175b2872/reconciliation/start`,
+                  {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'Authorization': `Bearer ${publicAnonKey}`
+                    },
+                    body: JSON.stringify({
+                      month: new Date().getMonth() + 1,
+                      year: new Date().getFullYear()
+                    })
+                  }
+                );
+                if (response.ok) {
+                  const data = await response.json();
+                  setReconciliationData(data.reconciliation);
+                  alert(`Reconciliation started!\nActive subscriptions: ${data.reconciliation.active_subscriptions}\nExpected: R${data.reconciliation.expected_revenue}\nActual: R${data.reconciliation.actual_revenue}\nStatus: ${data.reconciliation.status}`);
+                } else {
+                  alert('Failed to start reconciliation');
+                }
+              } catch (error) {
+                console.error('Error starting reconciliation:', error);
+                alert('Error starting reconciliation');
+              }
+            }}
+            className="flex-1 px-6 py-4 bg-gradient-to-r from-cyan-500 to-blue-600 text-white rounded-xl hover:shadow-lg transition-all font-medium text-center"
+          >
+            <div className="flex items-center justify-center gap-2">
+              <FileCheck className="w-5 h-5" />
+              Start Reconciliation Process
+            </div>
+            <p className="text-xs opacity-90 mt-1">Match transactions with expected revenue</p>
+          </button>
+        </div>
+
+        {/* Reconciliation Results */}
+        {reconciliationData && (
+          <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+            <h3 className="text-lg font-semibold mb-4">Reconciliation Results</h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="bg-blue-50 p-4 rounded-lg">
+                <p className="text-sm text-blue-700 font-medium">Active Subscriptions</p>
+                <p className="text-2xl font-bold text-blue-900">{reconciliationData.active_subscriptions}</p>
+              </div>
+              <div className="bg-green-50 p-4 rounded-lg">
+                <p className="text-sm text-green-700 font-medium">Expected Revenue</p>
+                <p className="text-2xl font-bold text-green-900">R{reconciliationData.expected_revenue.toFixed(2)}</p>
+              </div>
+              <div className="bg-purple-50 p-4 rounded-lg">
+                <p className="text-sm text-purple-700 font-medium">Actual Revenue</p>
+                <p className="text-2xl font-bold text-purple-900">R{reconciliationData.actual_revenue.toFixed(2)}</p>
+              </div>
+              <div className={`p-4 rounded-lg ${reconciliationData.status === 'balanced' ? 'bg-green-100' : 'bg-orange-100'}`}>
+                <p className={`text-sm font-medium ${reconciliationData.status === 'balanced' ? 'text-green-700' : 'text-orange-700'}`}>
+                  Status
+                </p>
+                <p className={`text-2xl font-bold ${reconciliationData.status === 'balanced' ? 'text-green-900' : 'text-orange-900'}`}>
+                  {reconciliationData.status === 'balanced' ? '✅ Balanced' : '⚠️ Variance'}
+                </p>
+                {reconciliationData.variance !== 0 && (
+                  <p className="text-xs mt-1">R{Math.abs(reconciliationData.variance).toFixed(2)} {reconciliationData.variance > 0 ? 'over' : 'under'}</p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Expenses by Category */}
         <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-          <h3 className="text-lg font-semibold mb-4">Next Payout Date</h3>
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="text-lg font-semibold">Expenses by Category</h3>
+            <button
+              onClick={() => setShowAddExpense(true)}
+              className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 text-white rounded-lg hover:shadow-lg transition-all text-sm font-medium"
+            >
+              + Add Expense
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+            {Object.entries(expenseSummary.by_category || {}).map(([category, amount]: [string, any]) => (
+              <div key={category} className={`p-4 rounded-lg ${categoryColors[category] || 'bg-gray-100'}`}>
+                <p className="text-xs font-medium capitalize mb-1">{category}</p>
+                <p className="text-xl font-bold">R{amount.toFixed(2)}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Add Expense Modal */}
+        {showAddExpense && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl max-w-md w-full p-6">
+              <h3 className="text-xl font-bold mb-4">Add New Expense</h3>
+              <form onSubmit={handleAddExpense} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                  <select
+                    value={expenseForm.category}
+                    onChange={(e) => setExpenseForm({ ...expenseForm, category: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500"
+                    required
+                  >
+                    <option value="marketing">Marketing</option>
+                    <option value="software">Software</option>
+                    <option value="operations">Operations</option>
+                    <option value="legal">Legal</option>
+                    <option value="infrastructure">Infrastructure</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Amount (R)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={expenseForm.amount}
+                    onChange={(e) => setExpenseForm({ ...expenseForm, amount: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500"
+                    placeholder="0.00"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                  <textarea
+                    value={expenseForm.description}
+                    onChange={(e) => setExpenseForm({ ...expenseForm, description: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500"
+                    rows={3}
+                    placeholder="What was this expense for?"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
+                  <input
+                    type="date"
+                    value={expenseForm.date}
+                    onChange={(e) => setExpenseForm({ ...expenseForm, date: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Receipt URL (optional)</label>
+                  <input
+                    type="url"
+                    value={expenseForm.receipt_url}
+                    onChange={(e) => setExpenseForm({ ...expenseForm, receipt_url: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500"
+                    placeholder="https://..."
+                  />
+                </div>
+
+                <div className="flex gap-3 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowAddExpense(false);
+                      setExpenseForm({
+                        category: 'marketing',
+                        amount: '',
+                        description: '',
+                        date: new Date().toISOString().split('T')[0],
+                        receipt_url: ''
+                      });
+                    }}
+                    className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+                    disabled={submittingExpense}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex-1 px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 text-white rounded-lg hover:shadow-lg disabled:opacity-50"
+                    disabled={submittingExpense}
+                  >
+                    {submittingExpense ? 'Adding...' : 'Add Expense'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* Expense History Table */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="p-6 border-b border-gray-100">
+            <h3 className="text-lg font-semibold">Expense History</h3>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Category</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Receipt</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {expenses.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-6 py-12 text-center text-gray-500">
+                      No expenses recorded yet
+                    </td>
+                  </tr>
+                ) : (
+                  expenses.map((expense: any) => (
+                    <tr key={expense.id} className="hover:bg-gray-50">
+                      <td className="px-6 py-4 text-sm text-gray-900">
+                        {new Date(expense.date).toLocaleDateString('en-ZA', {
+                          day: 'numeric',
+                          month: 'short',
+                          year: 'numeric'
+                        })}
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${categoryColors[expense.category] || 'bg-gray-100 text-gray-700'}`}>
+                          {expense.category}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-900">{expense.description}</td>
+                      <td className="px-6 py-4 text-sm font-bold text-gray-900">R{expense.amount.toFixed(2)}</td>
+                      <td className="px-6 py-4">
+                        {expense.receipt_url ? (
+                          <a href={expense.receipt_url} target="_blank" rel="noopener noreferrer" className="text-cyan-600 hover:text-cyan-700 text-sm flex items-center gap-1">
+                            <ExternalLink className="w-4 h-4" />
+                            View
+                          </a>
+                        ) : (
+                          <span className="text-gray-400 text-sm">—</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4">
+                        <button
+                          onClick={() => handleDeleteExpense(expense.id)}
+                          className="text-red-600 hover:text-red-700 text-sm font-medium"
+                        >
+                          Delete
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Payout Schedule */}
+        <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+          <h3 className="text-lg font-semibold mb-4">Next Affiliate Payout</h3>
           <div className="text-center py-8">
             <p className="text-2xl font-bold text-blue-600 mb-2">
               {new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toLocaleDateString('en-ZA', {
@@ -1237,11 +2017,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
               })}
             </p>
             <p className="text-sm text-gray-600">Weekly payout schedule</p>
+            <p className="text-lg font-bold text-orange-600 mt-4">R{totalCommissions.toFixed(2)} pending</p>
           </div>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   // Settings Section
   const renderSettings = () => (
@@ -1259,8 +2040,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
               <span className="text-gray-600">R</span>
               <input 
                 type="number" 
-                value={platformSettings.monthly_subscription_fee}
-                onChange={(e) => setPlatformSettings({...platformSettings, monthly_subscription_fee: Number(e.target.value)})}
+                value={platformSettings.monthly_subscription_fee || 0}
+                onChange={(e) => setPlatformSettings({...platformSettings, monthly_subscription_fee: Number(e.target.value) || 0})}
                 className="w-32 px-3 py-2 border border-gray-300 rounded-lg text-right"
               />
             </div>
@@ -1274,7 +2055,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
             <label className="relative inline-flex items-center cursor-pointer">
               <input 
                 type="checkbox" 
-                checked={platformSettings.auto_approve_businesses}
+                checked={platformSettings.auto_approve_businesses || false}
                 onChange={(e) => setPlatformSettings({...platformSettings, auto_approve_businesses: e.target.checked})}
                 className="sr-only peer" 
               />
@@ -1289,8 +2070,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
             </div>
             <input 
               type="number" 
-              value={platformSettings.reminder_days_before_due}
-              onChange={(e) => setPlatformSettings({...platformSettings, reminder_days_before_due: Number(e.target.value)})}
+              value={platformSettings.reminder_days_before_due || 0}
+              onChange={(e) => setPlatformSettings({...platformSettings, reminder_days_before_due: Number(e.target.value) || 0})}
               className="w-24 px-3 py-2 border border-gray-300 rounded-lg text-right"
             />
           </div>
@@ -1302,8 +2083,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
             </div>
             <input 
               type="number" 
-              value={platformSettings.overdue_grace_period}
-              onChange={(e) => setPlatformSettings({...platformSettings, overdue_grace_period: Number(e.target.value)})}
+              value={platformSettings.overdue_grace_period || 0}
+              onChange={(e) => setPlatformSettings({...platformSettings, overdue_grace_period: Number(e.target.value) || 0})}
               className="w-24 px-3 py-2 border border-gray-300 rounded-lg text-right"
             />
           </div>
@@ -1313,6 +2094,289 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
           </button>
         </div>
       </div>
+
+      {/* Database Management */}
+      <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+        <h3 className="text-lg font-semibold mb-2">Database Management</h3>
+        <p className="text-sm text-gray-600 mb-6">Tools for testing and performance analysis</p>
+        
+        <div className="space-y-4">
+          <div className="bg-gradient-to-r from-cyan-50 to-blue-50 rounded-lg p-4 border border-cyan-200 mb-4">
+            <div className="flex items-start gap-4">
+              <div className="flex-1">
+                <h4 className="font-semibold text-gray-900 mb-1">🔍 Business Visibility Diagnostic</h4>
+                <p className="text-sm text-gray-700 mb-2">
+                  Check which businesses are visible in the customer app and fix visibility issues.
+                </p>
+                
+                {diagnosticData && (
+                  <div className="mt-3 space-y-2">
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div className="bg-white rounded p-2">
+                        <p className="text-gray-600 text-xs">Total Businesses</p>
+                        <p className="text-xl font-bold text-gray-900">{diagnosticData.total_businesses}</p>
+                      </div>
+                      <div className="bg-green-100 rounded p-2">
+                        <p className="text-green-700 text-xs">Visible in App</p>
+                        <p className="text-xl font-bold text-green-900">{diagnosticData.visible_in_customer_app}</p>
+                      </div>
+                    </div>
+                    
+                    {diagnosticData.hidden_businesses && diagnosticData.hidden_businesses.length > 0 && (
+                      <div className="bg-orange-100 rounded p-2">
+                        <p className="text-orange-900 font-medium text-sm mb-2">
+                          ⚠️ {diagnosticData.hidden_businesses.length} Hidden Business(es):
+                        </p>
+                        <div className="space-y-1 max-h-40 overflow-y-auto">
+                          {diagnosticData.hidden_businesses.map((biz: any) => (
+                            <div key={biz.id} className="text-xs bg-white rounded p-2">
+                              <p className="font-medium text-gray-900">{biz.name}</p>
+                              <p className="text-orange-700">{biz.issues.join(', ')}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-3">
+              <button
+                onClick={async () => {
+                  setDiagnosticLoading(true);
+                  try {
+                    const response = await fetch(
+                      `https://${projectId}.supabase.co/functions/v1/make-server-175b2872/admin/diagnose-businesses`,
+                      {
+                        headers: {
+                          'Authorization': `Bearer ${publicAnonKey}`
+                        }
+                      }
+                    );
+                    
+                    if (response.ok) {
+                      const data = await response.json();
+                      setDiagnosticData(data);
+                      showSuccess(`Diagnostic complete: ${data.visible_in_customer_app}/${data.total_businesses} businesses visible`);
+                    } else {
+                      showError('Failed to run diagnostic');
+                    }
+                  } catch (error) {
+                    console.error('Diagnostic error:', error);
+                    showError('Error running diagnostic');
+                  } finally {
+                    setDiagnosticLoading(false);
+                  }
+                }}
+                disabled={diagnosticLoading}
+                className="py-2 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 transition-colors font-medium disabled:opacity-50"
+              >
+                {diagnosticLoading ? '🔄 Running...' : '🔍 Run Diagnostic'}
+              </button>
+              
+              <button
+                onClick={async () => {
+                  if (!confirm('Fix all businesses to be visible in customer app?\n\nThis will set all businesses to active with paid subscription status.')) {
+                    return;
+                  }
+                  
+                  setDiagnosticLoading(true);
+                  try {
+                    const response = await fetch(
+                      `https://${projectId}.supabase.co/functions/v1/make-server-175b2872/admin/fix-all-businesses`,
+                      {
+                        method: 'POST',
+                        headers: {
+                          'Authorization': `Bearer ${publicAnonKey}`
+                        }
+                      }
+                    );
+                    
+                    if (response.ok) {
+                      const data = await response.json();
+                      showSuccess(data.message);
+                      
+                      // Run diagnostic again to show updated status
+                      const diagResponse = await fetch(
+                        `https://${projectId}.supabase.co/functions/v1/make-server-175b2872/admin/diagnose-businesses`,
+                        {
+                          headers: {
+                            'Authorization': `Bearer ${publicAnonKey}`
+                          }
+                        }
+                      );
+                      
+                      if (diagResponse.ok) {
+                        const diagData = await diagResponse.json();
+                        setDiagnosticData(diagData);
+                      }
+                      
+                      // Refresh businesses list
+                      fetchAdminData();
+                    } else {
+                      showError('Failed to fix businesses');
+                    }
+                  } catch (error) {
+                    console.error('Fix error:', error);
+                    showError('Error fixing businesses');
+                  } finally {
+                    setDiagnosticLoading(false);
+                  }
+                }}
+                disabled={diagnosticLoading}
+                className="py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium disabled:opacity-50"
+              >
+                {diagnosticLoading ? '🔄 Fixing...' : '✅ Fix All Businesses'}
+              </button>
+            </div>
+          </div>
+
+          <div className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg p-4 border border-purple-200">
+            <div className="flex items-start gap-4">
+              <div className="flex-1">
+                <h4 className="font-semibold text-gray-900 mb-1">🌱 Seed Test Database</h4>
+                <p className="text-sm text-gray-700 mb-2">
+                  Generate comprehensive test data for performance testing and ML/data brokerage:
+                </p>
+                <ul className="text-xs text-gray-600 space-y-1 mb-3">
+                  <li>• 100 Businesses (restaurants & hotels across 9 SA cities)</li>
+                  <li>• 500 Customers with behavior profiles</li>
+                  <li>• 2,000 Reviews with ratings</li>
+                  <li>• 1,500 Reservations (past & future)</li>
+                  <li>• 1,000 Menu items, 100 Specials, 50 Events</li>
+                  <li>• 30 Affiliates with commissions</li>
+                  <li>• 100+ Financial transactions & 30 expenses</li>
+                  <li>• 1,000 Behavior logs for ML training</li>
+                </ul>
+                <p className="text-xs text-orange-600 font-medium">
+                  ⚠️ This will add ~6,000 records. Seeding takes 20-40 seconds.
+                </p>
+              </div>
+            </div>
+            
+            <button
+              onClick={async () => {
+                if (!confirm('⚠️ SEED DATABASE\n\nThis will create:\n• 100 businesses\n• 500 customers\n• 2,000 reviews\n• 1,500 reservations\n• Plus menu items, specials, events, and financial data\n\nTotal: ~6,000 records\n\nThis will take 20-40 seconds. Continue?')) {
+                  return;
+                }
+
+                setSeedingProgress({ isSeeding: true, message: 'Starting seed process...' });
+
+                // Auto-timeout after 90 seconds
+                const timeoutId = setTimeout(() => {
+                  setSeedingProgress(null);
+                  alert('⏱️ Seed timeout - please check server logs and refresh the page');
+                }, 90000);
+
+                try {
+                  console.log('🌱 Starting database seed...');
+                  
+                  const response = await fetch(
+                    `https://${projectId}.supabase.co/functions/v1/make-server-175b2872/seed`,
+                    {
+                      method: 'POST',
+                      headers: {
+                        'Authorization': `Bearer ${publicAnonKey}`
+                      }
+                    }
+                  );
+
+                  clearTimeout(timeoutId);
+
+                  if (response.ok) {
+                    const data = await response.json();
+                    console.log('✅ Seed completed:', data);
+                    
+                    // Close modal immediately
+                    setSeedingProgress(null);
+                    
+                    // Show success message with toast instead of alert
+                    showSuccess(
+                      `Database seeded successfully! ${data.stats?.businesses || 0} businesses, ` +
+                      `${data.stats?.customers || 0} customers, ${data.stats?.reviews || 0} reviews, ` +
+                      `${data.stats?.reservations || 0} reservations created. Total: ${data.performance?.total_records || 0} records in ${data.performance?.duration_seconds || 0}s`
+                    );
+                    
+                    // Log detailed stats to console for reference
+                    console.log('📊 Seeding Statistics:', {
+                      businesses: data.stats?.businesses || 0,
+                      customers: data.stats?.customers || 0,
+                      reviews: data.stats?.reviews || 0,
+                      reservations: data.stats?.reservations || 0,
+                      menu_items: data.stats?.menu_items || 0,
+                      specials: data.stats?.specials || 0,
+                      events: data.stats?.events || 0,
+                      affiliates: data.stats?.affiliates || 0,
+                      commissions: data.stats?.commissions || 0,
+                      transactions: data.stats?.transactions || 0,
+                      expenses: data.stats?.expenses || 0,
+                      behavior_logs: data.stats?.behavior_logs || 0,
+                      total: data.performance?.total_records || 0,
+                      duration: data.performance?.duration_seconds || 0
+                    });
+                    
+                    // Refresh dashboard
+                    fetchAdminData();
+                  } else if (response.status === 429) {
+                    setSeedingProgress(null);
+                    const error = await response.json();
+                    console.warn('⚠️ Seeding already in progress:', error);
+                    showError('Seeding is already in progress. Please wait for it to complete.');
+                  } else {
+                    setSeedingProgress(null);
+                    const error = await response.json();
+                    console.error('❌ Seed failed:', error);
+                    showError(`Seeding failed: ${error.error || error.message || 'Unknown error'}`);
+                  }
+                } catch (error) {
+                  clearTimeout(timeoutId);
+                  setSeedingProgress(null);
+                  console.error('❌ Seed error:', error);
+                  showError(`Error during seeding: ${error}`);
+                }
+              }}
+              disabled={seedingProgress?.isSeeding}
+              className="w-full mt-4 py-3 bg-gradient-to-r from-purple-500 to-pink-600 text-white rounded-lg hover:shadow-lg transition-all font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {seedingProgress?.isSeeding ? (
+                <span className="flex items-center justify-center gap-2">
+                  <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Seeding...
+                </span>
+              ) : (
+                '🌱 Seed Test Database'
+              )}
+            </button>
+          </div>
+
+          <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
+            <h4 className="font-semibold text-blue-900 mb-1">📊 Current Database Size</h4>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3 text-sm">
+              <div>
+                <p className="text-blue-700 font-medium">Businesses</p>
+                <p className="text-2xl font-bold text-blue-900">{businesses.length}</p>
+              </div>
+              <div>
+                <p className="text-blue-700 font-medium">Affiliates</p>
+                <p className="text-2xl font-bold text-blue-900">{affiliates.length}</p>
+              </div>
+              <div>
+                <p className="text-blue-700 font-medium">Commissions</p>
+                <p className="text-2xl font-bold text-blue-900">{commissions.length}</p>
+              </div>
+              <div>
+                <p className="text-blue-700 font-medium">Expenses</p>
+                <p className="text-2xl font-bold text-blue-900">{expenses.length}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 
@@ -1320,13 +2384,21 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
   const renderBusinessDetailsModal = () => {
     if (!selectedBusiness) return null;
 
+    const isEditing = editingBusiness?.id === selectedBusiness.id;
+
     return (
-      <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50" onClick={() => setSelectedBusiness(null)}>
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50" onClick={() => {
+        setSelectedBusiness(null);
+        setEditingBusiness(null);
+      }}>
         <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
           <div className="p-6 border-b border-gray-200">
             <div className="flex items-center justify-between">
               <h2 className="text-2xl font-bold">{selectedBusiness.name}</h2>
-              <button onClick={() => setSelectedBusiness(null)} className="p-2 hover:bg-gray-100 rounded-lg">
+              <button onClick={() => {
+                setSelectedBusiness(null);
+                setEditingBusiness(null);
+              }} className="p-2 hover:bg-gray-100 rounded-lg">
                 <XCircle className="w-6 h-6" />
               </button>
             </div>
@@ -1344,7 +2416,21 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
               </div>
               <div>
                 <p className="text-sm text-gray-600 mb-1">Type</p>
-                <p className="font-medium">{selectedBusiness.type}</p>
+                {isEditing ? (
+                  <select
+                    value={editingBusiness.type || ''}
+                    onChange={(e) => setEditingBusiness({ ...editingBusiness, type: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500"
+                  >
+                    <option value="">Select Type</option>
+                    <option value="restaurant">Restaurant</option>
+                    <option value="hotel">Hotel</option>
+                    <option value="bar">Bar</option>
+                    <option value="cafe">Cafe</option>
+                  </select>
+                ) : (
+                  <p className="font-medium">{selectedBusiness.type || <span className="text-red-500">Not Set</span>}</p>
+                )}
               </div>
               <div>
                 <p className="text-sm text-gray-600 mb-1">City</p>
@@ -1379,18 +2465,47 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
             </div>
 
             <div className="flex gap-3 pt-4">
-              <button
-                onClick={() => handleViewFullProfile(selectedBusiness)}
-                className="flex-1 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 text-white rounded-lg hover:shadow-lg transition-all"
-              >
-                View Full Profile
-              </button>
-              <button 
-                onClick={() => handleToggleBusinessStatus(selectedBusiness.id, selectedBusiness.is_active)}
-                className="flex-1 py-2 border-2 border-gray-300 rounded-lg hover:bg-gray-50 transition-all"
-              >
-                {selectedBusiness.is_active ? 'Deactivate' : 'Activate'}
-              </button>
+              {isEditing ? (
+                <>
+                  <button
+                    onClick={() => {
+                      handleUpdateBusinessDetails(selectedBusiness.id, {
+                        type: editingBusiness.type
+                      });
+                    }}
+                    className="flex-1 py-2 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-lg hover:shadow-lg transition-all"
+                  >
+                    Save Changes
+                  </button>
+                  <button 
+                    onClick={() => setEditingBusiness(null)}
+                    className="flex-1 py-2 border-2 border-gray-300 rounded-lg hover:bg-gray-50 transition-all"
+                  >
+                    Cancel
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    onClick={() => setEditingBusiness(selectedBusiness)}
+                    className="flex-1 py-2 bg-gradient-to-r from-purple-500 to-purple-600 text-white rounded-lg hover:shadow-lg transition-all"
+                  >
+                    Edit Business
+                  </button>
+                  <button
+                    onClick={() => handleViewFullProfile(selectedBusiness)}
+                    className="flex-1 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 text-white rounded-lg hover:shadow-lg transition-all"
+                  >
+                    View Full Profile
+                  </button>
+                  <button 
+                    onClick={() => handleToggleBusinessStatus(selectedBusiness.id, selectedBusiness.is_active)}
+                    className="flex-1 py-2 border-2 border-gray-300 rounded-lg hover:bg-gray-50 transition-all"
+                  >
+                    {selectedBusiness.is_active ? 'Deactivate' : 'Activate'}
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -1620,8 +2735,417 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
     );
   };
 
+  // Manual Payment Modal
+  const renderManualPaymentModal = () => {
+    if (!showManualPaymentModal || !manualPaymentBusiness) return null;
+
+    const monthlyFee = platformSettings.monthly_subscription_fee || 499;
+    const totalAmount = monthlyFee * parseInt(paymentForm.months_paid || '1');
+
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-xl max-w-lg w-full p-6">
+          <h3 className="text-2xl font-bold mb-2">Record Manual Payment</h3>
+          <p className="text-gray-600 mb-6">{manualPaymentBusiness.name}</p>
+
+          <form onSubmit={handleManualPaymentSubmit} className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Number of Months</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="36"
+                  value={paymentForm.months_paid}
+                  onChange={(e) => {
+                    setPaymentForm({ ...paymentForm, months_paid: e.target.value, amount: (monthlyFee * parseInt(e.target.value || '1')).toString() });
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Payment Method</label>
+                <select
+                  value={paymentForm.payment_method}
+                  onChange={(e) => setPaymentForm({ ...paymentForm, payment_method: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500"
+                  required
+                >
+                  <option value="EFT">EFT</option>
+                  <option value="Cash">Cash</option>
+                  <option value="Card">Card</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Amount (R)</label>
+              <input
+                type="number"
+                step="0.01"
+                value={paymentForm.amount}
+                onChange={(e) => setPaymentForm({ ...paymentForm, amount: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500"
+                placeholder={`Suggested: R${totalAmount.toFixed(2)}`}
+                required
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Monthly fee: R{monthlyFee} × {paymentForm.months_paid} months = R{totalAmount.toFixed(2)}
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Reference/Transaction ID</label>
+              <input
+                type="text"
+                value={paymentForm.reference}
+                onChange={(e) => setPaymentForm({ ...paymentForm, reference: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500"
+                placeholder="Bank reference or transaction ID"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Payment Date</label>
+              <input
+                type="date"
+                value={paymentForm.payment_date}
+                onChange={(e) => setPaymentForm({ ...paymentForm, payment_date: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500"
+                required
+              />
+            </div>
+
+            {manualPaymentBusiness.referred_by && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <p className="text-sm font-medium text-blue-900">Affiliate Commission</p>
+                <p className="text-xs text-blue-700 mt-1">
+                  This business was referred by an affiliate. 
+                  {parseInt(paymentForm.months_paid)} commission(s) of R{((monthlyFee * 10) / 100).toFixed(2)} each will be generated.
+                </p>
+              </div>
+            )}
+
+            <div className="flex gap-3 pt-4">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowManualPaymentModal(false);
+                  setManualPaymentBusiness(null);
+                  setPaymentForm({
+                    months_paid: '1',
+                    payment_method: 'EFT',
+                    amount: '',
+                    reference: '',
+                    payment_date: new Date().toISOString().split('T')[0]
+                  });
+                }}
+                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+                disabled={submittingPayment}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="flex-1 px-4 py-2 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-lg hover:shadow-lg disabled:opacity-50 font-medium"
+                disabled={submittingPayment}
+              >
+                {submittingPayment ? 'Recording...' : 'Record Payment'}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
+  };
+
+  // Override Visibility Modal
+  const renderOverrideModal = () => {
+    if (!showOverrideModal || !overrideBusinessId) return null;
+
+    const business = businesses.find(b => b.id === overrideBusinessId);
+    if (!business) return null;
+
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-xl max-w-lg w-full p-6">
+          <h3 className="text-2xl font-bold mb-2">Override Visibility Settings</h3>
+          <p className="text-gray-600 mb-1">{business.name}</p>
+          <p className="text-sm text-gray-500 mb-6">Give this business a "break" by manually controlling their visibility</p>
+
+          <div className="space-y-4">
+            {/* Active Status */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Active Status</label>
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setOverrideForm({ ...overrideForm, is_active: true })}
+                  className={`flex-1 px-4 py-2 rounded-lg border-2 transition-all ${
+                    overrideForm.is_active
+                      ? 'border-green-500 bg-green-50 text-green-700 font-medium'
+                      : 'border-gray-300 hover:border-gray-400'
+                  }`}
+                >
+                  ✓ Active
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOverrideForm({ ...overrideForm, is_active: false })}
+                  className={`flex-1 px-4 py-2 rounded-lg border-2 transition-all ${
+                    !overrideForm.is_active
+                      ? 'border-red-500 bg-red-50 text-red-700 font-medium'
+                      : 'border-gray-300 hover:border-gray-400'
+                  }`}
+                >
+                  ✗ Inactive
+                </button>
+              </div>
+            </div>
+
+            {/* Payment Status */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Payment Status</label>
+              <select
+                value={overrideForm.payment_status}
+                onChange={(e) => setOverrideForm({ ...overrideForm, payment_status: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+              >
+                <option value="paid">Paid</option>
+                <option value="unpaid">Unpaid</option>
+                <option value="grace">Grace Period</option>
+                <option value="overdue">Overdue</option>
+              </select>
+            </div>
+
+            {/* Subscription Status */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Subscription Status</label>
+              <select
+                value={overrideForm.subscription_status}
+                onChange={(e) => setOverrideForm({ ...overrideForm, subscription_status: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+              >
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+                <option value="grace">Grace Period</option>
+                <option value="suspended">Suspended</option>
+                <option value="cancelled">Cancelled</option>
+              </select>
+            </div>
+
+            {/* Info Box */}
+            <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+              <p className="text-sm text-purple-800">
+                <strong>Note:</strong> These settings override the normal business visibility rules. 
+                Use "Grace Period" to give businesses extra time while they're still visible in the customer app.
+              </p>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowOverrideModal(false);
+                  setOverrideBusinessId(null);
+                }}
+                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+                disabled={submittingOverride}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleOverrideVisibility}
+                className="flex-1 px-4 py-2 bg-gradient-to-r from-purple-500 to-purple-600 text-white rounded-lg hover:shadow-lg disabled:opacity-50 font-medium"
+                disabled={submittingOverride}
+              >
+                {submittingOverride ? 'Saving...' : 'Save Override'}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Ledger View
+  const renderLedger = () => (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h2 className="text-2xl font-bold">Transaction Ledger</h2>
+        <button
+          onClick={() => {
+            const csv = [
+              ['Date', 'Type', 'Category', 'Description', 'Debit', 'Credit', 'Balance'],
+              ...ledger.map((t: any) => [
+                new Date(t.date || t.created_at).toLocaleDateString('en-ZA'),
+                t.type,
+                t.category || '',
+                t.description || t.business_name || t.affiliate_name || '',
+                t.type === 'revenue' ? '' : t.amount.toFixed(2),
+                t.type === 'revenue' ? t.amount.toFixed(2) : '',
+                t.balance.toFixed(2)
+              ])
+            ].map(row => row.join(',')).join('\n');
+            
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `ledger-${new Date().toISOString().split('T')[0]}.csv`;
+            a.click();
+          }}
+          className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 text-white rounded-lg hover:shadow-lg flex items-center gap-2"
+        >
+          <Download className="w-4 h-4" />
+          Export Ledger
+        </button>
+      </div>
+
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div className="bg-green-50 border border-green-200 rounded-xl p-6">
+          <h3 className="text-sm text-green-700 font-medium mb-1">Total Revenue</h3>
+          <p className="text-2xl font-bold text-green-900">R{ledgerSummary.total_revenue.toFixed(2)}</p>
+        </div>
+        <div className="bg-orange-50 border border-orange-200 rounded-xl p-6">
+          <h3 className="text-sm text-orange-700 font-medium mb-1">Total Payouts</h3>
+          <p className="text-2xl font-bold text-orange-900">R{ledgerSummary.total_payouts.toFixed(2)}</p>
+        </div>
+        <div className="bg-purple-50 border border-purple-200 rounded-xl p-6">
+          <h3 className="text-sm text-purple-700 font-medium mb-1">Total Expenses</h3>
+          <p className="text-2xl font-bold text-purple-900">R{ledgerSummary.total_expenses.toFixed(2)}</p>
+        </div>
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-6">
+          <h3 className="text-sm text-blue-700 font-medium mb-1">Current Balance</h3>
+          <p className="text-2xl font-bold text-blue-900">R{ledgerSummary.current_balance.toFixed(2)}</p>
+        </div>
+      </div>
+
+      {/* Ledger Table */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-gray-50 border-b border-gray-200">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Category</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
+                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Debit</th>
+                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Credit</th>
+                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Balance</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200">
+              {ledger.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-6 py-12 text-center text-gray-500">
+                    No transactions yet
+                  </td>
+                </tr>
+              ) : (
+                ledger.map((transaction: any) => (
+                  <tr key={transaction.id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 text-sm text-gray-900">
+                      {new Date(transaction.date || transaction.created_at).toLocaleDateString('en-ZA', {
+                        day: 'numeric',
+                        month: 'short',
+                        year: 'numeric'
+                      })}
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                        transaction.type === 'revenue' ? 'bg-green-100 text-green-700' :
+                        transaction.type === 'payout' ? 'bg-orange-100 text-orange-700' :
+                        'bg-purple-100 text-purple-700'
+                      }`}>
+                        {transaction.type}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-600 capitalize">{transaction.category}</td>
+                    <td className="px-6 py-4 text-sm text-gray-900">
+                      {transaction.description || transaction.business_name || transaction.affiliate_name || '—'}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-right font-medium text-red-600">
+                      {transaction.type !== 'revenue' ? `R${transaction.amount.toFixed(2)}` : '—'}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-right font-medium text-green-600">
+                      {transaction.type === 'revenue' ? `R${transaction.amount.toFixed(2)}` : '—'}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-right font-bold text-gray-900">
+                      R{transaction.balance.toFixed(2)}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+
+  // Seeding Progress Modal
+  const renderSeedingModal = () => {
+    if (!seedingProgress) return null;
+
+    return (
+      <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-[100]">
+        <div className="bg-white rounded-2xl max-w-md w-full p-8 shadow-2xl">
+          <div className="text-center">
+            <div className="mb-6">
+              <svg className="animate-spin h-16 w-16 mx-auto text-purple-600" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+            </div>
+            
+            <h3 className="text-2xl font-bold text-gray-900 mb-2">Seeding Database</h3>
+            <p className="text-gray-600 mb-6">{seedingProgress.message}</p>
+            
+            <div className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg p-4 border border-purple-200">
+              <p className="text-sm text-gray-700 mb-2">This process creates:</p>
+              <div className="grid grid-cols-2 gap-2 text-xs text-gray-600">
+                <div>✓ 100 Businesses</div>
+                <div>✓ 500 Customers</div>
+                <div>✓ 2,000 Reviews</div>
+                <div>✓ 1,500 Reservations</div>
+                <div>✓ 1,000 Menu Items</div>
+                <div>✓ 100 Specials</div>
+                <div>✓ 50 Events</div>
+                <div>✓ 30 Affiliates</div>
+                <div>✓ Commissions</div>
+                <div>✓ 100+ Transactions</div>
+                <div>✓ 30 Expenses</div>
+                <div>✓ 1,000 Behavior Logs</div>
+              </div>
+              <p className="text-xs text-purple-600 font-semibold mt-3">Total: ~6,000 records</p>
+            </div>
+            
+            <p className="text-sm text-gray-500 mt-4">⏱️ Estimated time: 20-40 seconds</p>
+            
+            <button
+              onClick={() => setSeedingProgress(null)}
+              className="mt-6 px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm font-medium transition-colors"
+            >
+              Cancel / Close
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
+      {renderSeedingModal()}
+      
       {/* Header */}
       <header className="bg-gradient-to-r from-cyan-500 via-blue-500 to-blue-600 text-white">
         <div className="max-w-7xl mx-auto px-4 py-6">
@@ -1715,6 +3239,18 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
               </button>
               
               <button
+                onClick={() => setCurrentSection('ledger')}
+                className={`w-full flex items-center gap-3 px-6 py-4 transition-colors ${
+                  currentSection === 'ledger'
+                    ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white'
+                    : 'text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                <BookOpen className="w-5 h-5" />
+                Transaction Ledger
+              </button>
+              
+              <button
                 onClick={() => setCurrentSection('settings')}
                 className={`w-full flex items-center gap-3 px-6 py-4 transition-colors ${
                   currentSection === 'settings'
@@ -1782,6 +3318,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
             {currentSection === 'businesses' && renderBusinesses()}
             {currentSection === 'payments' && renderPayments()}
             {currentSection === 'reconciliation' && renderReconciliation()}
+            {currentSection === 'ledger' && renderLedger()}
             {currentSection === 'settings' && renderSettings()}
             {currentSection === 'ml-insights' && <MLInsightsDashboard stats={stats} businesses={businesses} />}
             {currentSection === 'ads' && <AdminAdsManagement />}
@@ -1799,6 +3336,15 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
 
       {/* Business Details Modal */}
       {renderBusinessDetailsModal()}
+      
+      {/* Manual Payment Modal */}
+      {renderManualPaymentModal()}
+      
+      {/* Override Visibility Modal */}
+      {renderOverrideModal()}
+      
+      {/* Toast Notifications */}
+      {toast && <Toast message={toast.message} type={toast.type} onClose={hideToast} />}
     </div>
   );
 };

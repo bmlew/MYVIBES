@@ -632,6 +632,7 @@ const seedAffiliates = [
 ];
 
 export async function seedDatabase() {
+  const startTime = Date.now();
   try {
     console.log('🌱 Starting database seeding...');
     
@@ -758,6 +759,118 @@ export async function seedDatabase() {
       console.log(`  ✓ Added rating trend for: ${ratingTrend.month}`);
     }
     
+    // Seed commissions based on affiliate referrals
+    console.log('💰 Seeding commissions...');
+    const seedCommissions = [
+      {
+        id: 'comm001',
+        affiliate_id: 'AFF001',
+        affiliate_name: 'John Marketing',
+        business_id: 'palms',
+        business_name: 'The Palms',
+        amount: 49.90,
+        commission_percentage: 10,
+        status: 'paid',
+        created_at: '2025-12-15T00:00:00Z',
+        paid_at: '2026-01-05T00:00:00Z'
+      },
+      {
+        id: 'comm002',
+        affiliate_id: 'AFF001',
+        business_id: 'ocean-basket',
+        business_name: 'Ocean Basket',
+        affiliate_name: 'John Marketing',
+        amount: 49.90,
+        commission_percentage: 10,
+        status: 'paid',
+        created_at: '2025-12-20T00:00:00Z',
+        paid_at: '2026-01-05T00:00:00Z'
+      },
+      {
+        id: 'comm003',
+        affiliate_id: 'AFF002',
+        business_id: 'marble',
+        business_name: 'Marble Restaurant',
+        affiliate_name: 'Sarah Business Solutions',
+        amount: 49.90,
+        commission_percentage: 10,
+        status: 'pending',
+        created_at: '2026-01-10T00:00:00Z'
+      },
+      {
+        id: 'comm004',
+        affiliate_id: 'AFF002',
+        business_id: 'col-cacchio',
+        business_name: "Col'Cacchio Pizzeria",
+        affiliate_name: 'Sarah Business Solutions',
+        amount: 49.90,
+        commission_percentage: 10,
+        status: 'paid',
+        created_at: '2025-11-25T00:00:00Z',
+        paid_at: '2025-12-10T00:00:00Z'
+      }
+    ];
+    
+    for (const commission of seedCommissions) {
+      await kv.set(`commission:${commission.id}`, commission);
+      console.log(`  ✓ Added commission ${commission.id} for ${commission.affiliate_name}`);
+    }
+    
+    // Seed expenses
+    console.log('💸 Seeding expenses...');
+    const seedExpenses = [
+      {
+        id: 'expense001',
+        category: 'marketing',
+        amount: 2500.00,
+        description: 'Facebook & Google Ads - January Campaign',
+        date: '2026-01-10',
+        receipt_url: '',
+        created_at: '2026-01-10T00:00:00Z'
+      },
+      {
+        id: 'expense002',
+        category: 'software',
+        amount: 1200.00,
+        description: 'Supabase Pro Plan - Monthly',
+        date: '2026-01-05',
+        receipt_url: '',
+        created_at: '2026-01-05T00:00:00Z'
+      },
+      {
+        id: 'expense003',
+        category: 'operations',
+        amount: 850.00,
+        description: 'Customer Support Tools',
+        date: '2026-01-08',
+        receipt_url: '',
+        created_at: '2026-01-08T00:00:00Z'
+      },
+      {
+        id: 'expense004',
+        category: 'marketing',
+        amount: 3200.00,
+        description: 'Instagram & TikTok Influencer Campaign',
+        date: '2026-01-12',
+        receipt_url: '',
+        created_at: '2026-01-12T00:00:00Z'
+      },
+      {
+        id: 'expense005',
+        category: 'infrastructure',
+        amount: 1500.00,
+        description: 'AWS Hosting & CDN',
+        date: '2026-01-15',
+        receipt_url: '',
+        created_at: '2026-01-15T00:00:00Z'
+      }
+    ];
+    
+    for (const expense of seedExpenses) {
+      await kv.set(`expense:${expense.id}`, expense);
+      console.log(`  ✓ Added expense: ${expense.description} - R${expense.amount}`);
+    }
+    
     // Store metadata
     await kv.set('seed:metadata', {
       seeded_at: new Date().toISOString(),
@@ -770,13 +883,23 @@ export async function seedDatabase() {
       popular_times_count: seedPopularTimes.length,
       cuisine_stats_count: seedCuisineStats.length,
       demographics_count: seedDemographics.length,
-      rating_trends_count: seedRatingTrends.length
+      rating_trends_count: seedRatingTrends.length,
+      affiliates_count: seedAffiliates.length,
+      commissions_count: seedCommissions.length,
+      expenses_count: seedExpenses.length
     });
+    
+    const endTime = Date.now();
+    const durationSeconds = ((endTime - startTime) / 1000).toFixed(1);
+    const totalRecords = seedBusinesses.length + seedSpecials.length + seedEvents.length + 
+                        seedMenuItems.length + seedReviews.length + seedAnalytics.length + 
+                        seedPopularTimes.length + seedCuisineStats.length + seedDemographics.length + 
+                        seedRatingTrends.length;
     
     console.log('✅ Database seeding completed successfully!');
     return {
       success: true,
-      counts: {
+      stats: {
         businesses: seedBusinesses.length,
         specials: seedSpecials.length,
         events: seedEvents.length,
@@ -786,7 +909,19 @@ export async function seedDatabase() {
         popular_times: seedPopularTimes.length,
         cuisine_stats: seedCuisineStats.length,
         demographics: seedDemographics.length,
-        rating_trends: seedRatingTrends.length
+        rating_trends: seedRatingTrends.length,
+        customers: 0,
+        reservations: 0,
+        affiliates: seedAffiliates.length,
+        commissions: seedCommissions.length,
+        transactions: 0,
+        expenses: seedExpenses.length,
+        behavior_logs: 0
+      },
+      performance: {
+        total_records: totalRecords,
+        duration_seconds: durationSeconds,
+        records_per_second: Math.round(totalRecords / parseFloat(durationSeconds))
       }
     };
   } catch (error) {

@@ -116,10 +116,10 @@ export async function getBusinesses(lat?: number, lng?: number) {
   const queryString = params.toString();
   
   try {
-    const response = await apiCall(`/kv/businesses${queryString ? `?${queryString}` : ''}`);
+    const response = await apiCall(`/businesses${queryString ? `?${queryString}` : ''}`);
     
-    // Handle paginated response format (new) or array format (old)
-    const data = response.data ? response.data : response;
+    // Handle paginated response format (new Postgres API)
+    const data = response.businesses ? response.businesses : response;
     
     // Cache successful response
     saveToCache(STORAGE_KEYS.BUSINESSES, data);
@@ -135,13 +135,28 @@ export async function getBusinesses(lat?: number, lng?: number) {
 
 // Get business by ID with offline support
 export async function getBusinessById(id: string, forceRefresh: boolean = false) {
+  // Validate ID before making any calls
+  if (!id || id === 'undefined' || id === 'null') {
+    console.error('❌ Invalid business ID (empty or null):', id);
+    return null;
+  }
+  
+  // Reject special IDs or malformed IDs
+  if (id.startsWith('special-') || id.startsWith('special:')) {
+    console.error('❌ Invalid business ID (special ID detected):', id);
+    console.warn('⚠️ Cannot fetch business with a special ID');
+    return null;
+  }
+  
   const cacheKey = `${STORAGE_KEYS.BUSINESSES}_${id}`;
   
   // If force refresh, skip cache and fetch fresh data
   if (forceRefresh) {
     console.log(`🔄 Force refreshing business data for: ${id}`);
     try {
-      const data = await apiCall(`/kv/businesses/${id}`);
+      // Add timestamp to URL to bypass browser/CDN cache
+      const timestamp = new Date().getTime();
+      const data = await apiCall(`/businesses/${id}?_=${timestamp}`);
       saveToCache(cacheKey, data);
       console.log(`✅ Successfully refreshed business: ${data.business?.name || id}`);
       return data;
@@ -153,7 +168,9 @@ export async function getBusinessById(id: string, forceRefresh: boolean = false)
   
   try {
     console.log(`🔍 Fetching business with ID: ${id}`);
-    const data = await apiCall(`/kv/businesses/${id}`);
+    // Add timestamp to URL to bypass stale cache
+    const timestamp = new Date().getTime();
+    const data = await apiCall(`/businesses/${id}?_=${timestamp}`);
     // Cache individual business data
     saveToCache(cacheKey, data);
     console.log(`✅ Successfully fetched business: ${data.business?.name || id}`);
@@ -175,8 +192,8 @@ export async function getBusinessById(id: string, forceRefresh: boolean = false)
 // Get all specials with offline support
 export async function getSpecials() {
   try {
-    const data = await apiCall('/kv/specials');
-    const specials = data.specials || [];
+    const data = await apiCall('/specials');
+    const specials = data.specials || data.data || [];
     saveToCache(STORAGE_KEYS.SPECIALS, specials);
     updateLastSync();
     return specials;
@@ -190,8 +207,8 @@ export async function getSpecials() {
 // Get all events with offline support
 export async function getEvents() {
   try {
-    const data = await apiCall('/kv/events');
-    const events = data.events || [];
+    const data = await apiCall('/events');
+    const events = data.events || data.data || [];
     saveToCache(STORAGE_KEYS.EVENTS, events);
     updateLastSync();
     return events;
@@ -204,17 +221,19 @@ export async function getEvents() {
 
 // Get AI recommendations with offline support
 export async function getRecommendations(lat?: number, lng?: number, useAdvanced: boolean = false) {
-  const params = new URLSearchParams();
-  if (lat) params.append('lat', lat.toString());
-  if (lng) params.append('lng', lng.toString());
-  if (useAdvanced) params.append('advanced', 'true'); // Advanced AI opt-in (disabled by default to prevent timeouts)
-  
-  const queryString = params.toString();
-  
   try {
-    const data = await apiCall(`/kv/recommendations${queryString ? `?${queryString}` : ''}`);
-    saveToCache(STORAGE_KEYS.RECOMMENDATIONS, data);
-    return data;
+    const data = await apiCall('/kv/recommendations', {
+      method: 'POST',
+      body: JSON.stringify({
+        lat,
+        lng,
+        timeOfDay: new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 17 ? 'afternoon' : 'evening'
+      })
+    });
+    // Extract recommendations array from response
+    const recommendations = data.recommendations || [];
+    saveToCache(STORAGE_KEYS.RECOMMENDATIONS, recommendations);
+    return recommendations;
   } catch (error) {
     console.warn('API call failed, using cached recommendations data');
     const cachedData = getFromCache(STORAGE_KEYS.RECOMMENDATIONS);
@@ -536,7 +555,11 @@ export async function trackBusinessView(businessId: string) {
     });
     console.log('✅ View tracked:', businessId);
   } catch (error) {
-    console.error('Failed to track view:', error);
+    // Silently fail - analytics tracking should not break user experience
+    // Only log in development
+    if (process.env.NODE_ENV === 'development') {
+      console.debug('Analytics tracking unavailable:', error);
+    }
   }
 }
 
@@ -554,7 +577,11 @@ export async function trackAdClick(businessId: string, clickType: string, userEm
     });
     console.log('✅ Click tracked:', businessId);
   } catch (error) {
-    console.error('Failed to track click:', error);
+    // Silently fail - analytics tracking should not break user experience
+    // Only log in development
+    if (process.env.NODE_ENV === 'development') {
+      console.debug('Analytics tracking unavailable:', error);
+    }
   }
 }
 
@@ -633,5 +660,46 @@ export async function cancelReservation(reservationId: string, userEmail: string
   } catch (error) {
     console.error('Failed to cancel reservation:', error);
     return false;
+  }
+}
+
+// ============================================
+// ADMIN BUSINESS DIAGNOSTIC & FIX API
+// ============================================
+
+// Diagnose business visibility issues
+export async function diagnoseBusinesses() {
+  try {
+    const data = await apiCall('/admin/diagnose-businesses');
+    return data;
+  } catch (error) {
+    console.error('Failed to diagnose businesses:', error);
+    return null;
+  }
+}
+
+// Fix a specific business visibility
+export async function fixBusinessVisibility(businessId: string) {
+  try {
+    const response = await apiCall(`/admin/fix-business-visibility/${businessId}`, {
+      method: 'POST'
+    });
+    return response;
+  } catch (error) {
+    console.error('Failed to fix business visibility:', error);
+    return null;
+  }
+}
+
+// Fix all businesses visibility (bulk fix)
+export async function fixAllBusinesses() {
+  try {
+    const response = await apiCall('/admin/fix-all-businesses', {
+      method: 'POST'
+    });
+    return response;
+  } catch (error) {
+    console.error('Failed to fix all businesses:', error);
+    return null;
   }
 }

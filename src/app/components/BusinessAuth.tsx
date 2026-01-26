@@ -33,7 +33,8 @@ export function BusinessAuth({ onAuthSuccess }: BusinessAuthProps) {
     city: '',
     password: '',
     confirmPassword: '',
-    affiliate_code: ''
+    affiliate_code: '',
+    plan: 'standard' // Add plan field with default
   });
 
   // Forgot Password Form
@@ -139,7 +140,8 @@ export function BusinessAuth({ onAuthSuccess }: BusinessAuthProps) {
             address: registerData.address,
             city: registerData.city,
             password: registerData.password,
-            affiliate_code: registerData.affiliate_code
+            affiliate_code: registerData.affiliate_code,
+            plan: registerData.plan
           })
         }
       );
@@ -162,7 +164,8 @@ export function BusinessAuth({ onAuthSuccess }: BusinessAuthProps) {
           city: '',
           password: '',
           confirmPassword: '',
-          affiliate_code: ''
+          affiliate_code: '',
+          plan: 'standard'
         });
       } else {
         const error = await response.json();
@@ -517,6 +520,70 @@ export function BusinessAuth({ onAuthSuccess }: BusinessAuthProps) {
                         <option key={city} value={city}>{city}</option>
                       ))}
                     </select>
+                  </div>
+
+                  {/* Plan Selection */}
+                  <div>
+                    <Label className="mb-3 block">Choose Your Plan *</Label>
+                    <div className="grid grid-cols-2 gap-4">
+                      {/* Standard Plan */}
+                      <div
+                        onClick={() => setRegisterData({ ...registerData, plan: 'standard' })}
+                        className={`relative p-4 border-2 rounded-lg cursor-pointer transition-all ${
+                          registerData.plan === 'standard'
+                            ? 'border-cyan-500 bg-cyan-50 shadow-md'
+                            : 'border-gray-200 hover:border-cyan-300'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <h4 className="font-bold text-lg">Standard</h4>
+                          {registerData.plan === 'standard' && (
+                            <div className="w-5 h-5 bg-cyan-500 rounded-full flex items-center justify-center">
+                              <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"/>
+                              </svg>
+                            </div>
+                          )}
+                        </div>
+                        <div className="text-2xl font-bold text-cyan-600 mb-2">R499<span className="text-sm text-gray-500">/mo</span></div>
+                        <ul className="text-xs text-gray-600 space-y-1">
+                          <li>✓ Basic Analytics</li>
+                          <li>✓ Menu Management</li>
+                          <li>✓ Customer Reviews</li>
+                        </ul>
+                      </div>
+
+                      {/* Premium Plan */}
+                      <div
+                        onClick={() => setRegisterData({ ...registerData, plan: 'premium' })}
+                        className={`relative p-4 border-2 rounded-lg cursor-pointer transition-all ${
+                          registerData.plan === 'premium'
+                            ? 'border-purple-500 bg-purple-50 shadow-md'
+                            : 'border-gray-200 hover:border-purple-300'
+                        }`}
+                      >
+                        <div className="absolute -top-2 -right-2 bg-purple-500 text-white text-xs px-2 py-1 rounded-full font-bold">
+                          POPULAR
+                        </div>
+                        <div className="flex items-center justify-between mb-2">
+                          <h4 className="font-bold text-lg">Premium</h4>
+                          {registerData.plan === 'premium' && (
+                            <div className="w-5 h-5 bg-purple-500 rounded-full flex items-center justify-center">
+                              <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"/>
+                              </svg>
+                            </div>
+                          )}
+                        </div>
+                        <div className="text-2xl font-bold text-purple-600 mb-2">R999<span className="text-sm text-gray-500">/mo</span></div>
+                        <ul className="text-xs text-gray-600 space-y-1">
+                          <li>✓ AI-Powered Insights</li>
+                          <li>✓ Priority Placement</li>
+                          <li>✓ Advanced Analytics</li>
+                          <li>✓ Everything in Standard</li>
+                        </ul>
+                      </div>
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">

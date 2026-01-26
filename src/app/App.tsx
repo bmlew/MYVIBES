@@ -2,16 +2,15 @@ import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { InstallPrompt } from './components/InstallPrompt';
 import { OfflineBanner } from './components/OfflineBanner';
 import { clearInvalidBusinessCache } from '@/utils/offlineStorage';
+import '@/utils/fix-businesses'; // Import fix utilities for browser console
 
 // Lazy load heavy components for better initial load performance with retry logic
 const CustomerApp = lazy(() => 
   import('./CustomerApp')
-    .then(m => ({ default: m.CustomerApp }))
     .catch(err => {
       console.error('Error loading CustomerApp:', err);
       // Retry after short delay
-      return new Promise(resolve => setTimeout(() => resolve(import('./CustomerApp')), 1000))
-        .then((m: any) => ({ default: m.CustomerApp }));
+      return new Promise(resolve => setTimeout(() => resolve(import('./CustomerApp')), 1000));
     })
 );
 const BusinessDashboard = lazy(() => import('./BusinessDashboard').then(m => ({ default: m.BusinessDashboard })));

@@ -38,6 +38,9 @@ import { PremiumCarousel } from './components/PremiumCarousel';
 import { NotificationCenter } from './components/NotificationCenter';
 import { MyReservations } from './components/MyReservations';
 
+// Constants
+const PLACEHOLDER_IMAGE = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="150" height="150"%3E%3Crect width="150" height="150" fill="%23e5e7eb"/%3E%3C/svg%3E';
+
 type View = 'home' | 'search' | 'events' | 'favorites' | 'profile' | 'venue-detail' | 'notifications' | 'reservations';
 
 interface UserLocation {
@@ -156,14 +159,51 @@ export function CustomerApp() {
   const filteredBusinesses = useMemo(() => {
     let result = businesses;
 
+    // Debug logging
+    console.log('🔍 DEBUG - Total businesses loaded:', businesses.length);
+    console.log('🔍 DEBUG - All business names:', businesses.map(b => b.name));
+
     // Apply search filter
     if (debouncedSearchQuery) {
       const query = debouncedSearchQuery.toLowerCase();
-      result = result.filter(b => 
-        b.name.toLowerCase().includes(query) ||
-        b.description?.toLowerCase().includes(query) ||
-        b.cuisine_types?.some(c => c.toLowerCase().includes(query))
-      );
+      console.log('🔍 DEBUG - Searching for:', query);
+      
+      result = result.filter(b => {
+        // Debug: Log business data for first result
+        if (businesses.indexOf(b) === 0) {
+          console.log('🔍 DEBUG - Sample business data:', {
+            name: b.name,
+            description: b.description,
+            cuisine_types: b.cuisine_types,
+            city: b.city,
+            business_type: b.business_type
+          });
+        }
+        
+        const nameMatch = b.name.toLowerCase().includes(query);
+        const descMatch = b.description?.toLowerCase().includes(query);
+        const cuisineMatch = b.cuisine_types?.some(c => c.toLowerCase().includes(query));
+        const cityMatch = b.city?.toLowerCase().includes(query);
+        const typeMatch = b.business_type?.toLowerCase().includes(query);
+        
+        if (nameMatch || descMatch || cuisineMatch || cityMatch || typeMatch) {
+          console.log('✅ Match found:', b.name, '- Matched on:', {
+            name: nameMatch,
+            desc: descMatch,
+            cuisine: cuisineMatch,
+            city: cityMatch,
+            type: typeMatch
+          });
+        }
+        
+        return nameMatch || descMatch || cuisineMatch || cityMatch || typeMatch;
+      });
+      
+      console.log('🔍 DEBUG - Search results count:', result.length);
+      console.log('🔍 DEBUG - Search results:', result.map(b => b.name));
+      
+      // When searching, don't apply distance filter to show all matching results
+      return result;
     }
 
     // Apply cuisine filter
@@ -183,7 +223,7 @@ export function CustomerApp() {
       return priceValue >= minPrice && priceValue <= maxPrice;
     });
 
-    // Apply distance filter
+    // Apply distance filter only when not searching
     if (userLocation && appliedFilters.distance) {
       result = result.filter(b => {
         const distance = calculateDistance(
@@ -250,6 +290,13 @@ export function CustomerApp() {
       return;
     }
     
+    // Reject special IDs or malformed IDs that start with "special-"
+    if (venueId.startsWith('special-') || venueId.startsWith('special:')) {
+      console.error('❌ Invalid business ID (special ID detected):', venueId);
+      console.warn('⚠️ This appears to be a special ID, not a business ID. Skipping navigation.');
+      return;
+    }
+    
     console.log(`📍 Opening venue detail for: ${venueId}`);
     setSelectedVenueId(venueId);
     setCurrentView('venue-detail');
@@ -286,7 +333,22 @@ export function CustomerApp() {
 
   // Handle carousel item click (memoized to prevent infinite loops)
   const handleCarouselItemClick = useCallback(async (item: any) => {
-    const businessId = item.business?.id || item.business_id;
+    // ALWAYS prioritize item.business_id over item.business?.id to avoid special ID issues
+    const businessId = item.business_id || item.business?.id;
+    
+    // Validate businessId before proceeding
+    if (!businessId) {
+      console.error('❌ No business ID found in carousel item:', item);
+      return;
+    }
+    
+    // Reject special IDs or malformed IDs
+    if (businessId.startsWith('special-') || businessId.startsWith('special:')) {
+      console.error('❌ Invalid business ID in carousel (special ID detected):', businessId);
+      console.warn('⚠️ Item data:', item);
+      return;
+    }
+    
     if (businessId) {
       // Track the click for analytics
       await api.trackAdClick(
@@ -759,11 +821,22 @@ export function CustomerApp() {
     }> = [];
 
     // Add top 3 specials with highest discount or view count
+    // Filter out specials with invalid business IDs
     const topSpecials = [...specials]
+      .filter(special => {
+        const businessId = special.business_id || special.business?.id;
+        const isValid = businessId && 
+                       !businessId.startsWith('special-') && 
+                       !businessId.startsWith('special:');
+        if (!isValid) {
+          console.warn('⚠️ Skipping special with invalid business_id:', businessId, special);
+        }
+        return isValid;
+      })
       .sort((a, b) => (b.discount_percentage || 0) - (a.discount_percentage || 0))
       .slice(0, 3)
       .map(special => ({
-        id: special.id || `special-${special.business_id}-${special.title}`,
+        id: special.id || `special-temp-${special.business_id}-${Date.now()}`,
         business_id: special.business_id,
         title: special.title,
         description: special.description,
@@ -776,9 +849,19 @@ export function CustomerApp() {
       }));
 
     // Add top 2 upcoming events (string comparison to avoid loops)
+    // Filter out events with invalid business IDs
     const topEvents = [...events]
-      .filter(event => event.event_date >= todayString)
-      .sort((a, b) => a.event_date.localeCompare(b.event_date))
+      .filter(event => {
+        const businessId = event.business_id || event.business?.id;
+        const isValid = businessId && 
+                       !businessId.startsWith('special-') && 
+                       !businessId.startsWith('special:');
+        if (!isValid) {
+          console.warn('⚠️ Skipping event with invalid business_id:', businessId, event);
+        }
+        return isValid && event.event_date && event.event_date >= todayString;
+      })
+      .sort((a, b) => (a.event_date || '').localeCompare(b.event_date || ''))
       .slice(0, 2)
       .map(event => ({
         id: event.id || `event-${event.business_id}-${event.title}`,
@@ -1136,27 +1219,34 @@ export function CustomerApp() {
                   ) : (
                     <div className="flex gap-3 overflow-x-auto mb-6 pb-2 scrollbar-hide">
                       {todaysSpecials.map(special => {
-                        // Use the business object's ID if available, fallback to business_id
-                        const businessId = special.business?.id || special.business_id;
+                        // ALWAYS prioritize business_id field to avoid special ID issues
+                        const businessId = special.business_id || special.business?.id;
+                        
+                        // Validate business ID
+                        const isValidBusinessId = businessId && 
+                          !businessId.startsWith('special-') && 
+                          !businessId.startsWith('special:');
                         
                         return (
                           <div 
-                            key={special.id || `special-${special.business_id}-${special.title}`} 
+                            key={special.id || `special-today-${special.business_id}-${special.title}-${Date.now()}`} 
                             onClick={() => {
-                              if (businessId) {
-                                // Increment view count if special has a real ID (not a placeholder)
-                                if (special.id && !special.id.startsWith('special-') && !special.id.startsWith('special:')) {
-                                  incrementSpecialViewCount(special.id);
-                                }
-                                openVenueDetail(businessId);
-                              } else {
-                                console.error('No valid business ID found for special:', special);
+                              if (!isValidBusinessId) {
+                                console.error('❌ Invalid business ID for special:', businessId);
+                                console.warn('⚠️ Special data:', special);
+                                return;
                               }
-                            }} 
+                              
+                              // Increment view count if special has a real ID (not a placeholder)
+                              if (special.id && !special.id.startsWith('special-') && !special.id.startsWith('special:')) {
+                                incrementSpecialViewCount(special.id);
+                              }
+                              openVenueDetail(businessId);
+                            }}
                             className="cursor-pointer flex-shrink-0 w-40"
                           >
                             <SpecialCard 
-                              image={special.image_url || 'https://via.placeholder.com/150'}
+                              image={special.image_url || PLACEHOLDER_IMAGE}
                               title={special.title}
                               venue={special.business?.name || 'Unknown Venue'}
                               endTime={special.time_end || 'N/A'}
@@ -1177,7 +1267,7 @@ export function CustomerApp() {
                       <p className="text-gray-500 text-sm">No venues found nearby</p>
                     </div>
                   ) : (
-                    <div className="flex gap-3 overflow-x-auto mb-6 pb-2 scrollbar-hide">
+                    <div className="flex gap-3 overflow-x-auto mb-8 pb-4 scrollbar-hide">
                       {nearbyBusinesses.map(business => {
                         return (
                           <div key={business.id} onClick={async () => {
@@ -1185,7 +1275,7 @@ export function CustomerApp() {
                             openVenueDetail(business.id);
                           }} className="cursor-pointer flex-shrink-0 w-24">
                             <VenueCard 
-                              image={business.cover_image_url || 'https://via.placeholder.com/150'}
+                              image={business.cover_image_url || PLACEHOLDER_IMAGE}
                               name={business.name}
                               logo={business.logo_url || business.name.charAt(0).toUpperCase()}
                               distance={getVenueDistance(business.id)}
@@ -1197,7 +1287,7 @@ export function CustomerApp() {
                   )}
 
                   {/* AI Recommendations Section - Moved to Bottom */}
-                  <div className="mb-4">
+                  <div className="mt-4 mb-6">
                     <AIRecommendations 
                       userLocation={memoizedAILocation}
                       onVenueClick={openVenueDetail}
@@ -1307,7 +1397,7 @@ export function CustomerApp() {
                                 className="bg-white rounded-lg p-3 flex items-center gap-3 cursor-pointer hover:bg-gray-50"
                               >
                                 <img 
-                                  src={business.logo_url || business.cover_image_url || 'https://via.placeholder.com/50'} 
+                                  src={business.logo_url || business.cover_image_url || PLACEHOLDER_IMAGE} 
                                   alt={business.name}
                                   className="w-12 h-12 rounded-lg object-cover"
                                 />
@@ -1339,23 +1429,33 @@ export function CustomerApp() {
                           </h4>
                           <div className="space-y-2">
                             {filteredSpecials.slice(0, 5).map(special => {
-                              const businessId = special.business?.id || special.business_id;
+                              const businessId = special.business_id || special.business?.id;
+                              
+                              // Validate business ID
+                              const isValidBusinessId = businessId && 
+                                !businessId.startsWith('special-') && 
+                                !businessId.startsWith('special:');
+                              
                               return (
                                 <div
-                                  key={special.id || `special-${special.business_id}-${special.title}`}
+                                  key={special.id || `special-browse-${special.business_id}-${special.title}-${Date.now()}`}
                                   onClick={() => {
-                                    if (businessId) {
-                                      // Increment view count if special has a real ID (not a placeholder)
-                                      if (special.id && !special.id.startsWith('special-') && !special.id.startsWith('special:')) {
-                                        incrementSpecialViewCount(special.id);
-                                      }
-                                      openVenueDetail(businessId);
+                                    if (!isValidBusinessId) {
+                                      console.error('❌ Invalid business ID for special:', businessId);
+                                      console.warn('⚠️ Special data:', special);
+                                      return;
                                     }
+                                    
+                                    // Increment view count if special has a real ID (not a placeholder)
+                                    if (special.id && !special.id.startsWith('special-') && !special.id.startsWith('special:')) {
+                                      incrementSpecialViewCount(special.id);
+                                    }
+                                    openVenueDetail(businessId);
                                   }}
                                   className="bg-white rounded-lg p-3 flex items-center gap-3 cursor-pointer hover:bg-gray-50"
                                 >
                                   <img 
-                                    src={special.image_url || 'https://via.placeholder.com/50'} 
+                                    src={special.image_url || PLACEHOLDER_IMAGE} 
                                     alt={special.title}
                                     className="w-12 h-12 rounded-lg object-cover"
                                   />
@@ -1876,3 +1976,5 @@ export function CustomerApp() {
     </div>
   );
 }
+
+export default CustomerApp;

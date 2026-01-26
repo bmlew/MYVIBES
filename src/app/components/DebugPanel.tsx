@@ -77,6 +77,10 @@ export function DebugPanel({ businessCount, onRefresh }: DebugPanelProps) {
         clearCacheAndRefresh();
         
         alert('Database re-seeded successfully with new logos! Refreshing app...');
+      } else if (response.status === 429) {
+        const error = await response.json();
+        console.warn('⚠️ Seeding already in progress:', error);
+        alert('Seeding is already in progress. Please wait for it to complete.');
       } else {
         const error = await response.text();
         console.error('❌ Re-seed failed:', error);

@@ -13,6 +13,7 @@ interface Business {
   longitude: number;
   cover_image_url?: string;
   logo_url?: string;
+  business_type?: string;
   cuisine_types?: string[];
   price_range: string;
   opening_hours?: Record<string, string>;
@@ -102,6 +103,14 @@ export function BusinessProfileChecklist({
     },
     
     // Medium Priority - Important for Customer Experience
+    {
+      label: 'Establishment Type',
+      status: business.business_type ? 'complete' : 'incomplete',
+      description: business.business_type
+        ? `Type: ${business.business_type.charAt(0).toUpperCase() + business.business_type.slice(1).replace('-', ' ')} ✓`
+        : 'Select your establishment type in Settings',
+      priority: 'medium'
+    },
     {
       label: 'Menu Items',
       status: menuItems.length >= 5 ? 'complete' : 

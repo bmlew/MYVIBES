@@ -267,33 +267,33 @@ export function BusinessRegistration({ onBack, onRegistrationComplete }: Busines
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Business Type *
+                  Establishment Type *
                 </label>
-                <div className="grid grid-cols-2 gap-4">
-                  <button
-                    type="button"
-                    onClick={() => handleInputChange('businessType', 'restaurant')}
-                    className={`p-4 border-2 rounded-lg text-center transition-all ${
-                      formData.businessType === 'restaurant'
-                        ? 'border-purple-600 bg-purple-50 text-purple-600'
-                        : 'border-gray-200 hover:border-purple-300'
-                    }`}
-                  >
-                    <Building2 className="w-8 h-8 mx-auto mb-2" />
-                    <div className="font-medium">Restaurant</div>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleInputChange('businessType', 'hotel')}
-                    className={`p-4 border-2 rounded-lg text-center transition-all ${
-                      formData.businessType === 'hotel'
-                        ? 'border-purple-600 bg-purple-50 text-purple-600'
-                        : 'border-gray-200 hover:border-purple-300'
-                    }`}
-                  >
-                    <Building2 className="w-8 h-8 mx-auto mb-2" />
-                    <div className="font-medium">Hotel</div>
-                  </button>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {[
+                    { value: 'restaurant', icon: '🍽️', label: 'Restaurant' },
+                    { value: 'hotel', icon: '🏨', label: 'Hotel' },
+                    { value: 'bar', icon: '🍺', label: 'Bar' },
+                    { value: 'cafe', icon: '☕', label: 'Café' },
+                    { value: 'lounge', icon: '🛋️', label: 'Lounge' },
+                    { value: 'fast-food', icon: '🍔', label: 'Fast Food' },
+                    { value: 'bakery', icon: '🥖', label: 'Bakery' },
+                    { value: 'food-truck', icon: '🚚', label: 'Food Truck' },
+                  ].map((type) => (
+                    <button
+                      key={type.value}
+                      type="button"
+                      onClick={() => handleInputChange('businessType', type.value)}
+                      className={`p-3 border-2 rounded-lg text-center transition-all ${
+                        formData.businessType === type.value
+                          ? 'border-purple-600 bg-purple-50 text-purple-600'
+                          : 'border-gray-200 hover:border-purple-300'
+                      }`}
+                    >
+                      <div className="text-2xl mb-1">{type.icon}</div>
+                      <div className="font-medium text-sm">{type.label}</div>
+                    </button>
+                  ))}
                 </div>
               </div>
 

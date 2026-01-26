@@ -10,11 +10,14 @@ interface OptimizedImageProps {
   priority?: boolean;
 }
 
+// Default fallback placeholder image as data URI (gray square)
+const DEFAULT_FALLBACK = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="150" height="150"%3E%3Crect width="150" height="150" fill="%23e5e7eb"/%3E%3C/svg%3E';
+
 export function OptimizedImage({ 
   src, 
   alt, 
   className = '', 
-  fallbackSrc,
+  fallbackSrc = DEFAULT_FALLBACK,
   width,
   height,
   priority = false
@@ -25,6 +28,14 @@ export function OptimizedImage({
   const imgRef = useRef<HTMLImageElement>(null);
 
   useEffect(() => {
+    // Block known problematic URLs and replace with fallback
+    if (src.includes('placeholder.com')) {
+      console.warn('⚠️ Blocked placeholder.com URL, using fallback');
+      setImageSrc(fallbackSrc);
+      setIsLoading(false);
+      return;
+    }
+
     // Skip lazy loading for priority images
     if (priority) {
       setImageSrc(src);

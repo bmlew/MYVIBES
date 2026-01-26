@@ -219,6 +219,7 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
     logo_url: '',
     cover_image_url: '',
     city: 'Johannesburg',
+    business_type: 'restaurant',
     age_group: 'all-ages',
     age_groups: [] as string[],
     cuisine_types: [] as string[],
@@ -239,7 +240,7 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
   const [coverFile, setCoverFile] = useState<File | null>(null);
   const [uploadingCover, setUploadingCover] = useState(false);
   const [geocoding, setGeocoding] = useState(false);
-  const [coordinates, setCoordinates] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [coordinates, setCoordinates] = useState<{ latitude: number; longitude: number; formatted_address?: string } | null>(null);
   const [showProfileChecklist, setShowProfileChecklist] = useState(false);
   const [hasLoadedSettings, setHasLoadedSettings] = useState(false);
   
@@ -340,6 +341,7 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
             logo_url: business.logo_url || '',
             cover_image_url: business.cover_image_url || '',
             city: business.city || 'Johannesburg',
+            business_type: business.business_type || 'restaurant',
             latitude: business.latitude || 0,
             longitude: business.longitude || 0,
             opening_hours: business.opening_hours || DEFAULT_OPENING_HOURS,
@@ -1032,6 +1034,11 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
       );
 
       if (response.ok) {
+        // Clear business cache to force fresh data fetch by customer app
+        const cacheKey = `vibespot_cache_businesses_${businessId}`;
+        localStorage.removeItem(cacheKey);
+        console.log(`✅ Cleared cache for business: ${businessId}`);
+        
         alert('Menu item added successfully!');
         
         // Refresh menu items
@@ -1087,6 +1094,12 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
       );
 
       if (response.ok) {
+        // Clear business cache to force fresh data fetch by customer app
+        const businessId = localStorage.getItem('business_id') || 'palms';
+        const cacheKey = `vibespot_cache_businesses_${businessId}`;
+        localStorage.removeItem(cacheKey);
+        console.log(`✅ Cleared cache for business: ${businessId}`);
+        
         alert('Menu item deleted successfully!');
         
         // Refresh menu items
@@ -1300,6 +1313,12 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
       );
 
       if (response.ok) {
+        // Clear business cache to force fresh data fetch by customer app
+        const businessId = localStorage.getItem('business_id') || 'palms';
+        const cacheKey = `vibespot_cache_businesses_${businessId}`;
+        localStorage.removeItem(cacheKey);
+        console.log(`✅ Cleared cache for business: ${businessId}`);
+        
         alert('Menu item updated successfully!');
         
         // Refresh menu items
@@ -1367,6 +1386,11 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
       );
 
       if (response.ok) {
+        // Clear business cache to force fresh data fetch by customer app
+        const cacheKey = `vibespot_cache_businesses_${businessId}`;
+        localStorage.removeItem(cacheKey);
+        console.log(`✅ Cleared cache for business: ${businessId}`);
+        
         // Update local state
         setMenuItems(menuItems.map(i => 
           i.id === item.id ? { ...i, is_available: newStatus } : i
@@ -1868,6 +1892,11 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
 
     setGeocoding(true);
     try {
+      console.log('🗺️ Frontend: Geocoding request:', {
+        address: settingsFormData.address,
+        city: settingsFormData.city
+      });
+      
       const response = await fetch(
         `https://${projectId}.supabase.co/functions/v1/make-server-175b2872/geocode`,
         {
@@ -1884,11 +1913,16 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
         }
       );
 
+      console.log('📡 Frontend: Geocoding response status:', response.status);
+
       if (response.ok) {
         const data = await response.json();
+        console.log('✅ Frontend: Geocoding data received:', data);
+        
         const newCoordinates = {
           latitude: data.latitude,
-          longitude: data.longitude
+          longitude: data.longitude,
+          formatted_address: data.formatted_address
         };
         
         setCoordinates(newCoordinates);
@@ -1918,16 +1952,20 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
         );
         
         if (updateResponse.ok) {
-          showSuccess(`Coordinates found and saved: ${data.latitude.toFixed(6)}, ${data.longitude.toFixed(6)}`);
+          const successMsg = data.formatted_address 
+            ? `Coordinates found and saved!\n${data.formatted_address}\n(${data.latitude.toFixed(6)}, ${data.longitude.toFixed(6)})`
+            : `Coordinates found and saved: ${data.latitude.toFixed(6)}, ${data.longitude.toFixed(6)}`;
+          showSuccess(successMsg);
         } else {
           showError('Coordinates found but failed to save to business profile');
         }
       } else {
         const error = await response.json();
-        showError(error.error || 'Failed to geocode address');
+        console.error('❌ Frontend: Geocoding error:', error);
+        showError(error.error || error.details || 'Failed to geocode address');
       }
     } catch (error) {
-      console.error('Error geocoding address:', error);
+      console.error('💥 Frontend: Error geocoding address:', error);
       showError('Network error while geocoding address');
     } finally {
       setGeocoding(false);
@@ -2009,6 +2047,7 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
         opening_hours: settingsFormData.opening_hours,
         avg_price_min: settingsFormData.avg_price_min || 0,
         avg_price_max: settingsFormData.avg_price_max || 0,
+        business_type: (settingsFormData as any).business_type || 'restaurant',
         cuisine_types: (settingsFormData as any).cuisine_types || [],
         age_groups: (settingsFormData as any).age_groups || []
       };
@@ -4436,10 +4475,12 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
         {/* Settings */}
         {currentView === 'settings' && (
           <div className="space-y-6">
-            {/* Business Profile: Cuisine & Age Group */}
+            {/* Business Profile: Establishment Type, Cuisine & Age Group */}
             <BusinessProfileSettings
+              establishmentType={(settingsFormData as any).business_type || 'restaurant'}
               cuisineTypes={(settingsFormData as any).cuisine_types || []}
               ageGroups={(settingsFormData as any).age_groups || []}
+              onEstablishmentTypeChange={(type) => setSettingsFormData({ ...settingsFormData, business_type: type } as any)}
               onCuisineTypesChange={(cuisines) => setSettingsFormData({ ...settingsFormData, cuisine_types: cuisines } as any)}
               onAgeGroupsChange={(ageGroups) => setSettingsFormData({ ...settingsFormData, age_groups: ageGroups } as any)}
             />
@@ -4693,7 +4734,9 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
                     id="business-address" 
                     value={settingsFormData.address}
                     onChange={(e) => setSettingsFormData({ ...settingsFormData, address: e.target.value })}
+                    placeholder="e.g., Fourways Mall, Montecasino Boulevard"
                   />
+                  <p className="text-xs text-gray-500 mt-1">💡 Tip: Use specific landmarks or street names for best results</p>
                 </div>
                 <div>
                   <Label htmlFor="business-city">City</Label>
@@ -4701,6 +4744,7 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
                     id="business-city" 
                     value={settingsFormData.city}
                     onChange={(e) => setSettingsFormData({ ...settingsFormData, city: e.target.value })}
+                    placeholder="e.g., Sandton"
                   />
                 </div>
                 <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
@@ -4722,13 +4766,21 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
                     </Button>
                   </div>
                   {(coordinates || (settingsFormData.latitude !== 0 && settingsFormData.longitude !== 0)) && (
-                    <div className="bg-white p-3 rounded border border-blue-300 space-y-1">
-                      <p className="text-xs text-gray-600">
-                        <span className="font-semibold">Latitude:</span> {(coordinates?.latitude || settingsFormData.latitude).toFixed(6)}
-                      </p>
-                      <p className="text-xs text-gray-600">
-                        <span className="font-semibold">Longitude:</span> {(coordinates?.longitude || settingsFormData.longitude).toFixed(6)}
-                      </p>
+                    <div className="bg-white p-3 rounded border border-blue-300 space-y-2">
+                      {coordinates?.formatted_address && (
+                        <div className="pb-2 border-b border-gray-200">
+                          <p className="text-xs font-semibold text-gray-700 mb-1">📍 Found Location:</p>
+                          <p className="text-xs text-gray-900">{coordinates.formatted_address}</p>
+                        </div>
+                      )}
+                      <div className="space-y-1">
+                        <p className="text-xs text-gray-600">
+                          <span className="font-semibold">Latitude:</span> {(coordinates?.latitude || settingsFormData.latitude).toFixed(6)}
+                        </p>
+                        <p className="text-xs text-gray-600">
+                          <span className="font-semibold">Longitude:</span> {(coordinates?.longitude || settingsFormData.longitude).toFixed(6)}
+                        </p>
+                      </div>
                       <p className="text-xs text-green-600 mt-2">✓ Coordinates will be saved when you click "Save Settings"</p>
                     </div>
                   )}
@@ -4826,7 +4878,7 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
                           <div className="flex items-center gap-2 flex-1">
                             <Input
                               type="time"
-                              value={dayData.open}
+                              value={dayData.open || ''}
                               onChange={(e) => setSettingsFormData({
                                 ...settingsFormData,
                                 opening_hours: {
@@ -4843,7 +4895,7 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
                             <span className="text-sm text-gray-500">to</span>
                             <Input
                               type="time"
-                              value={dayData.close}
+                              value={dayData.close || ''}
                               onChange={(e) => setSettingsFormData({
                                 ...settingsFormData,
                                 opening_hours: {
@@ -4860,7 +4912,7 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
                             <label className="flex items-center gap-2 ml-auto">
                               <input
                                 type="checkbox"
-                                checked={dayData.closed}
+                                checked={dayData.closed || false}
                                 onChange={(e) => setSettingsFormData({
                                   ...settingsFormData,
                                   opening_hours: {

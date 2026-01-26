@@ -5,15 +5,19 @@ import { Card } from '@/app/components/ui/card';
 import { Plus, X } from 'lucide-react';
 
 interface BusinessProfileSettingsProps {
+  establishmentType: string;
   cuisineTypes: string[];
   ageGroups: string[]; // Changed to array for multiple selection
+  onEstablishmentTypeChange: (type: string) => void;
   onCuisineTypesChange: (cuisines: string[]) => void;
   onAgeGroupsChange: (ageGroups: string[]) => void; // Changed to array
 }
 
 export function BusinessProfileSettings({ 
+  establishmentType,
   cuisineTypes, 
   ageGroups, 
+  onEstablishmentTypeChange,
   onCuisineTypesChange, 
   onAgeGroupsChange 
 }: BusinessProfileSettingsProps) {
@@ -94,8 +98,65 @@ export function BusinessProfileSettings({
   const selectedPredefined = safeCuisineTypes.filter(c => predefinedCuisines.includes(c));
   const customCuisines = safeCuisineTypes.filter(c => !predefinedCuisines.includes(c));
 
+  const establishmentTypes = [
+    { value: 'restaurant', icon: '🍽️', label: 'Restaurant' },
+    { value: 'hotel', icon: '🏨', label: 'Hotel' },
+    { value: 'bar', icon: '🍺', label: 'Bar' },
+    { value: 'cafe', icon: '☕', label: 'Café' },
+    { value: 'lounge', icon: '🛋️', label: 'Lounge' },
+    { value: 'fast-food', icon: '🍔', label: 'Fast Food' },
+    { value: 'bakery', icon: '🥖', label: 'Bakery' },
+    { value: 'food-truck', icon: '🚚', label: 'Food Truck' },
+  ];
+
   return (
     <div className="space-y-6">
+      {/* Establishment Type Section */}
+      <Card className="p-6 border-2 border-purple-200 bg-gradient-to-br from-white to-purple-50">
+        <div className="mb-4">
+          <Label className="text-lg font-bold text-gray-900 mb-2 block">
+            🏢 Establishment Type
+          </Label>
+          <p className="text-sm text-gray-600">
+            Select the type that best describes your establishment.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+          {establishmentTypes.map((type) => {
+            const isSelected = establishmentType === type.value;
+            return (
+              <button
+                key={type.value}
+                type="button"
+                onClick={() => onEstablishmentTypeChange(type.value)}
+                className={`
+                  p-4 rounded-xl border-2 text-center transition-all
+                  ${isSelected
+                    ? 'border-purple-600 bg-purple-600 text-white shadow-lg transform scale-105'
+                    : 'border-gray-300 bg-white text-gray-700 hover:border-purple-400 hover:bg-purple-50'
+                  }
+                `}
+              >
+                <div className="text-3xl mb-2">{type.icon}</div>
+                <div className={`text-sm font-semibold ${isSelected ? 'text-white' : 'text-gray-900'}`}>
+                  {type.label}
+                  {isSelected && ' ✓'}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        {establishmentType && (
+          <div className="mt-4 p-3 bg-purple-100 border border-purple-300 rounded-lg">
+            <p className="text-sm font-semibold text-purple-900">
+              Selected: {establishmentTypes.find(t => t.value === establishmentType)?.label || establishmentType}
+            </p>
+          </div>
+        )}
+      </Card>
+
       {/* Cuisine Types Section */}
       <Card className="p-6 border-2 border-cyan-200 bg-gradient-to-br from-white to-cyan-50">
         <div className="mb-4">

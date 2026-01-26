@@ -1,4 +1,4 @@
-import { ArrowLeft, MapPin, Clock, Star, Heart, Share2, Phone, Navigation, Loader2 } from 'lucide-react';
+import { ArrowLeft, MapPin, Clock, Star, Heart, Share2, Phone, Navigation, Loader2, RefreshCw } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Button } from './ui/button';
 import { SpecialCard } from './SpecialCard';
@@ -82,43 +82,65 @@ export function VenueDetail({ venueId, onBack, onReserve, onGetDirections, dista
   const [error, setError] = useState<string | null>(null);
   const [showPhoneModal, setShowPhoneModal] = useState(false);
   const [eventInterests, setEventInterests] = useState<Record<string, 'interested' | 'going' | null>>({});
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const fetchVenueData = async (forceRefresh: boolean = false) => {
+    try {
+      if (forceRefresh) {
+        setIsRefreshing(true);
+      } else {
+        setLoading(true);
+      }
+      
+      const data = await api.getBusinessById(venueId, true); // Always force refresh to get latest data
+      
+      if (data && data.business) {
+        setVenueData(data);
+        setError(null);
+        
+        // Track the view for analytics
+        api.trackBusinessView(data.business.id).catch(() => {
+          // Silently ignore tracking failures
+        });
+        
+        if (onVenueDataLoaded) {
+          onVenueDataLoaded(data.business);
+        }
+      } else if (data) {
+        console.error(`[VenueDetail] Invalid data structure:`, data);
+        setError('Invalid venue data received');
+      } else {
+        console.error(`[VenueDetail] No data received for venue: ${venueId}`);
+        setError('Venue not found');
+      }
+    } catch (err) {
+      console.error(`[VenueDetail] Error fetching venue ${venueId}:`, err);
+      setError('Failed to load venue details. Please try again.');
+    } finally {
+      setLoading(false);
+      setIsRefreshing(false);
+    }
+  };
 
   useEffect(() => {
-    async function fetchVenueData() {
-      try {
-        setLoading(true);
-        
-        const data = await api.getBusinessById(venueId, true);
-        
-        if (data && data.business) {
-          setVenueData(data);
-          setError(null);
-          
-          // Track the view for analytics
-          api.trackBusinessView(data.business.id).catch(() => {
-            // Silently ignore tracking failures
-          });
-          
-          if (onVenueDataLoaded) {
-            onVenueDataLoaded(data.business);
-          }
-        } else if (data) {
-          console.error(`[VenueDetail] Invalid data structure:`, data);
-          setError('Invalid venue data received');
-        } else {
-          console.error(`[VenueDetail] No data received for venue: ${venueId}`);
-          setError('Venue not found');
-        }
-      } catch (err) {
-        console.error(`[VenueDetail] Error fetching venue ${venueId}:`, err);
-        setError('Failed to load venue details. Please try again.');
-      } finally {
-        setLoading(false);
-      }
-    }
-
     fetchVenueData();
   }, [venueId]); // Only depend on venueId to prevent infinite loop
+
+  // Auto-refresh when page regains focus (user comes back to the app)
+  useEffect(() => {
+    const handleFocus = () => {
+      console.log('🔄 Page regained focus, refreshing venue data...');
+      fetchVenueData(true);
+    };
+
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, [venueId]);
+
+  const handleManualRefresh = () => {
+    console.log('🔄 Manual refresh triggered');
+    fetchVenueData(true);
+  };
 
   if (loading) {
     return (
@@ -256,6 +278,16 @@ export function VenueDetail({ venueId, onBack, onReserve, onGetDirections, dista
           <ArrowLeft className="w-5 h-5" />
         </button>
         <div className="absolute top-4 right-4 flex gap-2">
+          <button 
+            onClick={handleManualRefresh}
+            disabled={isRefreshing}
+            className={`w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-105 ${
+              isRefreshing ? 'opacity-70' : ''
+            }`}
+            title="Refresh menu and details"
+          >
+            <RefreshCw className={`w-5 h-5 text-gray-600 ${isRefreshing ? 'animate-spin' : ''}`} />
+          </button>
           <button 
             onClick={(e) => {
               e.stopPropagation();
