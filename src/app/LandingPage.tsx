@@ -1,905 +1,490 @@
-import React, { useState, useEffect } from 'react';
-import { motion, useScroll, useTransform } from 'motion/react';
+import React, { useState, lazy, Suspense } from 'react';
 import { 
-  MapPin, Star, Calendar, TrendingUp, Users, Zap, 
-  Smartphone, Globe, Award, ChevronRight, Menu, X,
-  Check, ArrowRight, Sparkles, Target, BarChart3, Heart, Play, Presentation
+  ArrowRight, 
+  MapPin, 
+  Star, 
+  Users, 
+  ChefHat, 
+  TrendingUp, 
+  Smartphone, 
+  CheckCircle2, 
+  Menu, 
+  X,
+  Instagram,
+  Twitter,
+  Facebook,
+  Download
 } from 'lucide-react';
-import { Button } from '@/app/components/ui/button';
-import { Card } from '@/app/components/ui/card';
-import { PitchDeck } from '@/app/components/PitchDeck';
-import { SocialMediaAdsGallery } from '@/app/components/SocialMediaAdsGallery';
-import { CONFIG, formatPrice } from '@/config/platform';
+import { motion, AnimatePresence } from 'framer-motion';
+
+const SocialMediaAdsGallery = lazy(() => import('./components/SocialMediaAdsGallery'));
 
 interface LandingPageProps {
-  onTryDemo?: () => void;
-  onRegisterBusiness?: () => void;
-  onNavigate?: (page: 'faq' | 'popia' | 'disclaimers' | 'affiliate-portal') => void;
+  onTryDemo: () => void;
+  onRegisterBusiness: () => void;
+  onNavigate: (page: 'landing' | 'customer-app' | 'business-dashboard' | 'business-auth' | 'roi' | 'faq' | 'popia' | 'disclaimers' | 'affiliate-portal') => void;
 }
 
 export default function LandingPage({ onTryDemo, onRegisterBusiness, onNavigate }: LandingPageProps) {
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [showPitchDeck, setShowPitchDeck] = useState(false);
-  const { scrollY } = useScroll();
-  const headerOpacity = useTransform(scrollY, [0, 100], [0, 1]);
-
-  // Show demo switcher button
-  const handleDemoAccess = () => {
-    // You can customize this to switch to the customer app
-    window.dispatchEvent(new CustomEvent('switchToCustomerApp'));
-  };
-
-  // Smooth scroll to section
-  const scrollToSection = (sectionId: string) => {
-    const element = document.getElementById(sectionId);
-    if (element) {
-      const offsetTop = element.offsetTop - 80; // Account for fixed header
-      window.scrollTo({
-        top: offsetTop,
-        behavior: 'smooth'
-      });
-      setMobileMenuOpen(false); // Close mobile menu after clicking
-    }
-  };
-
-  useEffect(() => {
-    // Prevent scroll when mobile menu is open
-    if (mobileMenuOpen) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = 'unset';
-    }
-  }, [mobileMenuOpen]);
-
-  const features = [
-    {
-      icon: MapPin,
-      title: "Location-Based Discovery",
-      description: "Find the best restaurants and hotels near you in real-time with GPS-powered search"
-    },
-    {
-      icon: Calendar,
-      title: "Daily Specials & Events",
-      description: "Never miss out on special offers, events, and exclusive deals at your favorite spots"
-    },
-    {
-      icon: Star,
-      title: "AI-Powered Recommendations",
-      description: "Get personalized suggestions based on your preferences, time, and location"
-    },
-    {
-      icon: TrendingUp,
-      title: "Business Insights",
-      description: "Data-driven analytics to help businesses optimize posting times and engagement"
-    },
-    {
-      icon: Users,
-      title: "Ratings & Reviews",
-      description: "Authentic customer feedback with 5-star ratings and helpful voting system"
-    },
-    {
-      icon: Zap,
-      title: "Real-Time Updates",
-      description: "Instant notifications for new specials, events, and menu items from followed venues"
-    }
-  ];
-
-  const pricingFeatures = [
-    "Upload unlimited menu items",
-    "Post daily specials & events",
-    "Customer rating & review management",
-    "AI-powered business insights",
-    "Performance analytics dashboard",
-    "Premium placement in search results",
-    "Email & push notifications",
-    "24/7 customer support"
-  ];
-
-  const stats = [
-    { value: "10K+", label: "Active Users" },
-    { value: "500+", label: "Partner Venues" },
-    { value: "50K+", label: "Reviews Posted" },
-    { value: "4.8★", label: "Average Rating" }
-  ];
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   return (
-    <div className="min-h-screen bg-white overflow-x-hidden">
-      {/* Header */}
-      <header 
-        className="fixed top-0 w-full z-50 transition-all duration-300 bg-white/95 backdrop-blur-sm border-b border-gray-100"
-      >
+    <div className="min-h-screen bg-white font-sans text-slate-900 overflow-x-hidden">
+      
+      {/* Navigation */}
+      <nav className="fixed top-0 w-full z-50 bg-white/90 backdrop-blur-md border-b border-gray-100 transition-all duration-300">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16 sm:h-20">
+          <div className="flex justify-between items-center h-20">
             {/* Logo */}
-            <motion.div 
-              className="flex items-center gap-2 sm:gap-3"
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.6 }}
-            >
-              <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center shadow-lg">
-                <MapPin className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
+            <div className="flex items-center gap-2 cursor-pointer" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
+              <div className="w-10 h-10 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-xl flex items-center justify-center text-white font-bold text-xl shadow-lg shadow-cyan-500/20">
+                MV
               </div>
-              <span className="text-xl sm:text-2xl font-bold bg-gradient-to-r from-cyan-500 to-blue-600 bg-clip-text text-transparent">
-                MYVIBES
-              </span>
-            </motion.div>
+              <span className="text-xl font-bold tracking-tight">MYVIBES</span>
+            </div>
 
-            {/* Desktop Navigation */}
-            <nav className="hidden md:flex items-center gap-2">
-              <button 
-                onClick={() => scrollToSection('features')}
-                className="px-4 py-2 text-gray-700 hover:text-cyan-600 transition-colors font-medium rounded-lg hover:bg-gray-50 cursor-pointer"
-              >
-                Features
+            {/* Desktop Menu */}
+            <div className="hidden md:flex items-center gap-8">
+              <button onClick={() => onNavigate('affiliate-portal')} className="text-sm font-medium text-gray-600 hover:text-cyan-600 transition-colors">
+                Affiliates
+              </button>
+              <button onClick={() => onNavigate('faq')} className="text-sm font-medium text-gray-600 hover:text-cyan-600 transition-colors">
+                FAQ
               </button>
               <button 
-                onClick={() => scrollToSection('pricing')}
-                className="px-4 py-2 text-gray-700 hover:text-cyan-600 transition-colors font-medium rounded-lg hover:bg-gray-50 cursor-pointer"
-              >
-                Pricing
-              </button>
-              <button 
-                onClick={() => scrollToSection('how-it-works')}
-                className="px-4 py-2 text-gray-700 hover:text-cyan-600 transition-colors font-medium rounded-lg hover:bg-gray-50 cursor-pointer"
-              >
-                How It Works
-              </button>
-              <Button 
                 onClick={onRegisterBusiness}
-                className="ml-2 bg-gradient-to-r from-cyan-500 to-blue-600 text-white hover:from-cyan-600 hover:to-blue-700 shadow-md hover:shadow-xl transition-all px-6 cursor-pointer"
+                className="text-sm font-medium text-gray-900 hover:text-cyan-600 transition-colors"
               >
-                Get Started
-              </Button>
-            </nav>
+                For Business
+              </button>
+              <button 
+                onClick={onTryDemo}
+                className="bg-slate-900 text-white px-6 py-2.5 rounded-full font-medium text-sm hover:bg-slate-800 transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5 flex items-center gap-2"
+              >
+                Launch App <ArrowRight className="w-4 h-4" />
+              </button>
+            </div>
 
             {/* Mobile Menu Button */}
-            <button 
-              className="md:hidden p-2"
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            <div className="md:hidden">
+              <button 
+                onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+                className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Mobile Menu Overlay */}
+        <AnimatePresence>
+          {isMobileMenuOpen && (
+            <motion.div 
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="md:hidden bg-white border-t border-gray-100 overflow-hidden"
             >
-              {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+              <div className="px-4 py-6 space-y-4">
+                <button onClick={() => { onNavigate('affiliate-portal'); setIsMobileMenuOpen(false); }} className="block w-full text-left py-2 text-gray-600 font-medium">
+                  Affiliates
+                </button>
+                <button onClick={() => { onNavigate('faq'); setIsMobileMenuOpen(false); }} className="block w-full text-left py-2 text-gray-600 font-medium">
+                  FAQ
+                </button>
+                <button onClick={() => { onRegisterBusiness(); setIsMobileMenuOpen(false); }} className="block w-full text-left py-2 text-gray-900 font-bold">
+                  For Business
+                </button>
+                <button 
+                  onClick={() => { onTryDemo(); setIsMobileMenuOpen(false); }}
+                  className="w-full bg-cyan-600 text-white py-3 rounded-xl font-bold mt-4"
+                >
+                  Launch App
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </nav>
+
+      {/* Hero Section */}
+      <section className="relative pt-32 pb-20 lg:pt-48 lg:pb-32 overflow-hidden">
+        {/* Background Gradients */}
+        <div className="absolute top-0 right-0 w-1/2 h-full bg-gradient-to-l from-cyan-50/50 to-transparent -z-10" />
+        <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(ellipse_at_top_left,_var(--tw-gradient-stops))] from-blue-50/50 via-transparent to-transparent -z-10" />
+
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="grid lg:grid-cols-2 gap-12 items-center">
+            
+            {/* Hero Content */}
+            <motion.div 
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6 }}
+            >
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-50 text-cyan-700 text-xs font-bold uppercase tracking-wider mb-6 border border-cyan-100">
+                <span className="w-2 h-2 rounded-full bg-cyan-500 animate-pulse" />
+                Live in South Africa
+              </div>
+              <h1 className="text-5xl lg:text-7xl font-extrabold tracking-tight text-slate-900 leading-[1.1] mb-6">
+                Find your <br/>
+                <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-500 to-blue-600">next vibe.</span>
+              </h1>
+              <p className="text-xl text-gray-500 mb-8 max-w-lg leading-relaxed">
+                Discover the best restaurants, bars, and events near you. Real-time specials, verified reviews, and seamless reservations—all in one app.
+              </p>
+              
+              <div className="flex flex-col sm:flex-row gap-4">
+                <button 
+                  onClick={onTryDemo}
+                  className="px-8 py-4 bg-slate-900 text-white rounded-2xl font-bold text-lg hover:bg-slate-800 hover:scale-[1.02] active:scale-[0.98] transition-all shadow-xl shadow-slate-900/20 flex items-center justify-center gap-2 group"
+                >
+                  Start Exploring
+                  <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                </button>
+                <button 
+                  onClick={onRegisterBusiness}
+                  className="px-8 py-4 bg-white text-slate-900 border-2 border-slate-100 rounded-2xl font-bold text-lg hover:border-slate-200 hover:bg-slate-50 transition-all flex items-center justify-center"
+                >
+                  Business Partner?
+                </button>
+              </div>
+
+              <div className="mt-12 flex items-center gap-4 text-sm text-gray-500">
+                <div className="flex -space-x-3">
+                  {[1,2,3,4].map(i => (
+                    <img key={i} src={`https://randomuser.me/api/portraits/thumb/men/${i+20}.jpg`} alt="User" className="w-10 h-10 rounded-full border-2 border-white" />
+                  ))}
+                </div>
+                <div className="flex flex-col">
+                  <div className="flex text-yellow-400">★★★★★</div>
+                  <span>Join 15,000+ local foodies</span>
+                </div>
+              </div>
+            </motion.div>
+
+            {/* Hero Image / App Preview */}
+            <motion.div 
+              initial={{ opacity: 0, x: 40 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.8, delay: 0.2 }}
+              className="relative hidden lg:block"
+            >
+              <div className="relative z-10 mx-auto w-[320px] h-[680px] bg-slate-900 rounded-[3rem] p-4 shadow-2xl shadow-cyan-900/20 border-8 border-slate-900 ring-1 ring-white/10">
+                <div className="w-full h-full bg-white rounded-[2.2rem] overflow-hidden relative">
+                  {/* Mock App Header */}
+                  <div className="absolute top-0 w-full h-24 bg-gradient-to-r from-cyan-500 to-blue-600 z-10 p-6 pt-8 text-white">
+                    <div className="flex justify-between items-center">
+                      <div className="font-bold text-lg">MYVIBES</div>
+                      <div className="w-8 h-8 bg-white/20 rounded-full" />
+                    </div>
+                  </div>
+                  {/* Mock App Content */}
+                  <div className="pt-24 px-4 pb-4 h-full overflow-hidden bg-gray-50 flex flex-col gap-4">
+                    <div className="flex gap-2 overflow-hidden opacity-50">
+                      {[1,2,3].map(i => (
+                        <div key={i} className="w-24 h-8 bg-gray-200 rounded-full flex-shrink-0" />
+                      ))}
+                    </div>
+                    {[1,2].map(i => (
+                      <div key={i} className="bg-white rounded-2xl p-3 shadow-sm">
+                        <div className="h-32 bg-gray-200 rounded-xl mb-3 overflow-hidden">
+                           <img 
+                             src={i === 1 
+                               ? "https://images.unsplash.com/photo-1769955757354-938b69a5c5a8?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=400" 
+                               : "https://images.unsplash.com/photo-1758176621141-a01052afdb23?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=400"} 
+                             className="w-full h-full object-cover"
+                             alt="Mock Venue"
+                           />
+                        </div>
+                        <div className="h-4 w-3/4 bg-gray-200 rounded mb-2" />
+                        <div className="h-3 w-1/2 bg-gray-100 rounded" />
+                      </div>
+                    ))}
+                  </div>
+                  {/* Mock App Nav */}
+                  <div className="absolute bottom-0 w-full h-20 bg-white border-t border-gray-100 flex justify-around items-center px-6 pb-2">
+                    <div className="w-6 h-6 bg-cyan-500 rounded-full" />
+                    <div className="w-6 h-6 bg-gray-200 rounded-full" />
+                    <div className="w-6 h-6 bg-gray-200 rounded-full" />
+                  </div>
+                </div>
+              </div>
+              
+              {/* Floating Elements */}
+              <motion.div 
+                animate={{ y: [0, -20, 0] }}
+                transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
+                className="absolute top-20 -right-12 bg-white p-4 rounded-2xl shadow-xl shadow-gray-200/50 z-20 max-w-[200px]"
+              >
+                <div className="flex gap-3 items-center mb-2">
+                  <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center text-green-600">
+                    <TrendingUp className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="font-bold text-sm">Flash Deal</div>
+                    <div className="text-xs text-gray-500">50% Off Cocktails</div>
+                  </div>
+                </div>
+                <div className="h-1.5 w-full bg-gray-100 rounded-full overflow-hidden">
+                  <div className="h-full bg-green-500 w-2/3" />
+                </div>
+              </motion.div>
+
+              <motion.div 
+                animate={{ y: [0, 20, 0] }}
+                transition={{ duration: 5, repeat: Infinity, ease: "easeInOut", delay: 1 }}
+                className="absolute bottom-32 -left-12 bg-white p-4 rounded-2xl shadow-xl shadow-gray-200/50 z-20 flex items-center gap-3"
+              >
+                <img src="https://randomuser.me/api/portraits/women/44.jpg" className="w-10 h-10 rounded-full" alt="Reviewer" />
+                <div>
+                  <div className="flex text-yellow-400 text-xs mb-1">★★★★★</div>
+                  <div className="text-xs font-bold">"Best night out ever!"</div>
+                </div>
+              </motion.div>
+            </motion.div>
+          </div>
+        </div>
+      </section>
+
+      {/* Featured Social Ads */}
+      <Suspense fallback={null}>
+        <SocialMediaAdsGallery />
+      </Suspense>
+
+      {/* Features Section */}
+      <section className="py-24 bg-gray-50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center max-w-3xl mx-auto mb-16">
+            <h2 className="text-3xl md:text-4xl font-bold mb-4">Everything you need for a perfect night out</h2>
+            <p className="text-gray-500 text-lg">Stop searching multiple apps. MYVIBES brings the entire hospitality ecosystem to your fingertips.</p>
+          </div>
+
+          <div className="grid md:grid-cols-3 gap-8">
+            <div className="bg-white p-8 rounded-3xl shadow-sm hover:shadow-md transition-shadow">
+              <div className="w-14 h-14 bg-cyan-100 text-cyan-600 rounded-2xl flex items-center justify-center mb-6">
+                <MapPin className="w-7 h-7" />
+              </div>
+              <h3 className="text-xl font-bold mb-3">Smart Discovery</h3>
+              <p className="text-gray-500 leading-relaxed">
+                Find venues that match your vibe. Filter by music, crowd, price, and distance in real-time.
+              </p>
+            </div>
+            <div className="bg-white p-8 rounded-3xl shadow-sm hover:shadow-md transition-shadow">
+              <div className="w-14 h-14 bg-purple-100 text-purple-600 rounded-2xl flex items-center justify-center mb-6">
+                <TrendingUp className="w-7 h-7" />
+              </div>
+              <h3 className="text-xl font-bold mb-3">Live Specials</h3>
+              <p className="text-gray-500 leading-relaxed">
+                Never pay full price again. Access time-limited happy hours and exclusive flash deals near you.
+              </p>
+            </div>
+            <div className="bg-white p-8 rounded-3xl shadow-sm hover:shadow-md transition-shadow">
+              <div className="w-14 h-14 bg-orange-100 text-orange-600 rounded-2xl flex items-center justify-center mb-6">
+                <Users className="w-7 h-7" />
+              </div>
+              <h3 className="text-xl font-bold mb-3">Community Vibe</h3>
+              <p className="text-gray-500 leading-relaxed">
+                See where your friends are heading. Share reviews and photos to earn reputation points.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Business Section */}
+      <section className="py-24 relative overflow-hidden bg-slate-900 text-white">
+        <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1745328196225-ed2cf3e51c19?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1920')] bg-cover bg-center opacity-10" />
+        
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+          <div className="grid lg:grid-cols-2 gap-16 items-center">
+            <div>
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-500/20 text-cyan-300 text-xs font-bold uppercase tracking-wider mb-6 border border-cyan-500/30">
+                For Venue Owners
+              </div>
+              <h2 className="text-4xl md:text-5xl font-bold mb-6">Fill your seats on demand.</h2>
+              <p className="text-xl text-gray-400 mb-8">
+                Take control of your foot traffic. Push flash specials during quiet hours, manage reservations effortlessly, and get deep insights into your customers.
+              </p>
+              
+              <div className="space-y-4 mb-10">
+                {[
+                  'Increase revenue by 30% with smart pricing',
+                  'Direct marketing to local customers nearby',
+                  'Automated reservation management',
+                  'Weekly performance analytics'
+                ].map((feature, i) => (
+                  <div key={i} className="flex items-center gap-3">
+                    <div className="w-6 h-6 bg-cyan-500 rounded-full flex items-center justify-center flex-shrink-0">
+                      <CheckCircle2 className="w-4 h-4 text-white" />
+                    </div>
+                    <span className="font-medium text-lg">{feature}</span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-4">
+                <button 
+                  onClick={onRegisterBusiness}
+                  className="px-8 py-4 bg-cyan-500 text-white rounded-2xl font-bold text-lg hover:bg-cyan-600 transition-all shadow-lg shadow-cyan-500/20"
+                >
+                  Partner with Us
+                </button>
+                <button 
+                  onClick={() => onNavigate('roi')}
+                  className="px-8 py-4 bg-transparent border border-gray-600 text-white rounded-2xl font-bold text-lg hover:bg-white/5 transition-all"
+                >
+                  Calculate ROI
+                </button>
+              </div>
+            </div>
+            
+            <div className="hidden lg:block">
+              {/* Dashboard Preview Mockup */}
+              <div className="bg-slate-800 rounded-2xl p-2 border border-slate-700 shadow-2xl">
+                 <div className="bg-slate-900 rounded-xl overflow-hidden aspect-video relative">
+                    {/* Mock Dashboard UI */}
+                    <div className="absolute top-0 left-0 w-16 h-full bg-slate-800 border-r border-slate-700 p-3 flex flex-col gap-4">
+                      <div className="w-10 h-10 bg-cyan-500 rounded-lg" />
+                      <div className="w-full h-8 bg-white/10 rounded" />
+                      <div className="w-full h-8 bg-white/10 rounded" />
+                      <div className="w-full h-8 bg-white/10 rounded" />
+                    </div>
+                    <div className="ml-16 p-6">
+                      <div className="flex justify-between mb-8">
+                        <div>
+                          <div className="h-4 w-32 bg-white/20 rounded mb-2" />
+                          <div className="h-8 w-48 bg-white/10 rounded" />
+                        </div>
+                        <div className="h-10 w-32 bg-cyan-600 rounded-lg" />
+                      </div>
+                      <div className="grid grid-cols-3 gap-4 mb-8">
+                        <div className="bg-slate-800 p-4 rounded-xl h-32" />
+                        <div className="bg-slate-800 p-4 rounded-xl h-32" />
+                        <div className="bg-slate-800 p-4 rounded-xl h-32" />
+                      </div>
+                      <div className="bg-slate-800 rounded-xl h-48 w-full" />
+                    </div>
+                 </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Social Proof */}
+      <section className="py-24 bg-white">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="grid md:grid-cols-2 gap-12 items-center">
+            <div className="order-2 md:order-1 relative">
+              <img 
+                src="https://images.unsplash.com/photo-1714038918910-daa51af9fccd?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=800" 
+                alt="Happy People" 
+                className="rounded-[3rem] shadow-2xl"
+              />
+              <div className="absolute -bottom-8 -right-8 bg-white p-6 rounded-2xl shadow-xl max-w-xs">
+                <div className="flex gap-1 mb-2">
+                  {[1,2,3,4,5].map(i => <Star key={i} className="w-5 h-5 text-yellow-400 fill-current" />)}
+                </div>
+                <p className="text-gray-800 font-medium italic">"Found our new favorite spot in Sandton thanks to MYVIBES. The flash deal was a huge bonus!"</p>
+                <div className="mt-4 flex items-center gap-3">
+                  <div className="w-10 h-10 bg-gray-200 rounded-full overflow-hidden">
+                    <img src="https://randomuser.me/api/portraits/women/65.jpg" alt="User" />
+                  </div>
+                  <div className="text-sm">
+                    <div className="font-bold">Sarah Jenkins</div>
+                    <div className="text-gray-500">Food Blogger</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="order-1 md:order-2">
+              <h2 className="text-4xl font-bold mb-6">Join South Africa's fastest growing hospitality network.</h2>
+              <div className="grid grid-cols-2 gap-8 mb-8">
+                <div>
+                  <div className="text-4xl font-bold text-cyan-600 mb-1">15k+</div>
+                  <div className="text-gray-500 font-medium">Monthly Users</div>
+                </div>
+                <div>
+                  <div className="text-4xl font-bold text-cyan-600 mb-1">500+</div>
+                  <div className="text-gray-500 font-medium">Partner Venues</div>
+                </div>
+                <div>
+                  <div className="text-4xl font-bold text-cyan-600 mb-1">50k+</div>
+                  <div className="text-gray-500 font-medium">Specials Claimed</div>
+                </div>
+                <div>
+                  <div className="text-4xl font-bold text-cyan-600 mb-1">4.8</div>
+                  <div className="text-gray-500 font-medium">App Store Rating</div>
+                </div>
+              </div>
+              <button onClick={onTryDemo} className="text-cyan-600 font-bold text-lg flex items-center gap-2 hover:gap-3 transition-all group">
+                Read Success Stories <ArrowRight className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* CTA Footer */}
+      <section className="bg-slate-900 text-white py-20 border-t border-slate-800">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+          <h2 className="text-3xl md:text-5xl font-bold mb-8">Ready to find your vibe?</h2>
+          <div className="flex flex-col sm:flex-row justify-center gap-4">
+            <button 
+              onClick={onTryDemo}
+              className="px-8 py-4 bg-cyan-500 text-white rounded-2xl font-bold text-lg hover:bg-cyan-600 transition-all shadow-lg shadow-cyan-500/20 flex items-center justify-center gap-2"
+            >
+              <Smartphone className="w-5 h-5" /> Launch Web App
+            </button>
+            <button className="px-8 py-4 bg-slate-800 text-white rounded-2xl font-bold text-lg hover:bg-slate-700 transition-all flex items-center justify-center gap-2">
+               <Download className="w-5 h-5" /> Download for iOS
             </button>
           </div>
         </div>
-
-        {/* Mobile Menu */}
-        {mobileMenuOpen && (
-          <motion.div 
-            className="md:hidden absolute top-full left-0 right-0 bg-white border-b shadow-lg z-40"
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-          >
-            <nav className="flex flex-col p-4 gap-4">
-              <button 
-                type="button"
-                onClick={() => scrollToSection('features')}
-                className="text-gray-700 hover:text-cyan-500 transition-colors font-medium py-2 text-left cursor-pointer bg-transparent border-none"
-              >
-                Features
-              </button>
-              <button 
-                type="button"
-                onClick={() => scrollToSection('pricing')}
-                className="text-gray-700 hover:text-cyan-500 transition-colors font-medium py-2 text-left cursor-pointer bg-transparent border-none"
-              >
-                Pricing
-              </button>
-              <button 
-                type="button"
-                onClick={() => scrollToSection('how-it-works')}
-                className="text-gray-700 hover:text-cyan-500 transition-colors font-medium py-2 text-left cursor-pointer bg-transparent border-none"
-              >
-                How It Works
-              </button>
-              <Button 
-                type="button"
-                onClick={() => {
-                  setMobileMenuOpen(false);
-                  onRegisterBusiness?.();
-                }}
-                className="bg-gradient-to-r from-cyan-500 to-blue-600 text-white w-full cursor-pointer"
-              >
-                Get Started
-              </Button>
-            </nav>
-          </motion.div>
-        )}
-      </header>
-
-      {/* Hero Section */}
-      <section className="relative pt-20 sm:pt-28 pb-12 sm:pb-16 px-4 overflow-hidden">
-        {/* Animated Background Gradient */}
-        <div className="absolute inset-0 bg-gradient-to-br from-orange-50 via-purple-50 to-pink-50 opacity-50" />
-        <motion.div 
-          className="absolute top-1/4 -right-1/4 w-96 h-96 bg-gradient-to-br from-orange-400 to-purple-600 rounded-full blur-3xl opacity-20"
-          animate={{ 
-            scale: [1, 1.2, 1],
-            rotate: [0, 90, 0],
-          }}
-          transition={{ 
-            duration: 20,
-            repeat: Infinity,
-            ease: "linear"
-          }}
-        />
-        <motion.div 
-          className="absolute bottom-1/4 -left-1/4 w-96 h-96 bg-gradient-to-tr from-purple-400 to-orange-600 rounded-full blur-3xl opacity-20"
-          animate={{ 
-            scale: [1.2, 1, 1.2],
-            rotate: [90, 0, 90],
-          }}
-          transition={{ 
-            duration: 20,
-            repeat: Infinity,
-            ease: "linear"
-          }}
-        />
-
-        <div className="max-w-7xl mx-auto relative z-10">
-          <div className="grid lg:grid-cols-2 gap-8 sm:gap-12 items-center">
-            {/* Left Content */}
-            <div className="text-center lg:text-left">
-              <motion.div
-                initial={{ opacity: 0, y: 30 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.8 }}
-              >
-                <div className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-cyan-100 to-blue-100 rounded-full mb-4 sm:mb-6">
-                  <Sparkles className="w-4 h-4 text-cyan-500" />
-                  <span className="text-sm font-medium bg-gradient-to-r from-cyan-600 to-blue-600 bg-clip-text text-transparent">
-                    Now Live in South Africa
-                  </span>
-                </div>
-                
-                <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-gray-900 mb-4 sm:mb-6 leading-tight">
-                  Discover Amazing
-                  <span className="block bg-gradient-to-r from-cyan-500 to-blue-600 bg-clip-text text-transparent">
-                    Dining Experiences
-                  </span>
-                </h1>
-                
-                <p className="text-base sm:text-lg lg:text-xl text-gray-600 mb-6 sm:mb-8 max-w-2xl mx-auto lg:mx-0">
-                  Connect with the best restaurants and hotels near you. Get real-time specials, 
-                  exclusive events, and AI-powered recommendations tailored just for you.
-                </p>
-
-                <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center lg:justify-start">
-                  <Button size="lg" className="bg-gradient-to-r from-cyan-500 to-blue-600 text-white text-base sm:text-lg px-6 sm:px-8 py-5 sm:py-6 hover:shadow-2xl transition-all group">
-                    <Smartphone className="w-5 h-5 mr-2" />
-                    Download App
-                    <ChevronRight className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" />
-                  </Button>
-                  <Button size="lg" variant="outline" className="border-2 border-gray-300 text-gray-700 text-base sm:text-lg px-6 sm:px-8 py-5 sm:py-6 hover:border-cyan-500 hover:text-cyan-500 transition-all" onClick={onRegisterBusiness}>
-                    <Users className="w-5 h-5 mr-2" />
-                    For Businesses
-                  </Button>
-                </div>
-              </motion.div>
-            </div>
-
-            {/* Right Content - Phone Mockup */}
-            <motion.div
-              className="relative"
-              initial={{ opacity: 0, x: 50 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.8, delay: 0.2 }}
-            >
-              <div className="relative mx-auto max-w-sm lg:max-w-md">
-                {/* Floating Cards */}
-                <motion.div 
-                  className="absolute -top-4 -left-4 bg-white rounded-2xl shadow-2xl p-4 z-20"
-                  animate={{ y: [0, -10, 0] }}
-                  transition={{ duration: 3, repeat: Infinity }}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-full bg-gradient-to-br from-cyan-400 to-cyan-600 flex items-center justify-center">
-                      <Star className="w-6 h-6 text-white fill-white" />
-                    </div>
-                    <div>
-                      <p className="font-bold text-gray-900">4.9 Rating</p>
-                      <p className="text-sm text-gray-500">Top Rated</p>
-                    </div>
-                  </div>
-                </motion.div>
-
-                {/* App Preview Badge */}
-                <motion.div 
-                  className="absolute top-8 -right-8 z-20"
-                  animate={{ y: [0, -5, 0] }}
-                  transition={{ duration: 2, repeat: Infinity }}
-                >
-                  <div className="bg-gradient-to-r from-cyan-500 to-blue-600 text-white px-4 py-2 rounded-full shadow-lg flex items-center gap-2">
-                    <Sparkles className="w-4 h-4" />
-                    <span className="font-bold text-sm whitespace-nowrap">PWA Ready</span>
-                  </div>
-                </motion.div>
-
-                <motion.div 
-                  className="absolute -bottom-4 -right-4 bg-white rounded-2xl shadow-2xl p-4 z-20"
-                  animate={{ y: [0, 10, 0] }}
-                  transition={{ duration: 3, repeat: Infinity, delay: 0.5 }}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center">
-                      <Zap className="w-6 h-6 text-white" />
-                    </div>
-                    <div>
-                      <p className="font-bold text-gray-900">50% Off</p>
-                      <p className="text-sm text-gray-500">Today's Special</p>
-                    </div>
-                  </div>
-                </motion.div>
-
-                {/* Phone Frame */}
-                <div className="relative bg-gradient-to-br from-cyan-500 to-blue-600 rounded-[3rem] p-1 shadow-2xl">
-                  <div className="bg-white rounded-[2.75rem] overflow-hidden">
-                    <img 
-                      src="https://images.unsplash.com/photo-1760888549280-4aef010720bd?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxtb2JpbGUlMjBhcHAlMjByZXN0YXVyYW50fGVufDF8fHx8MTc2ODQ1OTQ0M3ww&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral"
-                      alt="MYVIBES Customer App Preview"
-                      className="w-full h-full object-cover"
-                    />
-                  </div>
-                </div>
-              </div>
-            </motion.div>
-          </div>
-
-          {/* Stats */}
-          <motion.div 
-            className="grid grid-cols-2 lg:grid-cols-4 gap-6 sm:gap-8 mt-16 sm:mt-20"
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8, delay: 0.4 }}
-          >
-            {stats.map((stat, index) => (
-              <div key={index} className="text-center">
-                <div className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-cyan-500 to-blue-600 bg-clip-text text-transparent mb-2">
-                  {stat.value}
-                </div>
-                <div className="text-sm sm:text-base text-gray-600">{stat.label}</div>
-              </div>
-            ))}
-          </motion.div>
-
-          {/* Social Proof Images */}
-          <motion.div 
-            className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-12 sm:mt-16"
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8, delay: 0.6 }}
-          >
-            <div className="relative h-48 sm:h-64 rounded-2xl overflow-hidden shadow-xl">
-              <img 
-                src="https://images.unsplash.com/photo-1721993745778-b6730e1768a8?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxmcmllbmRzJTIwZW5qb3lpbmclMjBkaW5uZXJ8ZW58MXx8fHwxNzY4NDU5MzA5fDA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral"
-                alt="Friends dining together"
-                className="w-full h-full object-cover"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex items-end p-4">
-                <p className="text-white font-semibold text-sm sm:text-base">Discover Together</p>
-              </div>
-            </div>
-            <div className="relative h-48 sm:h-64 rounded-2xl overflow-hidden shadow-xl">
-              <img 
-                src="https://images.unsplash.com/photo-1601118964938-228a89955311?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxwZW9wbGUlMjBkaW5pbmclMjBjZWxlYnJhdGlvbnxlbnwxfHx8fDE3NjgzNjMwNzZ8MA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral"
-                alt="Happy people at restaurant"
-                className="w-full h-full object-cover"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex items-end p-4">
-                <p className="text-white font-semibold text-sm sm:text-base">Create Memories</p>
-              </div>
-            </div>
-            <div className="relative h-48 sm:h-64 rounded-2xl overflow-hidden shadow-xl">
-              <img 
-                src="https://images.unsplash.com/photo-1613274554329-70f997f5789f?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxyZXN0YXVyYW50JTIwaW50ZXJpb3IlMjBtb2Rlcm58ZW58MXx8fHwxNzY4NDU4MDY3fDA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral"
-                alt="Group of friends eating"
-                className="w-full h-full object-cover"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex items-end p-4">
-                <p className="text-white font-semibold text-sm sm:text-base">Share Experiences</p>
-              </div>
-            </div>
-          </motion.div>
-        </div>
       </section>
 
-      {/* Features Section */}
-      <section id="features" className="py-16 sm:py-24 px-4 bg-gray-50">
-        <div className="max-w-7xl mx-auto">
-          <motion.div 
-            className="text-center mb-12 sm:mb-16"
-            initial={{ opacity: 0, y: 30 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.6 }}
-          >
-            <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-gray-900 mb-4">
-              Everything You Need in One Place
-            </h2>
-            <p className="text-lg sm:text-xl text-gray-600 max-w-3xl mx-auto">
-              Powerful features designed to connect food lovers with amazing venues
-            </p>
-          </motion.div>
-
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
-            {features.map((feature, index) => (
-              <motion.div
-                key={index}
-                initial={{ opacity: 0, y: 30 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ duration: 0.6, delay: index * 0.1 }}
-              >
-                <Card className="p-6 sm:p-8 hover:shadow-xl transition-all duration-300 border-2 hover:border-cyan-200 group h-full">
-                  <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center mb-4 sm:mb-6 group-hover:scale-110 transition-transform">
-                    <feature.icon className="w-6 h-6 sm:w-7 sm:h-7 text-white" />
-                  </div>
-                  <h3 className="text-xl sm:text-2xl font-bold text-gray-900 mb-3">
-                    {feature.title}
-                  </h3>
-                  <p className="text-gray-600 leading-relaxed">
-                    {feature.description}
-                  </p>
-                </Card>
-              </motion.div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* How It Works Section */}
-      <section id="how-it-works" className="py-16 sm:py-24 px-4 bg-white">
-        <div className="max-w-7xl mx-auto">
-          <motion.div 
-            className="text-center mb-12 sm:mb-16"
-            initial={{ opacity: 0, y: 30 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.6 }}
-          >
-            <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-gray-900 mb-4">
-              How MYVIBE Works
-            </h2>
-            <p className="text-lg sm:text-xl text-gray-600 max-w-3xl mx-auto">
-              Get started in minutes and unlock a world of dining possibilities
-            </p>
-          </motion.div>
-
-          <div className="grid md:grid-cols-2 gap-8 sm:gap-12 lg:gap-16 items-center mb-12">
-            {/* Image on left */}
-            <motion.div
-              initial={{ opacity: 0, x: -30 }}
-              whileInView={{ opacity: 1, x: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.6 }}
-              className="order-2 md:order-1"
-            >
-              <img 
-                src="https://images.unsplash.com/photo-1743793055775-3c07ab847ad0?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxyZXN0YXVyYW50JTIwZWxlZ2FudCUyMGF0bW9zcGhlcmV8ZW58MXx8fHwxNzY4NDU5MzA5fDA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral"
-                alt="Elegant restaurant dining"
-                className="w-full h-[400px] object-cover rounded-3xl shadow-2xl"
-              />
-            </motion.div>
-
-            {/* For Customers */}
-            <motion.div
-              initial={{ opacity: 0, x: 30 }}
-              whileInView={{ opacity: 1, x: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.6 }}
-              className="order-1 md:order-2"
-            >
-              <div className="bg-gradient-to-br from-cyan-50 to-blue-50 rounded-3xl p-6 sm:p-8 lg:p-10 h-full">
-                <div className="flex items-center gap-3 mb-6 sm:mb-8">
-                  <div className="w-12 h-12 rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center">
-                    <Smartphone className="w-6 h-6 text-white" />
-                  </div>
-                  <h3 className="text-2xl sm:text-3xl font-bold text-gray-900">For Customers</h3>
-                </div>
-                
-                <div className="space-y-6">
-                  {[
-                    { step: "1", title: "Download & Sign Up", desc: "Get the app and create your free account in seconds" },
-                    { step: "2", title: "Discover Nearby Venues", desc: "Browse restaurants and hotels near you with real-time updates" },
-                    { step: "3", title: "Get Recommendations", desc: "Receive personalized AI-powered suggestions based on your taste" },
-                    { step: "4", title: "Enjoy & Review", desc: "Visit amazing places and share your experience with the community" }
-                  ].map((item, idx) => (
-                    <div key={idx} className="flex gap-4">
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center text-white font-bold shrink-0">
-                        {item.step}
-                      </div>
-                      <div>
-                        <h4 className="font-bold text-gray-900 mb-1">{item.title}</h4>
-                        <p className="text-gray-600 text-sm sm:text-base">{item.desc}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+      {/* Footer Links */}
+      <footer className="bg-slate-950 text-gray-400 py-12 border-t border-slate-900">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="grid md:grid-cols-4 gap-8 mb-8">
+            <div className="col-span-1 md:col-span-2">
+              <div className="flex items-center gap-2 mb-4 text-white">
+                <div className="w-8 h-8 bg-cyan-600 rounded-lg flex items-center justify-center font-bold">MV</div>
+                <span className="text-xl font-bold">MYVIBES</span>
               </div>
-            </motion.div>
-          </div>
-
-          <div className="grid md:grid-cols-2 gap-8 sm:gap-12 lg:gap-16 items-center">
-            {/* For Businesses */}
-            <motion.div
-              initial={{ opacity: 0, x: -30 }}
-              whileInView={{ opacity: 1, x: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.6 }}
-            >
-              <div className="bg-gradient-to-br from-blue-50 to-cyan-50 rounded-3xl p-6 sm:p-8 lg:p-10 h-full">
-                <div className="flex items-center gap-3 mb-6 sm:mb-8">
-                  <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-600 to-cyan-500 flex items-center justify-center">
-                    <Globe className="w-6 h-6 text-white" />
-                  </div>
-                  <h3 className="text-2xl sm:text-3xl font-bold text-gray-900">For Businesses</h3>
-                </div>
-                
-                <div className="space-y-6">
-                  {[
-                    { step: "1", title: "Create Your Profile", desc: "Set up your business in minutes with photos and details" },
-                    { step: "2", title: "Upload Menu & Specials", desc: "Share your offerings and daily promotions with customers" },
-                    { step: "3", title: "Engage Customers", desc: "Post events, respond to reviews, and build your community" },
-                    { step: "4", title: "Grow Your Business", desc: "Use AI insights to optimize and attract more customers" }
-                  ].map((item, idx) => (
-                    <div key={idx} className="flex gap-4">
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-600 to-cyan-500 flex items-center justify-center text-white font-bold shrink-0">
-                        {item.step}
-                      </div>
-                      <div>
-                        <h4 className="font-bold text-gray-900 mb-1">{item.title}</h4>
-                        <p className="text-gray-600 text-sm sm:text-base">{item.desc}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </motion.div>
-
-            {/* Image on right */}
-            <motion.div
-              initial={{ opacity: 0, x: 30 }}
-              whileInView={{ opacity: 1, x: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.6 }}
-            >
-              <img 
-                src="https://images.unsplash.com/photo-1748609160056-7b95f30041f0?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxtb2Rlcm4lMjBidXNpbmVzcyUyMGFuYWx5dGljc3xlbnwxfHx8fDE3Njg0NTkzMDl8MA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral"
-                alt="Business dashboard analytics"
-                className="w-full h-[400px] object-cover rounded-3xl shadow-2xl"
-              />
-            </motion.div>
-          </div>
-        </div>
-      </section>
-
-      {/* Social Media Ads Gallery */}
-      <SocialMediaAdsGallery />
-
-      {/* Pricing Section */}
-      <section id="pricing" className="py-16 sm:py-24 px-4 bg-gray-50">
-        <div className="max-w-7xl mx-auto">
-          <motion.div 
-            className="text-center mb-12 sm:mb-16"
-            initial={{ opacity: 0, y: 30 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.6 }}
-          >
-            <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-gray-900 mb-4">
-              Simple, Transparent Pricing
-            </h2>
-            <p className="text-lg sm:text-xl text-gray-600 max-w-3xl mx-auto">
-              Free for customers. Affordable for businesses.
-            </p>
-          </motion.div>
-
-          <div className="grid md:grid-cols-2 gap-6 sm:gap-8 max-w-5xl mx-auto">
-            {/* Customer Plan */}
-            <motion.div
-              initial={{ opacity: 0, y: 30 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.6 }}
-            >
-              <Card className="p-6 sm:p-8 lg:p-10 border-2 h-full">
-                <div className="flex items-center gap-3 mb-6">
-                  <Heart className="w-8 h-8 text-cyan-500" />
-                  <h3 className="text-2xl sm:text-3xl font-bold text-gray-900">For Customers</h3>
-                </div>
-                
-                <div className="mb-6 sm:mb-8">
-                  <div className="text-5xl sm:text-6xl font-bold text-gray-900 mb-2">FREE</div>
-                  <p className="text-gray-600">Forever. No credit card required.</p>
-                </div>
-
-                <ul className="space-y-4 mb-8">
-                  {[
-                    "Unlimited venue discovery",
-                    "Real-time specials & events",
-                    "AI-powered recommendations",
-                    "Ratings & reviews",
-                    "Location-based search",
-                    "Favorite venues tracking",
-                    "Push notifications"
-                  ].map((feature, idx) => (
-                    <li key={idx} className="flex items-start gap-3">
-                      <Check className="w-5 h-5 text-green-500 shrink-0 mt-0.5" />
-                      <span className="text-gray-700">{feature}</span>
-                    </li>
-                  ))}
-                </ul>
-
-                <Button className="w-full bg-gray-900 hover:bg-gray-800 text-white py-6 text-lg">
-                  Download Now
-                  <ArrowRight className="w-5 h-5 ml-2" />
-                </Button>
-              </Card>
-            </motion.div>
-
-            {/* Business Plan */}
-            <motion.div
-              initial={{ opacity: 0, y: 30 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.6, delay: 0.1 }}
-            >
-              <Card className="p-6 sm:p-8 lg:p-10 border-2 border-cyan-500 relative overflow-hidden h-full">
-                <div className="absolute top-4 right-4">
-                  <div className="bg-gradient-to-r from-cyan-500 to-blue-600 text-white text-xs font-bold px-3 py-1 rounded-full">
-                    POPULAR
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-3 mb-6">
-                  <Award className="w-8 h-8 text-blue-600" />
-                  <h3 className="text-2xl sm:text-3xl font-bold text-gray-900">For Businesses</h3>
-                </div>
-                
-                <div className="mb-6 sm:mb-8">
-                  <div className="flex items-baseline gap-2">
-                    <span className="text-5xl sm:text-6xl font-bold bg-gradient-to-r from-cyan-500 to-blue-600 bg-clip-text text-transparent">
-                      {formatPrice(CONFIG.pricing.baseSubscription)}
-                    </span>
-                    <span className="text-gray-600">/month</span>
-                  </div>
-                  <p className="text-gray-600 mt-2">Everything you need to grow</p>
-                </div>
-
-                <ul className="space-y-4 mb-8">
-                  {pricingFeatures.map((feature, idx) => (
-                    <li key={idx} className="flex items-start gap-3">
-                      <Check className="w-5 h-5 text-green-500 shrink-0 mt-0.5" />
-                      <span className="text-gray-700">{feature}</span>
-                    </li>
-                  ))}
-                </ul>
-
-                <Button className="w-full bg-gradient-to-r from-cyan-500 to-blue-600 hover:shadow-xl text-white py-6 text-lg transition-all">
-                  Start Free Trial
-                  <ArrowRight className="w-5 h-5 ml-2" />
-                </Button>
-              </Card>
-            </motion.div>
-          </div>
-        </div>
-      </section>
-
-      {/* CTA Section */}
-      <section className="py-16 sm:py-24 px-4 bg-gradient-to-br from-cyan-500 via-blue-500 to-blue-900 relative overflow-hidden">
-        <motion.div 
-          className="absolute inset-0 opacity-10"
-          animate={{ 
-            backgroundPosition: ["0% 0%", "100% 100%"],
-          }}
-          transition={{ 
-            duration: 20,
-            repeat: Infinity,
-            repeatType: "reverse"
-          }}
-          style={{
-            backgroundImage: "radial-gradient(circle, white 1px, transparent 1px)",
-            backgroundSize: "50px 50px"
-          }}
-        />
-
-        <div className="max-w-4xl mx-auto text-center relative z-10">
-          <motion.div
-            initial={{ opacity: 0, y: 30 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.6 }}
-          >
-            <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-white mb-6 drop-shadow-lg">
-              Ready to Discover Your Next
-              <br className="hidden sm:block" />
-              Favorite Spot?
-            </h2>
-            <p className="text-lg sm:text-xl text-white mb-8 sm:mb-10 max-w-2xl mx-auto drop-shadow-md">
-              Join thousands of food lovers and hundreds of businesses already using MYVIBES
-            </p>
-            
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <Button size="lg" className="bg-white text-blue-600 hover:bg-gray-100 text-lg px-8 py-6 shadow-xl hover:shadow-2xl transition-all group font-semibold">
-                <Smartphone className="w-5 h-5 mr-2" />
-                Download App
-                <ChevronRight className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" />
-              </Button>
-              <Button size="lg" className="bg-transparent border-2 border-white text-white hover:bg-white hover:text-blue-600 text-lg px-8 py-6 transition-all font-semibold shadow-lg">
-                <Target className="w-5 h-5 mr-2" />
-                List Your Business
-              </Button>
-            </div>
-          </motion.div>
-        </div>
-      </section>
-
-      {/* Footer */}
-      <footer className="bg-gray-900 text-white py-12 sm:py-16 px-4">
-        <div className="max-w-7xl mx-auto">
-          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-8 sm:gap-12 mb-12">
-            {/* Logo & Description */}
-            <div className="sm:col-span-2 lg:col-span-1">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center">
-                  <MapPin className="w-6 h-6 text-white" />
-                </div>
-                <span className="text-2xl font-bold">MYVIBE</span>
-              </div>
-              <p className="text-gray-400">
-                Connecting food lovers with amazing dining experiences across South Africa.
+              <p className="text-sm max-w-xs">
+                Connecting people with places. The smartest way to discover and experience South African hospitality.
               </p>
             </div>
-
-            {/* Product */}
             <div>
-              <h4 className="font-bold mb-4">Product</h4>
-              <ul className="space-y-2 text-gray-400">
-                <li>
-                  <button 
-                    onClick={() => scrollToSection('features')}
-                    className="hover:text-white transition-colors cursor-pointer text-left"
-                  >
-                    Features
-                  </button>
-                </li>
-                <li>
-                  <button 
-                    onClick={() => scrollToSection('pricing')}
-                    className="hover:text-white transition-colors cursor-pointer text-left"
-                  >
-                    Pricing
-                  </button>
-                </li>
-                <li>
-                  <button 
-                    onClick={() => scrollToSection('how-it-works')}
-                    className="hover:text-white transition-colors cursor-pointer text-left"
-                  >
-                    How It Works
-                  </button>
-                </li>
-                <li>
-                  <button 
-                    onClick={onRegisterBusiness}
-                    className="hover:text-white transition-colors cursor-pointer text-left"
-                  >
-                    For Businesses
-                  </button>
-                </li>
+              <h3 className="text-white font-bold mb-4">Platform</h3>
+              <ul className="space-y-2 text-sm">
+                <li><button onClick={onTryDemo} className="hover:text-cyan-400">Customer App</button></li>
+                <li><button onClick={onRegisterBusiness} className="hover:text-cyan-400">Business Login</button></li>
+                <li><button onClick={() => onNavigate('affiliate-portal')} className="hover:text-cyan-400">Affiliate Program</button></li>
               </ul>
             </div>
-
-            {/* Company */}
             <div>
-              <h4 className="font-bold mb-4">Company</h4>
-              <ul className="space-y-2 text-gray-400">
-                <li><a href="#" className="hover:text-white transition-colors">About Us</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">Contact</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">Careers</a></li>
-                <li>
-                  <button 
-                    onClick={() => onNavigate?.('affiliate-portal' as any)}
-                    className="hover:text-white transition-colors cursor-pointer text-left"
-                  >
-                    💰 Affiliate Program
-                  </button>
-                </li>
-              </ul>
-            </div>
-
-            {/* Support */}
-            <div>
-              <h4 className="font-bold mb-4">Support</h4>
-              <ul className="space-y-2 text-gray-400">
-                <li>
-                  <button 
-                    onClick={() => onNavigate?.('faq')} 
-                    className="hover:text-white transition-colors text-left"
-                  >
-                    FAQs
-                  </button>
-                </li>
-                <li>
-                  <button 
-                    onClick={() => onNavigate?.('popia')} 
-                    className="hover:text-white transition-colors text-left"
-                  >
-                    Privacy Policy (POPIA)
-                  </button>
-                </li>
-                <li>
-                  <button 
-                    onClick={() => onNavigate?.('disclaimers')} 
-                    className="hover:text-white transition-colors text-left"
-                  >
-                    Terms & Disclaimers
-                  </button>
-                </li>
-                <li><a href="mailto:support@vibespot.co.za" className="hover:text-white transition-colors">Contact Support</a></li>
+              <h3 className="text-white font-bold mb-4">Legal</h3>
+              <ul className="space-y-2 text-sm">
+                <li><button onClick={() => onNavigate('disclaimers')} className="hover:text-cyan-400">Terms of Service</button></li>
+                <li><button onClick={() => onNavigate('popia')} className="hover:text-cyan-400">Privacy Policy (POPIA)</button></li>
+                <li><button onClick={() => onNavigate('faq')} className="hover:text-cyan-400">Help Center</button></li>
               </ul>
             </div>
           </div>
-
-          <div className="border-t border-gray-800 pt-8 text-center text-gray-400">
-            <p>&copy; 2026 MYVIBE. All rights reserved. Made with ❤️ in South Africa</p>
+          <div className="pt-8 border-t border-slate-900 flex flex-col md:flex-row justify-between items-center gap-4">
+            <div className="text-xs">© 2024 MYVIBES South Africa. All rights reserved.</div>
+            <div className="flex gap-4">
+              <Instagram className="w-5 h-5 hover:text-white cursor-pointer transition-colors" />
+              <Twitter className="w-5 h-5 hover:text-white cursor-pointer transition-colors" />
+              <Facebook className="w-5 h-5 hover:text-white cursor-pointer transition-colors" />
+            </div>
           </div>
         </div>
       </footer>
-
-      {/* Floating Demo Button */}
-      {onTryDemo && (
-        <motion.div
-          className="fixed bottom-6 right-6 z-50"
-          initial={{ scale: 0, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          transition={{ delay: 1, duration: 0.5, type: "spring" }}
-        >
-          <Button
-            size="lg"
-            onClick={onTryDemo}
-            className="bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-2xl hover:shadow-3xl transition-all group rounded-full px-6 py-6"
-          >
-            <Play className="w-5 h-5 mr-2" />
-            Try Live Demo
-            <motion.div
-              className="ml-2"
-              animate={{ x: [0, 5, 0] }}
-              transition={{ duration: 1.5, repeat: Infinity }}
-            >
-              <ChevronRight className="w-5 h-5" />
-            </motion.div>
-          </Button>
-        </motion.div>
-      )}
-
-      {/* Floating Investor Deck Button */}
-      <motion.div
-        className="fixed bottom-6 left-6 z-50"
-        initial={{ scale: 0, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        transition={{ delay: 1.2, duration: 0.5, type: "spring" }}
-      >
-        <Button
-          size="lg"
-          onClick={() => setShowPitchDeck(true)}
-          className="bg-gradient-to-r from-blue-600 to-cyan-500 text-white shadow-2xl hover:shadow-3xl transition-all group rounded-full px-6 py-6"
-        >
-          <Presentation className="w-5 h-5 mr-2" />
-          Investor Deck
-          <motion.div
-            className="ml-2"
-            animate={{ scale: [1, 1.2, 1] }}
-            transition={{ duration: 2, repeat: Infinity }}
-          >
-            <Sparkles className="w-5 h-5" />
-          </motion.div>
-        </Button>
-      </motion.div>
-
-      {/* Pitch Deck Modal */}
-      {showPitchDeck && <PitchDeck onClose={() => setShowPitchDeck(false)} />}
     </div>
   );
 }

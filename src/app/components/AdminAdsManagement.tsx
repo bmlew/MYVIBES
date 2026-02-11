@@ -1,6 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { Button } from '@/app/components/ui/button';
-import { Card } from '@/app/components/ui/card';
 import { Video, ExternalLink, CheckCircle, XCircle, Eye, MousePointerClick, Clock } from 'lucide-react';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 
@@ -24,12 +22,29 @@ interface SocialMediaAd {
   clicks: number;
 }
 
-export function AdminAdsManagement() {
+interface Business {
+  id: string;
+  name: string;
+}
+
+export function AdminAdsManagement({ businesses = [] }: { businesses?: Business[] }) {
   const [ads, setAds] = useState<SocialMediaAd[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
   const [rejectingAd, setRejectingAd] = useState<string | null>(null);
   const [rejectionReason, setRejectionReason] = useState('');
+  
+  // Create Ad Form State
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [createForm, setCreateForm] = useState({
+    business_id: '',
+    platform: 'instagram' as SocialMediaAd['platform'],
+    video_url: '',
+    title: '',
+    description: '',
+    thumbnail_url: ''
+  });
+  const [creatingAd, setCreatingAd] = useState(false);
 
   useEffect(() => {
     loadAds();
@@ -125,6 +140,61 @@ export function AdminAdsManagement() {
     }
   };
 
+  const handleCreateAd = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!createForm.business_id || !createForm.title || !createForm.video_url) {
+      alert('Please fill in all required fields');
+      return;
+    }
+
+    const selectedBusiness = businesses.find(b => b.id === createForm.business_id);
+    if (!selectedBusiness) {
+      alert('Invalid business selected');
+      return;
+    }
+
+    setCreatingAd(true);
+    try {
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-175b2872/ads`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${publicAnonKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            ...createForm,
+            business_name: selectedBusiness.name
+          })
+        }
+      );
+
+      if (response.ok) {
+        setShowCreateModal(false);
+        setCreateForm({
+          business_id: '',
+          platform: 'instagram',
+          video_url: '',
+          title: '',
+          description: '',
+          thumbnail_url: ''
+        });
+        loadAds();
+        alert('Ad created successfully!');
+      } else {
+        const error = await response.json();
+        alert(`Failed to create ad: ${error.error}`);
+      }
+    } catch (error) {
+      console.error('Error creating ad:', error);
+      alert('Network error while creating ad');
+    } finally {
+      setCreatingAd(false);
+    }
+  };
+
   const getPlatformIcon = (platform: string) => {
     const icons: Record<string, string> = {
       tiktok: '🎵',
@@ -150,28 +220,140 @@ export function AdminAdsManagement() {
           <h3 className="text-xl font-bold text-gray-900">Social Media Ads Management</h3>
           <p className="text-sm text-gray-600">Review and approve business ads for the landing page</p>
         </div>
+        <button 
+          onClick={() => setShowCreateModal(true)} 
+          className="px-4 py-2 rounded-lg font-medium bg-cyan-600 hover:bg-cyan-700 text-white transition-colors"
+        >
+          + Create Ad
+        </button>
       </div>
+
+      {/* Create Ad Modal */}
+      {showCreateModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl max-w-md w-full p-6 shadow-xl">
+            <h3 className="text-xl font-bold mb-4">Create New Ad</h3>
+            <form onSubmit={handleCreateAd} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Business</label>
+                <select
+                  value={createForm.business_id}
+                  onChange={(e) => setCreateForm({ ...createForm, business_id: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500"
+                  required
+                >
+                  <option value="">Select a business</option>
+                  {businesses.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Platform</label>
+                <select
+                  value={createForm.platform}
+                  onChange={(e) => setCreateForm({ ...createForm, platform: e.target.value as any })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500"
+                  required
+                >
+                  <option value="instagram">Instagram</option>
+                  <option value="tiktok">TikTok</option>
+                  <option value="facebook">Facebook</option>
+                  <option value="google">Google</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
+                <input
+                  type="text"
+                  value={createForm.title}
+                  onChange={(e) => setCreateForm({ ...createForm, title: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500"
+                  placeholder="Ad Campaign Title"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                <textarea
+                  value={createForm.description}
+                  onChange={(e) => setCreateForm({ ...createForm, description: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500"
+                  placeholder="Ad description..."
+                  rows={3}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Video URL</label>
+                <input
+                  type="url"
+                  value={createForm.video_url}
+                  onChange={(e) => setCreateForm({ ...createForm, video_url: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500"
+                  placeholder="https://..."
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Thumbnail URL (Optional)</label>
+                <input
+                  type="url"
+                  value={createForm.thumbnail_url}
+                  onChange={(e) => setCreateForm({ ...createForm, thumbnail_url: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500"
+                  placeholder="https://..."
+                />
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => setShowCreateModal(false)}
+                  disabled={creatingAd}
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700 transition-colors disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={creatingAd}
+                  className="flex-1 px-4 py-2 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg transition-colors disabled:opacity-50"
+                >
+                  {creatingAd ? 'Creating...' : 'Create Ad'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-4 gap-4">
-        <Card className="p-4">
+        <div className="p-4 bg-white rounded-xl shadow-sm border border-gray-100">
           <div className="text-2xl font-bold text-gray-900">{ads.length}</div>
           <div className="text-sm text-gray-600">Total Ads</div>
-        </Card>
-        <Card className="p-4">
+        </div>
+        <div className="p-4 bg-white rounded-xl shadow-sm border border-gray-100">
           <div className="text-2xl font-bold text-yellow-600">{pendingCount}</div>
           <div className="text-sm text-gray-600">Pending Review</div>
-        </Card>
-        <Card className="p-4">
+        </div>
+        <div className="p-4 bg-white rounded-xl shadow-sm border border-gray-100">
           <div className="text-2xl font-bold text-green-600">{approvedCount}</div>
           <div className="text-sm text-gray-600">Approved</div>
-        </Card>
-        <Card className="p-4">
+        </div>
+        <div className="p-4 bg-white rounded-xl shadow-sm border border-gray-100">
           <div className="text-2xl font-bold text-cyan-600">
             {ads.reduce((sum, ad) => sum + ad.views, 0)}
           </div>
           <div className="text-sm text-gray-600">Total Views</div>
-        </Card>
+        </div>
       </div>
 
       {/* Filter Tabs */}
@@ -225,15 +407,15 @@ export function AdminAdsManagement() {
           <p className="text-gray-600 mt-4">Loading ads...</p>
         </div>
       ) : filteredAds.length === 0 ? (
-        <Card className="p-12 text-center">
+        <div className="p-12 text-center bg-white rounded-xl shadow-sm border border-gray-100">
           <Video className="w-16 h-16 mx-auto text-gray-400 mb-4" />
           <h3 className="text-lg font-semibold text-gray-900 mb-2">No ads found</h3>
           <p className="text-gray-600">No ads match the selected filter</p>
-        </Card>
+        </div>
       ) : (
         <div className="space-y-4">
           {filteredAds.map((ad) => (
-            <Card key={ad.id} className={`p-6 ${ad.status === 'pending' ? 'border-2 border-yellow-300' : ''}`}>
+            <div key={ad.id} className={`p-6 bg-white rounded-xl shadow-sm border ${ad.status === 'pending' ? 'border-yellow-300 ring-1 ring-yellow-100' : 'border-gray-100'}`}>
               <div className="flex items-start gap-4">
                 <div className="w-16 h-16 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-lg flex items-center justify-center text-3xl flex-shrink-0">
                   {getPlatformIcon(ad.platform)}
@@ -299,21 +481,20 @@ export function AdminAdsManagement() {
                   {/* Actions */}
                   {ad.status === 'pending' && (
                     <div className="flex gap-3">
-                      <Button
+                      <button
                         onClick={() => handleApprove(ad.id)}
-                        className="bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white"
+                        className="flex items-center px-4 py-2 rounded-lg bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white transition-all font-medium"
                       >
                         <CheckCircle className="w-4 h-4 mr-2" />
                         Approve
-                      </Button>
-                      <Button
+                      </button>
+                      <button
                         onClick={() => setRejectingAd(ad.id)}
-                        variant="outline"
-                        className="border-red-300 text-red-600 hover:bg-red-50"
+                        className="flex items-center px-4 py-2 rounded-lg border border-red-300 text-red-600 hover:bg-red-50 transition-colors font-medium"
                       >
                         <XCircle className="w-4 h-4 mr-2" />
                         Reject
-                      </Button>
+                      </button>
                     </div>
                   )}
 
@@ -330,21 +511,21 @@ export function AdminAdsManagement() {
                         className="w-full px-3 py-2 border border-red-300 rounded-md focus:ring-2 focus:ring-red-500 min-h-[80px] mb-3"
                       />
                       <div className="flex gap-2">
-                        <Button
+                        <button
                           onClick={() => handleReject(ad.id)}
-                          className="bg-red-600 hover:bg-red-700 text-white"
+                          className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors font-medium"
                         >
                           Confirm Rejection
-                        </Button>
-                        <Button
+                        </button>
+                        <button
                           onClick={() => {
                             setRejectingAd(null);
                             setRejectionReason('');
                           }}
-                          variant="outline"
+                          className="px-4 py-2 border border-red-300 text-red-700 hover:bg-red-50 rounded-lg transition-colors font-medium"
                         >
                           Cancel
-                        </Button>
+                        </button>
                       </div>
                     </div>
                   )}
@@ -368,7 +549,7 @@ export function AdminAdsManagement() {
                   </div>
                 </div>
               </div>
-            </Card>
+            </div>
           ))}
         </div>
       )}

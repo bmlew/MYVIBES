@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Building2, Mail, Phone, MapPin, Lock, Globe, Check } from 'lucide-react';
+import { ArrowLeft, Building2, Mail, Phone, MapPin, Lock, Globe, Check, User } from 'lucide-react';
 import { Button } from './components/ui/button';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
+import { toast } from "sonner";
 
 interface BusinessRegistrationProps {
   onBack: () => void;
@@ -48,6 +49,7 @@ export function BusinessRegistration({ onBack, onRegistrationComplete }: Busines
     ageGroup: 'all-ages',
     
     // Contact Info
+    ownerName: '', // Added ownerName
     email: '',
     phone: '',
     website: '',
@@ -62,6 +64,8 @@ export function BusinessRegistration({ onBack, onRegistrationComplete }: Busines
     
     // Agreement
     agreedToTerms: false,
+    
+    affiliateCode: ''
   });
 
   const cuisineOptions = [
@@ -106,6 +110,10 @@ export function BusinessRegistration({ onBack, onRegistrationComplete }: Busines
   };
 
   const validateStep2 = () => {
+    if (!formData.ownerName.trim()) {
+      setError('Owner name is required');
+      return false;
+    }
     if (!formData.email.trim() || !formData.email.includes('@')) {
       setError('Valid email is required');
       return false;
@@ -156,12 +164,15 @@ export function BusinessRegistration({ onBack, onRegistrationComplete }: Busines
     setError('');
 
     try {
-      // TODO: Replace with actual API call
-      const response = await fetch('/api/business/register', {
+      const response = await fetch(`${API_URL}/auth/business/register`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${publicAnonKey}`
+        },
         body: JSON.stringify({
-          name: formData.businessName,
+          business_name: formData.businessName,
+          owner_name: formData.ownerName,
           business_type: formData.businessType,
           description: formData.description,
           cuisine_types: formData.cuisineTypes,
@@ -172,21 +183,26 @@ export function BusinessRegistration({ onBack, onRegistrationComplete }: Busines
           address: formData.address,
           city: formData.city,
           password: formData.password,
+          affiliate_code: formData.affiliateCode,
+          plan: 'standard'
         }),
       });
 
-      if (!response.ok) {
-        throw new Error('Registration failed');
-      }
-
       const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Registration failed');
+      }
       
-      // Simulate success for now
+      toast.success('Registration successful!');
+      
+      // Notify parent
       setTimeout(() => {
-        onRegistrationComplete(data.businessId || 'test-business-id');
+        onRegistrationComplete(data.business_id || 'new-business');
       }, 1000);
       
     } catch (err) {
+      console.error('Registration error:', err);
       setError(err instanceof Error ? err.message : 'Registration failed. Please try again.');
       setLoading(false);
     }
@@ -404,6 +420,20 @@ export function BusinessRegistration({ onBack, onRegistrationComplete }: Busines
             <div className="space-y-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <User className="w-4 h-4 inline mr-1" />
+                  Owner Name *
+                </label>
+                <input
+                  type="text"
+                  value={formData.ownerName}
+                  onChange={(e) => handleInputChange('ownerName', e.target.value)}
+                  placeholder="Your Name"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
                   <Mail className="w-4 h-4 inline mr-1" />
                   Business Email *
                 </label>
@@ -521,6 +551,19 @@ export function BusinessRegistration({ onBack, onRegistrationComplete }: Busines
                     Featured on the platform
                   </li>
                 </ul>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Affiliate Code (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={formData.affiliateCode}
+                  onChange={(e) => handleInputChange('affiliateCode', e.target.value.toUpperCase())}
+                  placeholder="PROMO-CODE"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent uppercase tracking-widest"
+                />
               </div>
 
               <div>

@@ -4,19 +4,36 @@ import { OfflineBanner } from './components/OfflineBanner';
 import { clearInvalidBusinessCache } from '@/utils/offlineStorage';
 import '@/utils/fix-businesses'; // Import fix utilities for browser console
 
+import { Toaster } from '@/app/components/ui/sonner';
+
 // Lazy load heavy components for better initial load performance with retry logic
+// Handle both default and named exports for robustness
 const CustomerApp = lazy(() => 
   import('./CustomerApp')
+    .then(module => ({ default: module.CustomerApp || module.default }))
     .catch(err => {
       console.error('Error loading CustomerApp:', err);
       // Retry after short delay
-      return new Promise(resolve => setTimeout(() => resolve(import('./CustomerApp')), 1000));
+      return new Promise(resolve => setTimeout(() => resolve(
+        import('./CustomerApp').then(module => ({ default: module.CustomerApp || module.default }))
+      ), 1000));
     })
 );
+
 const BusinessDashboard = lazy(() => import('./BusinessDashboard').then(m => ({ default: m.BusinessDashboard })));
 const BusinessAuth = lazy(() => import('./components/BusinessAuth').then(m => ({ default: m.BusinessAuth })));
 const ROICalculator = lazy(() => import('./components/ROICalculator').then(m => ({ default: m.ROICalculator })));
-const AdminDashboard = lazy(() => import('./AdminDashboard'));
+const AdminDashboard = lazy(() => 
+  import('./AdminDashboard')
+    .then(module => ({ default: module.AdminDashboard || module.default }))
+    .catch(err => {
+      console.error('Error loading AdminDashboard:', err);
+      // Retry after short delay
+      return new Promise(resolve => setTimeout(() => resolve(
+        import('./AdminDashboard').then(module => ({ default: module.AdminDashboard || module.default }))
+      ), 1000));
+    })
+);
 const LandingPage = lazy(() => import('./LandingPage'));
 const WhatsAppReviewPage = lazy(() => import('./components/WhatsAppReviewPage').then(m => ({ default: m.WhatsAppReviewPage })));
 const FAQPage = lazy(() => import('./components/FAQPage').then(m => ({ default: m.FAQPage })));
@@ -29,7 +46,7 @@ const LoadingFallback = () => (
   <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-cyan-50 to-blue-50">
     <div className="text-center">
       <div className="w-16 h-16 mx-auto mb-4 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin"></div>
-      <p className="text-gray-600 font-medium">Loading MYVIBE...</p>
+      <p className="text-gray-600 font-medium">Loading MYVIBES...</p>
     </div>
   </div>
 );
@@ -92,6 +109,24 @@ export default function App() {
     }
   }, []);
 
+  // Preload heavy components in background
+  useEffect(() => {
+    const preloadComponents = async () => {
+      try {
+        // Preload CustomerApp as it's the main destination
+        console.log('📦 Preloading CustomerApp...');
+        await import('./CustomerApp');
+        console.log('✅ CustomerApp preloaded');
+      } catch (err) {
+        console.warn('⚠️ Failed to preload CustomerApp:', err);
+      }
+    };
+    
+    // Start preload after a short delay to prioritize initial render
+    const timer = setTimeout(preloadComponents, 2000);
+    return () => clearTimeout(timer);
+  }, []);
+
   const handleBusinessAuthSuccess = (businessId: string, name: string) => {
     console.log('✅ Business authenticated:', businessId, name);
     localStorage.setItem('business_id', businessId);
@@ -113,6 +148,7 @@ export default function App() {
       {/* PWA Components */}
       <InstallPrompt />
       <OfflineBanner />
+      <Toaster />
 
       {/* Mode Switcher - For Demo Purposes */}
       {currentView !== 'landing' && (
@@ -219,9 +255,17 @@ export default function App() {
         <Suspense fallback={<LoadingFallback />}>
           <AffiliatePortal onBack={() => setCurrentView('landing')} />
         </Suspense>
+      ) : currentView === 'platform-admin' ? (
+        <Suspense fallback={<LoadingFallback />}>
+          <AdminDashboard onNavigate={setCurrentView} />
+        </Suspense>
       ) : (
         <Suspense fallback={<LoadingFallback />}>
-          <AdminDashboard onBack={() => setCurrentView('customer-app')} />
+          <LandingPage 
+            onTryDemo={() => setCurrentView('customer-app')} 
+            onRegisterBusiness={() => setCurrentView('business-auth')}
+            onNavigate={(page) => setCurrentView(page)}
+          />
         </Suspense>
       )}
     </div>

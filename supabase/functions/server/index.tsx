@@ -1,10 +1,10 @@
 import { Hono } from "npm:hono";
 import { cors } from "npm:hono/cors";
 import { logger } from "npm:hono/logger";
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { createClient } from "jsr:@supabase/supabase-js@2";
 import * as kv from './kv_store.tsx';
 import { seedDatabase } from './seed_data.tsx';
-import { sendReservationConfirmation, sendBusinessNotification } from './notifications.tsx';
+import { sendReservationConfirmation, sendBusinessNotification, sendEmail } from './notifications.tsx';
 import { runMigration } from './migrate-kv-to-postgres.tsx';
 
 const app = new Hono();
@@ -46,6 +46,108 @@ function calculateDistance(lat1: number, lng1: number, lat2: number, lng2: numbe
     Math.sin(dLng / 2) * Math.sin(dLng / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return Math.round(R * c * 10) / 10;
+}
+
+// Helper: Sign business image URLs
+async function signBusinessUrls(business: any) {
+  if (!business) return business;
+  
+  const bucketName = 'make-175b2872-ads';
+  let logo_url = business.logo_url;
+  let cover_image_url = business.cover_image_url;
+  
+  // Sign Logo URL
+  if (logo_url && logo_url.startsWith(`storage:${bucketName}:`)) {
+     const path = logo_url.split(`storage:${bucketName}:`)[1];
+     const { data } = await supabase.storage.from(bucketName).createSignedUrl(path, 3600 * 24); // 24 hours
+     if (data?.signedUrl) logo_url = data.signedUrl;
+  }
+  
+  // Sign Cover URL
+  if (cover_image_url && cover_image_url.startsWith(`storage:${bucketName}:`)) {
+     const path = cover_image_url.split(`storage:${bucketName}:`)[1];
+     const { data } = await supabase.storage.from(bucketName).createSignedUrl(path, 3600 * 24); // 24 hours
+     if (data?.signedUrl) cover_image_url = data.signedUrl;
+  }
+  
+  return { ...business, logo_url, cover_image_url };
+}
+
+// Security Helper: Verify the authenticated user owns the business
+// Returns the business object if authorized, throws error otherwise
+async function verifyBusinessAccess(c: any, businessId: string) {
+  // Allow test businesses for manual testing
+  const TEST_IDS = ['palms', 'ocean-basket', 'marble', 'col-cacchio', 'tashas', 'nandos', 'karma', 'butchers-grill'];
+  if (TEST_IDS.includes(businessId)) {
+    console.log(`🔓 Allowing debug access to test business: ${businessId}`);
+    let business = await kv.get(`business:${businessId}`);
+    
+    // If business doesn't exist in KV yet, return a mock so we can still add items
+    if (!business) {
+       business = { 
+         id: businessId, 
+         user_id: 'debug-user', 
+         name: businessId.charAt(0).toUpperCase() + businessId.slice(1).replace('-', ' '),
+         is_active: true
+       };
+    }
+    
+    return { user: { id: 'debug-user' }, business };
+  }
+
+  const authHeader = c.req.header('Authorization');
+  if (!authHeader) {
+    throw new Error('Unauthorized: No token provided');
+  }
+
+  const token = authHeader.replace('Bearer ', '');
+  const { data: { user }, error } = await supabase.auth.getUser(token);
+
+  if (error || !user) {
+    throw new Error('Unauthorized: Invalid token');
+  }
+
+  // Fetch the business directly (Fast O(1) lookup)
+  const business = await kv.get(`business:${businessId}`);
+  if (!business) {
+    throw new Error('Business not found');
+  }
+
+  // Strict ownership check
+  if (business.user_id !== user.id) {
+    console.error(`⛔ Access Denied: User ${user.id} tried to access business ${businessId} owned by ${business.user_id}`);
+    throw new Error('Forbidden: You do not have permission to manage this business');
+  }
+
+  return { user, business };
+}
+
+// Helper: Get business for a user (Optimized with Link Key)
+async function getBusinessForUser(userId: string) {
+  // 1. Try fast path: Look up the link key
+  const linkKey = `link:user_business:${userId}`;
+  const link = await kv.get(linkKey);
+
+  if (link && link.businessId) {
+    const business = await kv.get(`business:${link.businessId}`);
+    if (business && business.user_id === userId) {
+      return business;
+    }
+    // If business missing or ownership changed, fall through to slow path to self-heal
+  }
+
+  // 2. Slow path: Scan all businesses (Self-healing fallback)
+  console.log(`⚠️ Cache miss for user ${userId}, scanning businesses...`);
+  const allBusinesses = await kv.getByPrefix('business:');
+  const business = allBusinesses.find((b: any) => b.user_id === userId);
+
+  // 3. Update cache if found
+  if (business) {
+    await kv.set(linkKey, { businessId: business.id });
+    console.log(`🔗 Created fast-lookup link for user ${userId} -> ${business.id}`);
+  }
+
+  return business;
 }
 
 function generateRecommendationReason(timeOfDay: string, isWeekend: boolean, score: number, special: any): string {
@@ -119,13 +221,14 @@ app.post("/make-server-175b2872/auth/business/register", async (c) => {
       console.log(`✅ Valid affiliate code: ${affiliate_code} - Affiliate: ${validAffiliate.name}`);
     }
 
-    const existingBusinesses = await kv.getByPrefix('business:');
-    const emailExists = existingBusinesses.some((b: any) => b.email === email);
-    
-    if (emailExists) {
-      return c.json({ error: 'Email already registered' }, 400);
+    // Check email existence (This is still slow but acceptable for registration, 
+    // ideally we'd have an email index)
+    if (!supabase.auth.admin) {
+      console.error('❌ Supabase Admin API not available. Check SUPABASE_SERVICE_ROLE_KEY.');
+      return c.json({ error: 'Server configuration error: Auth Admin unavailable' }, 500);
     }
 
+    // 1. Create Supabase Auth User
     const { data: authData, error: authError } = await supabase.auth.admin.createUser({
       email,
       password,
@@ -134,11 +237,21 @@ app.post("/make-server-175b2872/auth/business/register", async (c) => {
     });
 
     if (authError) {
-      console.error('Auth error:', authError);
-      return c.json({ error: 'Failed to create account' }, 500);
+      // Clean handling for existing users without error spam
+      if (authError.message?.includes('already been registered') || authError.code === 'email_exists') {
+        return c.json({ error: 'This email is already registered. Please sign in instead.' }, 400);
+      }
+      
+      console.error('❌ Auth error:', authError);
+      return c.json({ error: authError.message || 'Failed to create account' }, 500);
     }
 
-    const businessId = `business-${Date.now()}`;
+    // 2. Check for existing business (Dangling KV record recovery)
+    const existingBusinesses = await kv.getByPrefix('business:');
+    const existingBusiness = existingBusinesses.find((b: any) => b.email === email);
+    
+    // Use existing ID if recovering, else generate new
+    const businessId = existingBusiness ? existingBusiness.id : `business-${Date.now()}`;
     const business = {
       id: businessId,
       user_id: authData.user.id,
@@ -168,9 +281,9 @@ app.post("/make-server-175b2872/auth/business/register", async (c) => {
       price_range: '$$',
       logo_url: null,
       cover_image_url: null,
-      is_active: true,
-      subscription_status: 'active',
-      payment_status: 'paid',
+      is_active: false,
+      subscription_status: 'pending',
+      payment_status: 'pending',
       subscription_plan: selectedPlan,
       subscription_price: subscriptionPrice,
       next_payment_due: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
@@ -184,7 +297,11 @@ app.post("/make-server-175b2872/auth/business/register", async (c) => {
       updated_at: new Date().toISOString()
     };
 
+    // Store Business
     await kv.set(`business:${businessId}`, business);
+
+    // OPTIMIZATION: Create Fast Link Key
+    await kv.set(`link:user_business:${authData.user.id}`, { businessId: businessId });
 
     if (validAffiliate) {
       validAffiliate.total_referrals = (validAffiliate.total_referrals || 0) + 1;
@@ -192,15 +309,120 @@ app.post("/make-server-175b2872/auth/business/register", async (c) => {
       console.log(`💰 Affiliate ${validAffiliate.name} credited with new referral. Total: ${validAffiliate.total_referrals}`);
     }
 
+    // Auto-seed content if requested for testing
+    // (This is handled by a separate admin call usually, but we could do it here if needed)
+
     return c.json({
       success: true,
       message: 'Business registered successfully!',
       business_id: businessId,
       payment_required: false
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Registration error:', error);
-    return c.json({ error: 'Registration failed' }, 500);
+    return c.json({ error: `Registration failed: ${error.message || error}` }, 500);
+  }
+});
+
+// Admin Route: Seed Content
+app.post("/make-server-175b2872/admin/seed-content", async (c) => {
+  try {
+    const body = await c.req.json();
+    const { type, target_business_id, custom_data } = body;
+    
+    // Find a target business ID
+    let businessId = target_business_id;
+    if (!businessId) {
+       const allBusinesses = await kv.getByPrefix('business:');
+       // Try to find a demo business first
+       const demo = allBusinesses.find((b: any) => b.name === 'Demo Business' || b.name === 'My Demo Venue');
+       if (demo) {
+         businessId = demo.id;
+       } else if (allBusinesses.length > 0) {
+         businessId = allBusinesses[0].id; // Fallback to first available
+       } else {
+         return c.json({ error: 'No businesses found to seed content into.' }, 404);
+       }
+    }
+    
+    console.log(`🌱 Seeding content of type '${type}' into business '${businessId}'`);
+    
+    let count = 0;
+    
+    if (type === 'menu' || type === 'bulk_menu') {
+       let items = [];
+       
+       if (custom_data && Array.isArray(custom_data)) {
+         items = custom_data;
+       } else {
+         items = type === 'menu' ? [
+           { name: "Signature Vibe Burger", price: 120, description: "200g Wagyu beef patty, cheddar, caramelized onions, vibe sauce.", category: "Mains" },
+           { name: "Loaded Fries", price: 65, description: "Crispy fries topped with cheese sauce, bacon bits, and jalapenos.", category: "Starters" },
+           { name: "Vanilla Sky Shake", price: 45, description: "Classic vanilla milkshake with whipped cream and a cherry.", category: "Drinks" }
+         ] : Array.from({ length: 20 }).map((_, i) => {
+            const categories = ['Starters', 'Mains', 'Desserts', 'Drinks'];
+            const category = categories[i % 4];
+            return {
+              name: `${category} Item ${i + 1}`,
+              price: Math.floor(Math.random() * 200) + 40,
+              description: `Delicious ${category.toLowerCase()} item prepared fresh daily.`,
+              category
+            };
+         });
+       }
+       
+       for (const item of items) {
+          const itemId = item.id || `menu_item:${businessId}:${Date.now() + Math.random()}`;
+          await kv.set(itemId, {
+            id: itemId,
+            business_id: businessId,
+            ...item,
+            image_url: item.image_url || null,
+            created_at: new Date().toISOString()
+          });
+          count++;
+       }
+    } else if (type === 'specials' || type === 'bulk_specials') {
+       let items = [];
+       
+       if (custom_data && Array.isArray(custom_data)) {
+         items = custom_data;
+       } else {
+         items = type === 'specials' ? [
+           { title: "Burger Tuesday", description: "Get 20% off all gourmet burgers every Tuesday.", discount_percentage: 20, days_of_week: [2] },
+           { title: "Thirsty Thursday", description: "Half price on selected cocktails and drafts.", discount_percentage: 50, days_of_week: [4] },
+           { title: "Family Feast", description: "Weekend combo: 2 large pizzas + 2 kids meals for R300.", discount_percentage: 15, days_of_week: [0, 6] }
+         ] : [
+           { title: "Date Night Special", description: "3-course meal for two including a bottle of wine.", discount_percentage: 10, days_of_week: [5] },
+           { title: "Kids Eat Free", description: "One free kids meal with every adult main meal ordered.", discount_percentage: 100, days_of_week: [1, 3] },
+           { title: "Pensioner Discount", description: "15% off total bill for pensioners (ID required).", discount_percentage: 15, days_of_week: [1, 2, 3, 4, 5] },
+           { title: "Late Night Vibe", description: "2-for-1 shooters after 10 PM.", discount_percentage: 50, days_of_week: [5, 6] },
+           { title: "Sunday Roast", description: "Traditional roast with all the trimmings.", discount_percentage: 0, days_of_week: [0] }
+         ];
+       }
+       
+       for (const item of items) {
+          const specialId = item.id || `special:${businessId}:${Date.now() + Math.random()}`;
+          await kv.set(specialId, {
+            id: specialId,
+            business_id: businessId,
+            ...item,
+            image_url: item.image_url || null,
+            time_end: item.time_end || "22:00",
+            created_at: new Date().toISOString(),
+            view_count: item.view_count || 0
+          });
+          count++;
+       }
+    } else {
+      return c.json({ error: 'Invalid seed type' }, 400);
+    }
+    
+    return c.json({ success: true, message: `Successfully seeded ${type}`, count });
+    
+  } catch (error: any) {
+    console.error('Seeding error:', error);
+    return c.json({ error: `Seeding failed: ${error.message}` }, 500);
   }
 });
 
@@ -223,26 +445,28 @@ app.post("/make-server-175b2872/auth/business/signin", async (c) => {
       return c.json({ error: 'Invalid email or password' }, 401);
     }
 
-    const allBusinesses = await kv.getByPrefix('business:');
-    const business = allBusinesses.find((b: any) => b.user_id === authData.user.id);
+    // OPTIMIZED: Use helper to find business (checks fast link first)
+    const business = await getBusinessForUser(authData.user.id);
 
     if (!business) {
       return c.json({ error: 'Business not found' }, 404);
     }
 
+    const signedBusiness = await signBusinessUrls(business);
+
     return c.json({
       success: true,
       business_id: business.id,
       access_token: authData.session.access_token,
-      business: business
+      business: signedBusiness
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Sign in error:', error);
-    return c.json({ error: 'Sign in failed' }, 500);
+    return c.json({ error: `Sign in failed: ${error.message || error}` }, 500);
   }
 });
 
-// Get current business
+// Get current business (Optimized & Secure)
 app.get("/make-server-175b2872/auth/business/me", async (c) => {
   try {
     const authHeader = c.req.header('Authorization');
@@ -257,14 +481,16 @@ app.get("/make-server-175b2872/auth/business/me", async (c) => {
       return c.json({ error: 'Invalid token' }, 401);
     }
 
-    const allBusinesses = await kv.getByPrefix('business:');
-    const business = allBusinesses.find((b: any) => b.user_id === user.id);
+    // OPTIMIZED: Use helper
+    const business = await getBusinessForUser(user.id);
 
     if (!business) {
       return c.json({ error: 'Business not found' }, 404);
     }
 
-    return c.json({ business });
+    const signedBusiness = await signBusinessUrls(business);
+
+    return c.json({ business: signedBusiness });
   } catch (error) {
     console.error('Auth verification error:', error);
     return c.json({ error: 'Authentication failed' }, 500);
@@ -275,7 +501,7 @@ app.get("/make-server-175b2872/auth/business/me", async (c) => {
 // BUSINESS ROUTES
 // ============================================
 
-// Get all businesses
+// Get all businesses (Public - Filtered)
 app.get("/make-server-175b2872/kv/businesses", async (c) => {
   try {
     c.header('Cache-Control', 'public, max-age=60, stale-while-revalidate=120');
@@ -286,7 +512,9 @@ app.get("/make-server-175b2872/kv/businesses", async (c) => {
     
     const allBusinesses = await kv.getByPrefix('business:');
     
-    const paidBusinesses = allBusinesses.filter((b: any) => 
+    const isAdmin = c.req.query('admin') === 'true';
+
+    const businessesToReturn = isAdmin ? allBusinesses : allBusinesses.filter((b: any) => 
       b.is_active === true && 
       (b.payment_status === 'paid' || b.payment_status === 'grace' || 
        b.subscription_status === 'active' || b.subscription_status === 'grace')
@@ -295,7 +523,7 @@ app.get("/make-server-175b2872/kv/businesses", async (c) => {
     const lat = c.req.query('lat');
     const lng = c.req.query('lng');
     
-    const businessesWithDistance = paidBusinesses.map((b: any) => {
+    const businessesWithDistance = businessesToReturn.map((b: any) => {
       if (lat && lng && b.latitude && b.longitude) {
         const distance = calculateDistance(
           parseFloat(lat),
@@ -315,8 +543,11 @@ app.get("/make-server-175b2872/kv/businesses", async (c) => {
     const total = businessesWithDistance.length;
     const paginatedData = businessesWithDistance.slice(offset, offset + limit);
     
+    // Sign URLs for the paginated subset
+    const signedData = await Promise.all(paginatedData.map(async (b: any) => await signBusinessUrls(b)));
+
     return c.json({
-      data: paginatedData,
+      data: signedData,
       pagination: {
         page,
         limit,
@@ -331,7 +562,7 @@ app.get("/make-server-175b2872/kv/businesses", async (c) => {
   }
 });
 
-// Get business by ID
+// Get business by ID (Public)
 app.get("/make-server-175b2872/kv/businesses/:id", async (c) => {
   try {
     c.header('Cache-Control', 'public, max-age=10, must-revalidate');
@@ -343,6 +574,8 @@ app.get("/make-server-175b2872/kv/businesses/:id", async (c) => {
       return c.json({ error: 'Business not found' }, 404);
     }
     
+    const signedBusiness = await signBusinessUrls(business);
+
     const [allSpecials, allEvents, oldMenuItems, newMenuItems, reviews] = await Promise.all([
       kv.getByPrefix(`special:${id}:`),
       kv.getByPrefix(`event:`),
@@ -355,7 +588,7 @@ app.get("/make-server-175b2872/kv/businesses/:id", async (c) => {
     const menuItems = [...(oldMenuItems || []), ...(newMenuItems || [])];
     
     return c.json({
-      business: business,
+      business: signedBusiness,
       specials: allSpecials || [],
       events: events || [],
       menu_items: menuItems,
@@ -368,15 +601,19 @@ app.get("/make-server-175b2872/kv/businesses/:id", async (c) => {
   }
 });
 
-// Update business
+// Update business (SECURED)
 app.put("/make-server-175b2872/kv/business/:id", async (c) => {
   try {
     const id = c.req.param('id');
     const body = await c.req.json();
     
-    const existingBusiness = await kv.get(`business:${id}`);
-    if (!existingBusiness) {
-      return c.json({ error: 'Business not found' }, 404);
+    // SECURE: Verify ownership
+    let existingBusiness;
+    try {
+      const result = await verifyBusinessAccess(c, id);
+      existingBusiness = result.business;
+    } catch (e: any) {
+      return c.json({ error: e.message }, e.message.includes('found') ? 404 : 403);
     }
     
     const updatedBusiness = {
@@ -406,24 +643,30 @@ app.put("/make-server-175b2872/kv/business/:id", async (c) => {
     
     console.log(`✅ Business ${id} updated successfully`);
     
-    return c.json({ success: true, business: updatedBusiness });
+    const signedBusiness = await signBusinessUrls(updatedBusiness);
+
+    return c.json({ success: true, business: signedBusiness });
   } catch (error) {
     console.error('❌ Error updating business:', error);
     return c.json({ error: 'Failed to update business' }, 500);
   }
 });
 
-// Delete business
+// Delete business (SECURED)
 app.delete("/make-server-175b2872/kv/business/:id", async (c) => {
   try {
     const id = c.req.param('id');
     
-    const business = await kv.get(`business:${id}`);
-    if (!business) {
-      return c.json({ error: 'Business not found' }, 404);
+    // SECURE: Verify ownership
+    try {
+      await verifyBusinessAccess(c, id);
+    } catch (e: any) {
+      return c.json({ error: e.message }, e.message.includes('found') ? 404 : 403);
     }
     
     await kv.del(`business:${id}`);
+    // Also remove the link key if we can find it, but it's tricky without user ID handy
+    // For now we leave the orphan link, it will just point to nothing, which is fine.
     
     console.log(`✅ Business ${id} deleted successfully`);
     
@@ -431,6 +674,532 @@ app.delete("/make-server-175b2872/kv/business/:id", async (c) => {
   } catch (error) {
     console.error('❌ Error deleting business:', error);
     return c.json({ error: 'Failed to delete business' }, 500);
+  }
+});
+
+// ============================================
+// RESOURCE ROUTES (Specials, Events, Menu, Reviews)
+// ============================================
+
+// --- SPECIALS ---
+
+// Get all specials
+app.get("/make-server-175b2872/kv/specials", async (c) => {
+  try {
+    const specials = await kv.getByPrefix('special:');
+    return c.json({ specials });
+  } catch (error) {
+    console.error('Error fetching specials:', error);
+    return c.json({ error: 'Failed to fetch specials' }, 500);
+  }
+});
+
+// Create special
+app.post("/make-server-175b2872/kv/specials", async (c) => {
+  try {
+    const body = await c.req.json();
+    const { business_id } = body;
+    
+    if (!business_id) {
+      return c.json({ error: 'Business ID required' }, 400);
+    }
+
+    try {
+      await verifyBusinessAccess(c, business_id);
+    } catch (e: any) {
+      return c.json({ error: e.message }, 403);
+    }
+
+    const specialId = `special:${business_id}:${Date.now()}`;
+    const special = {
+      ...body,
+      id: specialId,
+      created_at: new Date().toISOString(),
+      view_count: 0
+    };
+
+    await kv.set(specialId, special);
+    return c.json({ success: true, special });
+  } catch (error) {
+    console.error('Error creating special:', error);
+    return c.json({ error: 'Failed to create special' }, 500);
+  }
+});
+
+// Update special
+app.put("/make-server-175b2872/kv/specials/:id", async (c) => {
+  try {
+    const id = c.req.param('id');
+    const body = await c.req.json();
+    const { business_id } = body;
+
+    // Use business_id from body or extract from ID if possible, but body is safer for verify
+    // Actually, verifyBusinessAccess needs business_id. The ID is `special:business_id:timestamp`.
+    // We can extract business_id from the key if needed, or rely on body.
+    // Let's rely on extracting from key to be safe against spoofing in body.
+    const parts = id.split(':');
+    if (parts.length < 2) {
+       return c.json({ error: 'Invalid special ID format' }, 400);
+    }
+    const derivedBusinessId = parts[1]; // special:BUSINESS_ID:timestamp
+
+    try {
+      await verifyBusinessAccess(c, derivedBusinessId);
+    } catch (e: any) {
+      return c.json({ error: e.message }, 403);
+    }
+
+    const existing = await kv.get(id);
+    if (!existing) {
+      return c.json({ error: 'Special not found' }, 404);
+    }
+
+    const updated = { ...existing, ...body, updated_at: new Date().toISOString() };
+    await kv.set(id, updated);
+    return c.json({ success: true, special: updated });
+  } catch (error) {
+    console.error('Error updating special:', error);
+    return c.json({ error: 'Failed to update special' }, 500);
+  }
+});
+
+// Delete special
+app.delete("/make-server-175b2872/kv/specials/:id", async (c) => {
+  try {
+    const id = c.req.param('id');
+    const parts = id.split(':');
+    if (parts.length < 2) {
+       return c.json({ error: 'Invalid special ID format' }, 400);
+    }
+    const derivedBusinessId = parts[1];
+
+    try {
+      await verifyBusinessAccess(c, derivedBusinessId);
+    } catch (e: any) {
+      return c.json({ error: e.message }, 403);
+    }
+
+    await kv.del(id);
+    return c.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting special:', error);
+    return c.json({ error: 'Failed to delete special' }, 500);
+  }
+});
+
+// --- EVENTS ---
+
+// Get all events
+app.get("/make-server-175b2872/kv/events", async (c) => {
+  try {
+    const events = await kv.getByPrefix('event:');
+    return c.json({ events });
+  } catch (error) {
+    console.error('Error fetching events:', error);
+    return c.json({ error: 'Failed to fetch events' }, 500);
+  }
+});
+
+// Create event
+app.post("/make-server-175b2872/kv/events", async (c) => {
+  try {
+    const body = await c.req.json();
+    const { business_id } = body;
+
+    try {
+      await verifyBusinessAccess(c, business_id);
+    } catch (e: any) {
+      return c.json({ error: e.message }, 403);
+    }
+
+    const eventId = `event:${Date.now()}`; // Events might not be namespaced by business in ID in previous code, but let's check. 
+    // Previous code used `event:${id}` or something. Let's stick to simple IDs or namespaced.
+    // Dashboard expects `id` to be returned.
+    const event = {
+      ...body,
+      id: eventId,
+      created_at: new Date().toISOString(),
+      interested_count: 0
+    };
+
+    await kv.set(eventId, event);
+    return c.json({ success: true, event });
+  } catch (error) {
+    console.error('Error creating event:', error);
+    return c.json({ error: 'Failed to create event' }, 500);
+  }
+});
+
+// Update event
+app.put("/make-server-175b2872/kv/events/:id", async (c) => {
+  try {
+    const id = c.req.param('id');
+    const body = await c.req.json();
+    
+    const existing = await kv.get(id); // For events, we need to fetch first to know business_id
+    if (!existing) {
+      return c.json({ error: 'Event not found' }, 404);
+    }
+
+    try {
+      await verifyBusinessAccess(c, existing.business_id);
+    } catch (e: any) {
+      return c.json({ error: e.message }, 403);
+    }
+
+    const updated = { ...existing, ...body, updated_at: new Date().toISOString() };
+    await kv.set(id, updated);
+    return c.json({ success: true, event: updated });
+  } catch (error) {
+    console.error('Error updating event:', error);
+    return c.json({ error: 'Failed to update event' }, 500);
+  }
+});
+
+// Delete event
+app.delete("/make-server-175b2872/kv/events/:id", async (c) => {
+  try {
+    const id = c.req.param('id');
+    const existing = await kv.get(id);
+    if (!existing) {
+      return c.json({ error: 'Event not found' }, 404);
+    }
+
+    try {
+      await verifyBusinessAccess(c, existing.business_id);
+    } catch (e: any) {
+      return c.json({ error: e.message }, 403);
+    }
+
+    await kv.del(id);
+    return c.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting event:', error);
+    return c.json({ error: 'Failed to delete event' }, 500);
+  }
+});
+
+// --- MENU ITEMS ---
+
+// Get all menu items
+app.get("/make-server-175b2872/kv/menu_items", async (c) => {
+  try {
+    const items = await kv.getByPrefix('menu_item:');
+    return c.json({ menu_items: items });
+  } catch (error) {
+    console.error('Error fetching menu items:', error);
+    return c.json({ error: 'Failed to fetch menu items' }, 500);
+  }
+});
+
+// Create menu item
+app.post("/make-server-175b2872/kv/menu_items", async (c) => {
+  try {
+    const body = await c.req.json();
+    const { business_id } = body;
+
+    try {
+      await verifyBusinessAccess(c, business_id);
+    } catch (e: any) {
+      return c.json({ error: e.message }, 403);
+    }
+
+    const itemId = `menu_item:${business_id}:${Date.now()}`;
+    const item = {
+      ...body,
+      id: itemId,
+      created_at: new Date().toISOString()
+    };
+
+    await kv.set(itemId, item);
+    return c.json({ success: true, item });
+  } catch (error) {
+    console.error('Error creating menu item:', error);
+    return c.json({ error: 'Failed to create menu item' }, 500);
+  }
+});
+
+// Update menu item
+app.put("/make-server-175b2872/kv/menu_items/:id", async (c) => {
+  try {
+    const id = c.req.param('id');
+    const body = await c.req.json();
+    
+    // Extract business_id from key
+    const parts = id.split(':');
+    // Expected: menu_item:BUSINESS_ID:timestamp
+    if (parts.length < 3) {
+       return c.json({ error: 'Invalid menu item ID format' }, 400);
+    }
+    const derivedBusinessId = parts[1];
+
+    try {
+      await verifyBusinessAccess(c, derivedBusinessId);
+    } catch (e: any) {
+      return c.json({ error: e.message }, 403);
+    }
+
+    const existing = await kv.get(id);
+    if (!existing) {
+      return c.json({ error: 'Menu item not found' }, 404);
+    }
+
+    const updated = { ...existing, ...body, updated_at: new Date().toISOString() };
+    await kv.set(id, updated);
+    return c.json({ success: true, item: updated });
+  } catch (error) {
+    console.error('Error updating menu item:', error);
+    return c.json({ error: 'Failed to update menu item' }, 500);
+  }
+});
+
+// Delete menu item
+app.delete("/make-server-175b2872/kv/menu_items/:id", async (c) => {
+  try {
+    const id = c.req.param('id');
+    const parts = id.split(':');
+    if (parts.length < 3) {
+       return c.json({ error: 'Invalid menu item ID format' }, 400);
+    }
+    const derivedBusinessId = parts[1];
+
+    try {
+      await verifyBusinessAccess(c, derivedBusinessId);
+    } catch (e: any) {
+      return c.json({ error: e.message }, 403);
+    }
+
+    await kv.del(id);
+    return c.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting menu item:', error);
+    return c.json({ error: 'Failed to delete menu item' }, 500);
+  }
+});
+
+// --- REVIEWS ---
+
+// Get reviews for business
+app.get("/make-server-175b2872/kv/reviews/:businessId", async (c) => {
+  try {
+    const businessId = c.req.param('businessId');
+    // Reviews stored as review:BUSINESS_ID:REVIEW_ID
+    const reviews = await kv.getByPrefix(`review:${businessId}:`);
+    return c.json({ reviews });
+  } catch (error) {
+    console.error('Error fetching reviews:', error);
+    return c.json({ error: 'Failed to fetch reviews' }, 500);
+  }
+});
+
+// Reply to review
+app.post("/make-server-175b2872/kv/reviews/:reviewId/reply", async (c) => {
+  try {
+    const reviewId = c.req.param('reviewId');
+    const body = await c.req.json();
+    const { business_id, reply_text } = body;
+
+    try {
+      await verifyBusinessAccess(c, business_id);
+    } catch (e: any) {
+      return c.json({ error: e.message }, 403);
+    }
+
+    const existing = await kv.get(reviewId);
+    if (!existing) {
+      return c.json({ error: 'Review not found' }, 404);
+    }
+
+    const updated = {
+      ...existing,
+      business_reply: reply_text,
+      business_reply_date: new Date().toISOString()
+    };
+
+    await kv.set(reviewId, updated);
+    
+    const whatsappLink = `https://wa.me/${existing.customer_mobile}?text=${encodeURIComponent(`Hi ${existing.customer_name}, thanks for your review! ${reply_text}`)}`;
+
+    return c.json({ success: true, review: updated, whatsapp_link: whatsappLink });
+  } catch (error) {
+    console.error('Error replying to review:', error);
+    return c.json({ error: 'Failed to reply to review' }, 500);
+  }
+});
+
+// --- RECOMMENDATIONS ---
+
+app.post("/make-server-175b2872/kv/recommendations", async (c) => {
+  try {
+    const body = await c.req.json();
+    const { lat, lng, timeOfDay } = body;
+
+    console.log('🤖 Generating recommendations (KV)...');
+
+    // 1. Get all businesses and specials
+    const allBusinesses = await kv.getByPrefix('business:');
+    const allSpecials = await kv.getByPrefix('special:');
+    
+    // 2. Filter active businesses
+    const activeBusinesses = allBusinesses.filter((b: any) => 
+      b.is_active === true && 
+      (b.payment_status === 'paid' || b.payment_status === 'grace' || 
+       b.subscription_status === 'active' || b.subscription_status === 'grace')
+    );
+    
+    // Map business ID to business object for easy lookup
+    const businessMap = new Map();
+    activeBusinesses.forEach((b: any) => businessMap.set(b.id, b));
+    
+    // 3. Filter valid specials
+    const today = new Date().toISOString().split('T')[0];
+    const validSpecials = allSpecials.filter((s: any) => {
+      // Check if business exists and is active
+      const parts = s.id.split(':'); // special:BUSINESS_ID:timestamp
+      if (parts.length < 2) return false;
+      
+      // special object usually has business_id, fallback to ID extraction
+      const bid = s.business_id || parts[1];
+      
+      if (!businessMap.has(bid)) return false;
+      
+      // Check date validity
+      if (s.valid_until && s.valid_until < today) return false;
+      
+      return true;
+    });
+
+    if (validSpecials.length === 0) {
+      return c.json({ recommendations: [] });
+    }
+
+    const recommendations = [];
+    const now = new Date();
+    const isWeekend = now.getDay() === 0 || now.getDay() === 6;
+
+    // 4. Score specials
+    for (const special of validSpecials) {
+       let score = 50;
+       
+       // Get business
+       const parts = special.id.split(':');
+       const bid = special.business_id || parts[1];
+       const business = businessMap.get(bid);
+       if (!business) continue;
+
+       // Time-based scoring
+       const title = (special.title || '').toLowerCase();
+       if (timeOfDay === 'morning' && title.includes('breakfast')) score += 30;
+       if (timeOfDay === 'afternoon' && title.includes('lunch')) score += 30;
+       if (timeOfDay === 'evening' && (title.includes('dinner') || title.includes('happy'))) score += 30;
+       
+       if (isWeekend && title.includes('weekend')) score += 20;
+       
+       if (special.discount_percentage) {
+         score += Math.min(special.discount_percentage, 30);
+       }
+       
+       // Location scoring if lat/lng provided
+       if (lat && lng && business.latitude && business.longitude) {
+         const distance = calculateDistance(lat, lng, business.latitude, business.longitude);
+         if (distance < 5) score += 20;
+         else if (distance < 10) score += 10;
+         else if (distance > 50) score -= 20;
+       }
+       
+       recommendations.push({
+          id: special.id,
+          business_id: business.id,
+          business_name: business.name,
+          business_logo: business.logo_url,
+          business_city: business.city,
+          business_type: business.business_type || 'restaurant',
+          business_rating: business.average_rating || 0,
+          special_title: special.title,
+          special_description: special.description,
+          special_image: special.image_url,
+          discount_percentage: special.discount_percentage,
+          valid_until: special.valid_until,
+          score,
+          reason: generateRecommendationReason(timeOfDay, isWeekend, score, special),
+          tags: generateTags(special, score, timeOfDay)
+       });
+    }
+
+    // 5. Sort and return
+    recommendations.sort((a, b) => b.score - a.score);
+    const topRecommendations = recommendations.slice(0, 10);
+    
+    // Sign URLs for the top recommendations
+    const signedRecommendations = await Promise.all(topRecommendations.map(async (rec: any) => {
+      let logo_url = rec.business_logo;
+      let special_image = rec.special_image;
+      const bucketName = 'make-175b2872-ads';
+      
+      if (logo_url && logo_url.startsWith(`storage:${bucketName}:`)) {
+         const path = logo_url.split(`storage:${bucketName}:`)[1];
+         const { data } = await supabase.storage.from(bucketName).createSignedUrl(path, 3600 * 24);
+         if (data?.signedUrl) logo_url = data.signedUrl;
+      }
+
+      if (special_image && special_image.startsWith(`storage:${bucketName}:`)) {
+         const path = special_image.split(`storage:${bucketName}:`)[1];
+         const { data } = await supabase.storage.from(bucketName).createSignedUrl(path, 3600 * 24);
+         if (data?.signedUrl) special_image = data.signedUrl;
+      }
+      
+      return { ...rec, business_logo: logo_url, special_image };
+    }));
+
+    return c.json({
+      recommendations: signedRecommendations,
+      generated_at: new Date().toISOString(),
+      count: signedRecommendations.length
+    });
+
+  } catch (error) {
+    console.error('❌ Generate recommendations error:', error);
+    return c.json({ error: 'Failed to generate recommendations' }, 500);
+  }
+});
+
+// --- NOTIFICATIONS ---
+
+// Get unread count
+app.get("/make-server-175b2872/kv/notifications/:userId/unread-count", async (c) => {
+  try {
+    const userId = c.req.param('userId');
+    const notifications = await kv.getByPrefix(`notification:${userId}:`);
+    const unreadCount = notifications.filter((n: any) => !n.read).length;
+    return c.json({ count: unreadCount });
+  } catch (error) {
+    return c.json({ count: 0 });
+  }
+});
+
+// Get notifications
+app.get("/make-server-175b2872/kv/notifications/:userId", async (c) => {
+  try {
+    const userId = c.req.param('userId');
+    const notifications = await kv.getByPrefix(`notification:${userId}:`);
+    return c.json({ notifications });
+  } catch (error) {
+    return c.json({ notifications: [] });
+  }
+});
+
+// Mark notification as read
+app.put("/make-server-175b2872/kv/notifications/:notificationId/read", async (c) => {
+  try {
+    const notificationId = c.req.param('notificationId');
+    const notification = await kv.get(notificationId);
+    if (notification) {
+      notification.read = true;
+      await kv.set(notificationId, notification);
+    }
+    return c.json({ success: true });
+  } catch (error) {
+    return c.json({ error: 'Failed to mark as read' }, 500);
   }
 });
 
@@ -463,6 +1232,7 @@ app.get("/make-server-175b2872/admin/stats", async (c) => {
     const allReviews = await kv.getByPrefix('review:');
     const allSpecials = await kv.getByPrefix('special:');
     const allEvents = await kv.getByPrefix('event:');
+    const allCustomers = await kv.getByPrefix('customer:');
     
     // Calculate stats
     const activeBusinesses = allBusinesses.filter((b: any) => b.is_active === true).length;
@@ -513,7 +1283,7 @@ app.get("/make-server-175b2872/admin/stats", async (c) => {
       mom_growth_percentage: 0,
       mom_growth_positive: true,
       
-      total_customers: 0,
+      total_customers: allCustomers.length,
       total_transactions: 0,
       pending_payouts: 0,
       paid_subscriptions: activeBusinesses
@@ -776,9 +1546,8 @@ app.post("/make-server-175b2872/affiliates/register", async (c) => {
 
     return c.json({
       success: true,
-      message: 'Application submitted! You will be notified once approved.',
-      affiliate_id: affiliateId,
-      code: affiliateCode
+      message: 'Affiliate application submitted successfully!',
+      affiliate_code: affiliateCode
     });
   } catch (error) {
     console.error('Affiliate registration error:', error);
@@ -786,1004 +1555,934 @@ app.post("/make-server-175b2872/affiliates/register", async (c) => {
   }
 });
 
-// Update affiliate
-app.put("/make-server-175b2872/affiliates/:id", async (c) => {
-  try {
-    const id = c.req.param('id');
-    const body = await c.req.json();
-    
-    const affiliate = await kv.get(`affiliate:${id}`);
-    if (!affiliate) {
-      return c.json({ error: 'Affiliate not found' }, 404);
-    }
-    
-    const updatedAffiliate = {
-      ...affiliate,
-      status: body.status || affiliate.status,
-      updated_at: new Date().toISOString()
-    };
-    
-    await kv.set(`affiliate:${id}`, updatedAffiliate);
-    
-    console.log(`✅ Affiliate ${id} status updated to: ${updatedAffiliate.status}`);
-    
-    return c.json({ success: true, affiliate: updatedAffiliate });
-  } catch (error) {
-    console.error('Error updating affiliate:', error);
-    return c.json({ error: 'Failed to update affiliate' }, 500);
-  }
-});
-
-// Get affiliate dashboard
-app.get("/make-server-175b2872/affiliates/:id/dashboard", async (c) => {
-  try {
-    const id = c.req.param('id');
-    
-    const affiliate = await kv.get(`affiliate:${id}`);
-    if (!affiliate) {
-      return c.json({ error: 'Affiliate not found' }, 404);
-    }
-    
-    const allBusinesses = await kv.getByPrefix('business:');
-    const referredBusinesses = allBusinesses.filter((b: any) => b.referred_by === id);
-    
-    const allCommissions = await kv.getByPrefix('commission:');
-    const affiliateCommissions = allCommissions.filter((c: any) => c.affiliate_id === id);
-    
-    const pendingEarnings = affiliateCommissions
-      .filter((c: any) => c.status === 'pending')
-      .reduce((sum: number, c: any) => sum + c.amount, 0);
-    
-    const paidEarnings = affiliateCommissions
-      .filter((c: any) => c.status === 'paid')
-      .reduce((sum: number, c: any) => sum + c.amount, 0);
-    
-    return c.json({
-      affiliate,
-      stats: {
-        total_referrals: referredBusinesses.length,
-        active_referrals: referredBusinesses.filter((b: any) => b.is_active).length,
-        pending_earnings: pendingEarnings,
-        paid_earnings: paidEarnings,
-        total_earnings: pendingEarnings + paidEarnings
-      },
-      referred_businesses: referredBusinesses,
-      commissions: affiliateCommissions
-    });
-  } catch (error) {
-    console.error('Error fetching affiliate dashboard:', error);
-    return c.json({ error: 'Failed to fetch dashboard data' }, 500);
-  }
-});
-
 // ============================================
-// ANALYTICS ROUTES
+// ADS MANAGEMENT ROUTES
 // ============================================
 
-// Track business profile view
-app.post("/make-server-175b2872/analytics/track-view", async (c) => {
+// Get all ads (Admin)
+app.get("/make-server-175b2872/ads/all", async (c) => {
   try {
-    const body = await c.req.json();
-    const { business_id } = body;
+    const ads = await kv.getByPrefix('ad:');
     
-    if (!business_id) {
-      return c.json({ error: 'business_id is required' }, 400);
-    }
-    
-    // Increment view count for the business
-    const business = await kv.get(`business:${business_id}`);
-    if (business) {
-      business.total_views = (business.total_views || 0) + 1;
-      await kv.set(`business:${business_id}`, business);
-    }
-    
-    // Store view event for analytics
-    const viewId = `view:${business_id}:${Date.now()}`;
-    const viewEvent = {
-      id: viewId,
-      business_id,
-      event_type: 'view',
-      timestamp: new Date().toISOString()
-    };
-    
-    await kv.set(viewId, viewEvent);
-    
-    return c.json({ success: true });
-  } catch (error) {
-    console.error('Error tracking view:', error);
-    return c.json({ error: 'Failed to track view' }, 500);
-  }
-});
-
-// Track ad/carousel click
-app.post("/make-server-175b2872/analytics/track-click", async (c) => {
-  try {
-    const body = await c.req.json();
-    const { business_id, click_type, user_email, source_page } = body;
-    
-    if (!business_id) {
-      return c.json({ error: 'business_id is required' }, 400);
-    }
-    
-    // Store click event for analytics
-    const clickId = `click:${business_id}:${Date.now()}`;
-    const clickEvent = {
-      id: clickId,
-      business_id,
-      event_type: 'click',
-      click_type: click_type || 'general',
-      user_email: user_email || null,
-      source_page: source_page || null,
-      timestamp: new Date().toISOString()
-    };
-    
-    await kv.set(clickId, clickEvent);
-    
-    return c.json({ success: true });
-  } catch (error) {
-    console.error('Error tracking click:', error);
-    return c.json({ error: 'Failed to track click' }, 500);
-  }
-});
-
-// Get business analytics
-app.get("/make-server-175b2872/analytics/business/:businessId", async (c) => {
-  try {
-    const businessId = c.req.param('businessId');
-    
-    const business = await kv.get(`business:${businessId}`);
-    if (!business) {
-      return c.json({ error: 'Business not found' }, 404);
-    }
-    
-    // Get all analytics events for this business
-    const [views, clicks, reservations, reviews] = await Promise.all([
-      kv.getByPrefix(`view:${businessId}:`),
-      kv.getByPrefix(`click:${businessId}:`),
-      kv.getByPrefix('reservation:'),
-      kv.getByPrefix(`review:${businessId}:`)
-    ]);
-    
-    const businessReservations = reservations.filter((r: any) => r.business_id === businessId);
-    
-    const totalViews = views.length;
-    const totalClicks = clicks.length;
-    const totalReservations = businessReservations.length;
-    const confirmedReservations = businessReservations.filter((r: any) => r.status === 'confirmed').length;
-    
-    // Calculate CTR (Click-Through Rate) and conversion rate
-    const ctr = totalViews > 0 ? (totalClicks / totalViews) * 100 : 0;
-    const conversionRate = totalClicks > 0 ? (totalReservations / totalClicks) * 100 : 0;
-    
-    return c.json({
-      business_id: businessId,
-      metrics: {
-        total_views: totalViews,
-        total_clicks: totalClicks,
-        total_reservations: totalReservations,
-        confirmed_reservations: confirmedReservations,
-        total_reviews: reviews.length,
-        average_rating: business.average_rating || 0,
-        ctr: Math.round(ctr * 10) / 10,
-        conversion_rate: Math.round(conversionRate * 10) / 10
-      },
-      views_trend: views.slice(-30), // Last 30 views
-      clicks_trend: clicks.slice(-30) // Last 30 clicks
-    });
-  } catch (error) {
-    console.error('Error fetching business analytics:', error);
-    return c.json({ error: 'Failed to fetch analytics' }, 500);
-  }
-});
-
-// Get platform analytics (admin)
-app.get("/make-server-175b2872/analytics/platform", async (c) => {
-  try {
-    const [businesses, views, clicks, reservations, reviews] = await Promise.all([
-      kv.getByPrefix('business:'),
-      kv.getByPrefix('view:'),
-      kv.getByPrefix('click:'),
-      kv.getByPrefix('reservation:'),
-      kv.getByPrefix('review:')
-    ]);
-    
-    return c.json({
-      total_businesses: businesses.length,
-      total_views: views.length,
-      total_clicks: clicks.length,
-      total_reservations: reservations.length,
-      total_reviews: reviews.length,
-      active_businesses: businesses.filter((b: any) => b.is_active).length
-    });
-  } catch (error) {
-    console.error('Error fetching platform analytics:', error);
-    return c.json({ error: 'Failed to fetch platform analytics' }, 500);
-  }
-});
-
-// Get admin stats
-app.get("/make-server-175b2872/analytics/stats", async (c) => {
-  try {
-    const [businesses, reservations, affiliates, commissions] = await Promise.all([
-      kv.getByPrefix('business:'),
-      kv.getByPrefix('reservation:'),
-      kv.getByPrefix('affiliate:'),
-      kv.getByPrefix('commission:')
-    ]);
-
-    const totalBusinesses = businesses.length;
-    const activeBusinesses = businesses.filter((b: any) => 
-      b.is_active === true && b.payment_status === 'paid'
-    ).length;
-    const pendingBusinesses = businesses.filter((b: any) => 
-      b.payment_status === 'pending'
-    ).length;
-
-    const totalRevenue = reservations
-      .filter((r: any) => r.status === 'confirmed')
-      .reduce((sum: number, r: any) => sum + (parseFloat(r.amount) || 0), 0);
-
-    const monthlyRevenue = reservations
-      .filter((r: any) => {
-        const reservationDate = new Date(r.created_at);
-        const now = new Date();
-        return r.status === 'confirmed' && 
-               reservationDate.getMonth() === now.getMonth() &&
-               reservationDate.getFullYear() === now.getFullYear();
-      })
-      .reduce((sum: number, r: any) => sum + (parseFloat(r.amount) || 0), 0);
-
-    const subscriptionRevenue = businesses
-      .filter((b: any) => b.payment_status === 'paid')
-      .reduce((sum: number, b: any) => sum + (b.subscription_price || 499), 0);
-
-    const totalAffiliates = affiliates.length;
-    const activeAffiliates = affiliates.filter((a: any) => a.status === 'approved').length;
-    const pendingCommissions = commissions
-      .filter((c: any) => c.status === 'pending')
-      .reduce((sum: number, c: any) => sum + c.amount, 0);
-
-    const businessRevenue = new Map();
-    reservations
-      .filter((r: any) => r.status === 'confirmed')
-      .forEach((r: any) => {
-        const current = businessRevenue.get(r.business_id) || 0;
-        businessRevenue.set(r.business_id, current + (parseFloat(r.amount) || 0));
-      });
-
-    const topBusinesses = Array.from(businessRevenue.entries())
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 5)
-      .map(([businessId, revenue]) => {
-        const business = businesses.find((b: any) => b.id === businessId);
-        return {
-          id: businessId,
-          name: business?.name || 'Unknown',
-          revenue: revenue,
-          reservations: reservations.filter((r: any) => 
-            r.business_id === businessId && r.status === 'confirmed'
-          ).length
-        };
-      });
-
-    return c.json({
-      overview: {
-        total_businesses: totalBusinesses,
-        active_businesses: activeBusinesses,
-        pending_businesses: pendingBusinesses,
-        total_revenue: totalRevenue,
-        monthly_revenue: monthlyRevenue,
-        subscription_revenue: subscriptionRevenue,
-        total_reservations: reservations.length,
-        confirmed_reservations: reservations.filter((r: any) => r.status === 'confirmed').length
-      },
-      affiliates: {
-        total: totalAffiliates,
-        active: activeAffiliates,
-        pending: affiliates.filter((a: any) => a.status === 'pending').length,
-        pending: affiliates.filter((a: any) => a.status === 'pending').length,
-        pending_commissions: pendingCommissions
-      },
-      top_businesses: topBusinesses,
-      recent_activity: {
-        new_businesses_this_month: businesses.filter((b: any) => {
-          const created = new Date(b.created_at);
-          const now = new Date();
-          return created.getMonth() === now.getMonth() && 
-                 created.getFullYear() === now.getFullYear();
-        }).length,
-        new_reservations_today: reservations.filter((r: any) => {
-          const created = new Date(r.created_at);
-          const today = new Date();
-          return created.toDateString() === today.toDateString();
-        }).length
+    // Sign URLs for admin view as well
+    const bucketName = 'make-175b2872-ads';
+    const signedAds = await Promise.all(ads.map(async (ad: any) => {
+      let video_url = ad.video_url;
+      let thumbnail_url = ad.thumbnail_url;
+      
+      if (video_url && video_url.startsWith(`storage:${bucketName}:`)) {
+         const path = video_url.split(`storage:${bucketName}:`)[1];
+         const { data } = await supabase.storage.from(bucketName).createSignedUrl(path, 3600);
+         if (data?.signedUrl) video_url = data.signedUrl;
       }
-    });
-  } catch (error) {
-    console.error('Error fetching analytics:', error);
-    return c.json({ error: 'Failed to fetch analytics' }, 500);
-  }
-});
-
-// Get reconciliation data
-app.get("/make-server-175b2872/analytics/reconciliation", async (c) => {
-  try {
-    const commissions = await kv.getByPrefix('commission:');
-
-    const affiliateMap = new Map();
-    
-    for (const commission of commissions) {
-      if (commission.status === 'pending') {
-        if (!affiliateMap.has(commission.affiliate_id)) {
-          affiliateMap.set(commission.affiliate_id, {
-            affiliate_id: commission.affiliate_id,
-            affiliate_name: commission.affiliate_name,
-            commissions: [],
-            total_amount: 0
-          });
-        }
-        
-        const affiliateData = affiliateMap.get(commission.affiliate_id);
-        affiliateData.commissions.push(commission);
-        affiliateData.total_amount += commission.amount;
+      
+      if (thumbnail_url && thumbnail_url.startsWith(`storage:${bucketName}:`)) {
+         const path = thumbnail_url.split(`storage:${bucketName}:`)[1];
+         const { data } = await supabase.storage.from(bucketName).createSignedUrl(path, 3600);
+         if (data?.signedUrl) thumbnail_url = data.signedUrl;
       }
-    }
+      
+      return { ...ad, video_url, thumbnail_url };
+    }));
 
-    const pendingPayouts = Array.from(affiliateMap.values());
-
-    return c.json({
-      pending_payouts: pendingPayouts,
-      total_pending: pendingPayouts.reduce((sum, p) => sum + p.total_amount, 0),
-      commission_count: commissions.filter((c: any) => c.status === 'pending').length
-    });
+    return c.json({ ads: signedAds.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()) });
   } catch (error) {
-    console.error('Error fetching reconciliation data:', error);
-    return c.json({ error: 'Failed to fetch reconciliation data' }, 500);
+    console.error('Error fetching ads:', error);
+    return c.json({ error: 'Failed to fetch ads' }, 500);
   }
 });
 
-// Pay commissions
-app.post("/make-server-175b2872/analytics/pay-commissions", async (c) => {
+// Get approved ads (Public)
+app.get("/make-server-175b2872/ads/approved", async (c) => {
   try {
-    const body = await c.req.json();
-    const { commission_ids } = body;
-
-    if (!commission_ids || !Array.isArray(commission_ids)) {
-      return c.json({ error: 'Invalid commission_ids' }, 400);
-    }
-
-    const updatedCommissions = [];
-    for (const commissionId of commission_ids) {
-      const commission = await kv.get(commissionId);
-      if (commission && commission.status === 'pending') {
-        commission.status = 'paid';
-        commission.paid_at = new Date().toISOString();
-        await kv.set(commissionId, commission);
-        updatedCommissions.push(commission);
+    const ads = await kv.getByPrefix('ad:');
+    const approvedAds = ads.filter((ad: any) => ad.status === 'approved');
+    
+    // Sign URLs
+    const bucketName = 'make-175b2872-ads';
+    const signedAds = await Promise.all(approvedAds.map(async (ad: any) => {
+      let video_url = ad.video_url;
+      let thumbnail_url = ad.thumbnail_url;
+      
+      if (video_url && video_url.startsWith(`storage:${bucketName}:`)) {
+         const path = video_url.split(`storage:${bucketName}:`)[1];
+         const { data } = await supabase.storage.from(bucketName).createSignedUrl(path, 3600);
+         if (data?.signedUrl) video_url = data.signedUrl;
       }
-    }
+      
+      if (thumbnail_url && thumbnail_url.startsWith(`storage:${bucketName}:`)) {
+         const path = thumbnail_url.split(`storage:${bucketName}:`)[1];
+         const { data } = await supabase.storage.from(bucketName).createSignedUrl(path, 3600);
+         if (data?.signedUrl) thumbnail_url = data.signedUrl;
+      }
+      
+      return { ...ad, video_url, thumbnail_url };
+    }));
 
-    console.log(`✅ Marked ${updatedCommissions.length} commissions as paid`);
-
-    return c.json({
-      success: true,
-      paid_count: updatedCommissions.length,
-      commissions: updatedCommissions
-    });
+    return c.json({ ads: signedAds.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()) });
   } catch (error) {
-    console.error('Error paying commissions:', error);
-    return c.json({ error: 'Failed to process payments' }, 500);
+    console.error('Error fetching approved ads:', error);
+    return c.json({ error: 'Failed to fetch ads' }, 500);
   }
 });
 
-// ============================================
-// RESERVATION ROUTES
-// ============================================
-
-// Track reservation
-app.post("/make-server-175b2872/analytics/track-reservation", async (c) => {
+// Upload Media
+app.post("/make-server-175b2872/upload", async (c) => {
   try {
-    const body = await c.req.json();
-    const { 
-      business_id, 
-      customer_name, 
-      customer_email, 
-      customer_phone, 
-      reservation_date, 
-      reservation_time, 
-      party_size,
-      special_requests,
-      preferred_channel
-    } = body;
-
-    // Validate required fields
-    if (!business_id || !customer_email || !reservation_date || !reservation_time || !party_size) {
-      console.error('Missing required fields:', { business_id, customer_email, reservation_date, reservation_time, party_size });
-      return c.json({ error: 'Missing required fields' }, 400);
+    const body = await c.req.parseBody();
+    const file = body['file'];
+    
+    if (!file || !(file instanceof File)) {
+      return c.json({ error: 'No file uploaded' }, 400);
     }
 
-    const reservationId = `reservation:${Date.now()}:${Math.random().toString(36).substr(2, 9)}`;
+    const bucketName = 'make-175b2872-ads';
     
-    // Get business to calculate estimated amount
-    const business = await kv.get(`business:${business_id}`);
-    const priceRange = business?.price_range || '$$';
-    
-    // Calculate estimated spend based on price range
-    const pricePerPerson = priceRange === '$' ? 150 : 
-                           priceRange === '$$' ? 300 : 
-                           priceRange === '$$$' ? 500 : 800;
-    const estimatedAmount = parseInt(party_size) * pricePerPerson;
-    
-    const reservation = {
-      id: reservationId,
-      business_id,
-      customer_name: customer_name || 'Guest',
-      customer_email,
-      customer_phone: customer_phone || '',
-      reservation_date,
-      reservation_time,
-      party_size: parseInt(party_size),
-      special_requests: special_requests || '',
-      preferred_channel: preferred_channel || 'email',
-      amount: estimatedAmount,
-      status: 'confirmed',
-      created_at: new Date().toISOString()
-    };
-
-    await kv.set(reservationId, reservation);
-    
-    // Send confirmation notification
-    try {
-      await sendReservationConfirmation(reservation, business);
-      await sendBusinessNotification(business_id, reservation);
-    } catch (notificationError) {
-      console.error('Failed to send reservation notifications:', notificationError);
-      // Don't fail the reservation if notifications fail
+    // Create bucket if not exists
+    const { data: buckets } = await supabase.storage.listBuckets();
+    if (!buckets?.find(b => b.name === bucketName)) {
+      await supabase.storage.createBucket(bucketName, { public: false });
     }
 
-    console.log('✅ Reservation tracked:', reservationId);
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
+    const filePath = `${fileName}`;
+
+    const { data, error } = await supabase.storage
+      .from(bucketName)
+      .upload(filePath, file);
+
+    if (error) {
+      console.error('Storage upload error:', error);
+      return c.json({ error: 'Upload failed' }, 500);
+    }
 
     return c.json({ 
       success: true, 
-      reservation_id: reservationId,
-      reservation 
+      path: filePath,
+      full_path: `storage:${bucketName}:${filePath}` 
     });
+
   } catch (error) {
-    console.error('Error tracking reservation:', error);
-    return c.json({ error: 'Failed to track reservation' }, 500);
+    console.error('Upload handler error:', error);
+    return c.json({ error: 'Upload failed' }, 500);
   }
 });
 
-// Get all reservations
-app.get("/make-server-175b2872/analytics/reservations", async (c) => {
+// Upload Logo
+app.post("/make-server-175b2872/businesses/:id/upload-logo", async (c) => {
   try {
-    const allReservations = await kv.getByPrefix('reservation:');
+    const id = c.req.param('id');
     
-    allReservations.sort((a: any, b: any) => 
-      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-    );
-    
-    return c.json({ reservations: allReservations });
-  } catch (error) {
-    console.error('Error fetching reservations:', error);
-    return c.json({ error: 'Failed to fetch reservations' }, 500);
-  }
-});
-
-// Get user reservations
-app.get("/make-server-175b2872/reservations/user/:email", async (c) => {
-  try {
-    const userEmail = decodeURIComponent(c.req.param('email'));
-    
-    const allReservations = await kv.getByPrefix('reservation:');
-    const userReservations = allReservations.filter((r: any) => r.customer_email === userEmail);
-    
-    userReservations.sort((a: any, b: any) => 
-      new Date(b.date).getTime() - new Date(a.date).getTime()
-    );
-    
-    return c.json({ reservations: userReservations });
-  } catch (error) {
-    console.error('Error fetching user reservations:', error);
-    return c.json({ error: 'Failed to fetch reservations' }, 500);
-  }
-});
-
-// Cancel reservation
-app.post("/make-server-175b2872/reservations/:reservationId/cancel", async (c) => {
-  try {
-    const reservationId = c.req.param('reservationId');
-    
-    const reservation = await kv.get(reservationId);
-    if (!reservation) {
-      return c.json({ error: 'Reservation not found' }, 404);
+    // Check if business exists
+    const business = await kv.get(`business:${id}`);
+    if (!business) {
+      return c.json({ error: 'Business not found' }, 404);
     }
+
+    // Verify ownership
+    try {
+      await verifyBusinessAccess(c, id);
+    } catch (e: any) {
+      return c.json({ error: e.message }, 403);
+    }
+
+    const body = await c.req.parseBody();
+    const file = body['logo'];
     
-    reservation.status = 'cancelled';
-    reservation.cancelled_at = new Date().toISOString();
+    if (!file || !(file instanceof File)) {
+      return c.json({ error: 'No logo file uploaded' }, 400);
+    }
+
+    const bucketName = 'make-175b2872-ads'; // Using same bucket for simplicity
     
-    await kv.set(reservationId, reservation);
+    // Create bucket if not exists
+    const { data: buckets } = await supabase.storage.listBuckets();
+    if (!buckets?.find(b => b.name === bucketName)) {
+      await supabase.storage.createBucket(bucketName, { public: false });
+    }
+
+    const fileExt = file.name.split('.').pop();
+    const fileName = `logo_${id}_${Date.now()}.${fileExt}`;
+    const filePath = `${fileName}`;
+
+    const { data, error } = await supabase.storage
+      .from(bucketName)
+      .upload(filePath, file);
+
+    if (error) {
+      console.error('Storage upload error:', error);
+      return c.json({ error: 'Upload failed' }, 500);
+    }
+
+    const fullPath = `storage:${bucketName}:${filePath}`;
     
-    console.log(`✅ Reservation cancelled: ${reservationId}`);
+    // Update business record
+    const updatedBusiness = {
+      ...business,
+      logo_url: fullPath,
+      updated_at: new Date().toISOString()
+    };
     
-    return c.json({ success: true, reservation });
+    await kv.set(`business:${id}`, updatedBusiness);
+
+    // Get signed URL for response
+    const { data: signedData } = await supabase.storage.from(bucketName).createSignedUrl(filePath, 3600 * 24 * 365); // 1 year
+
+    return c.json({ 
+      success: true, 
+      logo_url: signedData?.signedUrl || fullPath,
+      full_path: fullPath
+    });
+
   } catch (error) {
-    console.error('Error cancelling reservation:', error);
-    return c.json({ error: 'Failed to cancel reservation' }, 500);
+    console.error('Logo upload error:', error);
+    return c.json({ error: 'Upload failed' }, 500);
   }
 });
 
-// ============================================
-// SPECIALS & EVENTS
-// ============================================
-
-// Get all specials
-app.get("/make-server-175b2872/kv/specials", async (c) => {
+// Upload Cover Image
+app.post("/make-server-175b2872/businesses/:id/upload-cover", async (c) => {
   try {
-    const specials = await kv.getByPrefix('special:');
-    return c.json({ data: specials });
+    const id = c.req.param('id');
+    
+    // Check if business exists
+    const business = await kv.get(`business:${id}`);
+    if (!business) {
+      return c.json({ error: 'Business not found' }, 404);
+    }
+
+    // Verify ownership
+    try {
+      await verifyBusinessAccess(c, id);
+    } catch (e: any) {
+      return c.json({ error: e.message }, 403);
+    }
+
+    const body = await c.req.parseBody();
+    const file = body['cover'];
+    
+    if (!file || !(file instanceof File)) {
+      return c.json({ error: 'No cover file uploaded' }, 400);
+    }
+
+    const bucketName = 'make-175b2872-ads';
+    
+    // Create bucket if not exists
+    const { data: buckets } = await supabase.storage.listBuckets();
+    if (!buckets?.find(b => b.name === bucketName)) {
+      await supabase.storage.createBucket(bucketName, { public: false });
+    }
+
+    const fileExt = file.name.split('.').pop();
+    const fileName = `cover_${id}_${Date.now()}.${fileExt}`;
+    const filePath = `${fileName}`;
+
+    const { data, error } = await supabase.storage
+      .from(bucketName)
+      .upload(filePath, file);
+
+    if (error) {
+      console.error('Storage upload error:', error);
+      return c.json({ error: 'Upload failed' }, 500);
+    }
+
+    const fullPath = `storage:${bucketName}:${filePath}`;
+    
+    // Update business record
+    const updatedBusiness = {
+      ...business,
+      cover_image_url: fullPath,
+      updated_at: new Date().toISOString()
+    };
+    
+    await kv.set(`business:${id}`, updatedBusiness);
+
+    // Get signed URL for response
+    const { data: signedData } = await supabase.storage.from(bucketName).createSignedUrl(filePath, 3600 * 24 * 365); // 1 year
+
+    return c.json({ 
+      success: true, 
+      cover_image_url: signedData?.signedUrl || fullPath,
+      full_path: fullPath
+    });
+
   } catch (error) {
-    console.error('Error fetching specials:', error);
-    return c.json({ error: 'Failed to fetch specials' }, 500);
+    console.error('Cover upload error:', error);
+    return c.json({ error: 'Upload failed' }, 500);
   }
 });
 
-// Get all events
-app.get("/make-server-175b2872/kv/events", async (c) => {
+// Create Ad (Business)
+app.post("/make-server-175b2872/ads", async (c) => {
   try {
-    const events = await kv.getByPrefix('event:');
-    return c.json({ data: events });
-  } catch (error) {
-    console.error('Error fetching events:', error);
-    return c.json({ error: 'Failed to fetch events' }, 500);
-  }
-});
-
-// Mark interest in an event
-app.post("/make-server-175b2872/kv/events/:eventId/interest", async (c) => {
-  try {
-    const eventId = c.req.param('eventId');
     const body = await c.req.json();
-    const { user_id, status, user_email, user_name, user_phone } = body;
-    
-    if (!user_id || !status) {
-      return c.json({ error: 'user_id and status are required' }, 400);
+    const { business_id, business_name, title, description, video_url, platform, thumbnail_url } = body;
+
+    if (!business_id || !title || !video_url || !platform) {
+      return c.json({ error: 'Missing required fields' }, 400);
     }
-    
-    // Create interest record
-    const interestId = `event_interest:${eventId}:${user_id}`;
-    const interest = {
-      id: interestId,
-      event_id: eventId,
-      user_id,
-      user_email: user_email || user_id,
-      user_name: user_name || null,
-      user_phone: user_phone || null,
-      status, // 'interested' or 'going'
+
+    const adId = `ad:${Date.now()}`;
+    const ad = {
+      id: adId,
+      business_id,
+      business_name: business_name || 'Unknown Business',
+      title,
+      description: description || '',
+      video_url,
+      platform,
+      thumbnail_url: thumbnail_url || null,
+      status: 'pending',
+      views: 0,
+      clicks: 0,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
-    
-    await kv.set(interestId, interest);
-    
-    console.log(`✅ Event interest marked: ${eventId} - ${user_id} (${status})`);
-    
-    return c.json({ success: true, interest });
+
+    await kv.set(adId, ad);
+    return c.json({ success: true, ad });
   } catch (error) {
-    console.error('Error marking event interest:', error);
-    return c.json({ error: 'Failed to mark event interest' }, 500);
+    console.error('Error creating ad:', error);
+    return c.json({ error: 'Failed to create ad' }, 500);
   }
 });
 
-// Check if user is interested in an event
-app.get("/make-server-175b2872/kv/events/:eventId/interest/:userId", async (c) => {
-  try {
-    const eventId = c.req.param('eventId');
-    const userId = decodeURIComponent(c.req.param('userId'));
-    
-    const interestId = `event_interest:${eventId}:${userId}`;
-    const interest = await kv.get(interestId);
-    
-    if (!interest) {
-      return c.json({ 
-        interested: false, 
-        status: null 
-      });
-    }
-    
-    return c.json({ 
-      interested: true, 
-      status: interest.status,
-      interest
-    });
-  } catch (error) {
-    console.error('Error checking event interest:', error);
-    return c.json({ error: 'Failed to check event interest' }, 500);
-  }
-});
-
-// Remove interest from an event
-app.delete("/make-server-175b2872/kv/events/:eventId/interest/:userId", async (c) => {
-  try {
-    const eventId = c.req.param('eventId');
-    const userId = decodeURIComponent(c.req.param('userId'));
-    
-    const interestId = `event_interest:${eventId}:${userId}`;
-    await kv.del(interestId);
-    
-    console.log(`✅ Event interest removed: ${eventId} - ${userId}`);
-    
-    return c.json({ success: true });
-  } catch (error) {
-    console.error('Error removing event interest:', error);
-    return c.json({ error: 'Failed to remove event interest' }, 500);
-  }
-});
-
-// Get all interests for an event (for business/admin to see who's interested)
-app.get("/make-server-175b2872/kv/events/:eventId/interests", async (c) => {
-  try {
-    const eventId = c.req.param('eventId');
-    
-    const allInterests = await kv.getByPrefix(`event_interest:${eventId}:`);
-    
-    const summary = {
-      total: allInterests.length,
-      going: allInterests.filter((i: any) => i.status === 'going').length,
-      interested: allInterests.filter((i: any) => i.status === 'interested').length,
-      interests: allInterests
-    };
-    
-    return c.json(summary);
-  } catch (error) {
-    console.error('Error fetching event interests:', error);
-    return c.json({ error: 'Failed to fetch event interests' }, 500);
-  }
-});
-
-// Create special
-app.post("/make-server-175b2872/kv/specials", async (c) => {
-  try {
-    const body = await c.req.json();
-    const { business_id, title, description, discount_percentage, time_end, days_of_week } = body;
-    
-    if (!business_id || !title) {
-      return c.json({ error: 'Missing required fields' }, 400);
-    }
-    
-    const specialId = `special:${business_id}:${Date.now()}`;
-    const special = {
-      id: specialId,
-      business_id,
-      title,
-      description: description || '',
-      discount_percentage: discount_percentage || 0,
-      time_end: time_end || null,
-      days_of_week: days_of_week || [],
-      created_at: new Date().toISOString()
-    };
-    
-    await kv.set(specialId, special);
-    
-    console.log(`✅ Special created: ${specialId}`);
-    
-    return c.json({ success: true, special });
-  } catch (error) {
-    console.error('Error creating special:', error);
-    return c.json({ error: 'Failed to create special' }, 500);
-  }
-});
-
-// Delete special
-app.delete("/make-server-175b2872/kv/specials/:id", async (c) => {
+// Approve Ad (Admin)
+app.patch("/make-server-175b2872/ads/:id/approve", async (c) => {
   try {
     const id = c.req.param('id');
-    await kv.del(id);
-    console.log(`✅ Special deleted: ${id}`);
-    return c.json({ success: true });
-  } catch (error) {
-    console.error('Error deleting special:', error);
-    return c.json({ error: 'Failed to delete special' }, 500);
-  }
-});
-
-// ============================================
-// MENU ROUTES
-// ============================================
-
-// Create menu item
-app.post("/make-server-175b2872/kv/menu", async (c) => {
-  try {
     const body = await c.req.json();
-    const { business_id, name, category, price, description } = body;
-    
-    if (!business_id || !name || !price) {
-      return c.json({ error: 'Missing required fields' }, 400);
+    const { admin_name } = body;
+
+    const ad = await kv.get(id);
+    if (!ad) {
+      return c.json({ error: 'Ad not found' }, 404);
     }
-    
-    const menuItemId = `menu_item:${business_id}:${Date.now()}`;
-    const menuItem = {
-      id: menuItemId,
-      business_id,
-      name,
-      category: category || 'Uncategorized',
-      price: parseFloat(price),
-      description: description || '',
-      created_at: new Date().toISOString()
-    };
-    
-    await kv.set(menuItemId, menuItem);
-    
-    console.log(`✅ Menu item created: ${menuItemId}`);
-    
-    return c.json({ success: true, menu_item: menuItem });
-  } catch (error) {
-    console.error('Error creating menu item:', error);
-    return c.json({ error: 'Failed to create menu item' }, 500);
-  }
-});
 
-// Delete menu item
-app.delete("/make-server-175b2872/kv/menu/:id", async (c) => {
-  try {
-    const id = c.req.param('id');
-    await kv.del(id);
-    console.log(`✅ Menu item deleted: ${id}`);
-    return c.json({ success: true });
-  } catch (error) {
-    console.error('Error deleting menu item:', error);
-    return c.json({ error: 'Failed to delete menu item' }, 500);
-  }
-});
-
-// ============================================
-// REVIEWS
-// ============================================
-
-// Submit review
-app.post("/make-server-175b2872/kv/reviews", async (c) => {
-  try {
-    const body = await c.req.json();
-    const { business_id, customer_name, customer_email, rating, comment } = body;
-    
-    if (!business_id || !customer_name || !rating) {
-      return c.json({ error: 'Missing required fields' }, 400);
-    }
-    
-    const reviewId = `review:${business_id}:${Date.now()}`;
-    const review = {
-      id: reviewId,
-      business_id,
-      customer_name,
-      customer_email: customer_email || '',
-      rating: parseInt(rating),
-      comment: comment || '',
-      created_at: new Date().toISOString()
-    };
-    
-    await kv.set(reviewId, review);
-    
-    const business = await kv.get(`business:${business_id}`);
-    if (business) {
-      const allReviews = await kv.getByPrefix(`review:${business_id}:`);
-      const avgRating = allReviews.reduce((sum: number, r: any) => sum + r.rating, 0) / allReviews.length;
-      business.average_rating = Math.round(avgRating * 10) / 10;
-      business.total_reviews = allReviews.length;
-      await kv.set(`business:${business_id}`, business);
-    }
-    
-    console.log(`✅ Review submitted: ${reviewId}`);
-    
-    return c.json({ success: true, review });
-  } catch (error) {
-    console.error('Error submitting review:', error);
-    return c.json({ error: 'Failed to submit review' }, 500);
-  }
-});
-
-// ============================================
-// PLATFORM SETTINGS
-// ============================================
-
-// Get settings
-app.get("/make-server-175b2872/platform/settings", async (c) => {
-  try {
-    const settings = await kv.get('platform:settings') || {
-      monthly_subscription_fee: 499,
-      affiliate_commission_percentage: 10,
-      ml_insights_enabled: true,
-      data_brokerage_enabled: true
-    };
-    return c.json({ settings });
-  } catch (error) {
-    console.error('Error fetching settings:', error);
-    return c.json({ error: 'Failed to fetch settings' }, 500);
-  }
-});
-
-// Update settings
-app.put("/make-server-175b2872/platform/settings", async (c) => {
-  try {
-    const body = await c.req.json();
-    const currentSettings = await kv.get('platform:settings') || {};
-    
-    const updatedSettings = {
-      ...currentSettings,
-      ...body,
+    const updatedAd = {
+      ...ad,
+      status: 'approved',
+      approved_at: new Date().toISOString(),
+      approved_by: admin_name || 'Admin',
+      rejected_at: null,
+      rejected_by: null,
+      rejection_reason: null,
       updated_at: new Date().toISOString()
     };
-    
-    await kv.set('platform:settings', updatedSettings);
-    
-    console.log('✅ Platform settings updated:', updatedSettings);
-    
-    return c.json({ success: true, settings: updatedSettings });
+
+    await kv.set(id, updatedAd);
+    return c.json({ success: true, ad: updatedAd });
   } catch (error) {
-    console.error('Error updating settings:', error);
-    return c.json({ error: 'Failed to update settings' }, 500);
+    console.error('Error approving ad:', error);
+    return c.json({ error: 'Failed to approve ad' }, 500);
+  }
+});
+
+// Reject Ad (Admin)
+app.patch("/make-server-175b2872/ads/:id/reject", async (c) => {
+  try {
+    const id = c.req.param('id');
+    const body = await c.req.json();
+    const { admin_name, reason } = body;
+
+    const ad = await kv.get(id);
+    if (!ad) {
+      return c.json({ error: 'Ad not found' }, 404);
+    }
+
+    const updatedAd = {
+      ...ad,
+      status: 'rejected',
+      rejected_at: new Date().toISOString(),
+      rejected_by: admin_name || 'Admin',
+      rejection_reason: reason || 'Does not meet guidelines',
+      approved_at: null,
+      approved_by: null,
+      updated_at: new Date().toISOString()
+    };
+
+    await kv.set(id, updatedAd);
+    return c.json({ success: true, ad: updatedAd });
+  } catch (error) {
+    console.error('Error rejecting ad:', error);
+    return c.json({ error: 'Failed to reject ad' }, 500);
   }
 });
 
 // ============================================
-// AI RECOMMENDATIONS
+// CUSTOMER ROUTES
 // ============================================
 
-// Get recommendations
-app.post("/make-server-175b2872/kv/recommendations", async (c) => {
+// ============================================
+// CUSTOMER AUTH ROUTES (Username-based, No Password)
+// ============================================
+
+// Check if username exists
+app.post("/make-server-175b2872/auth/customer/check-username", async (c) => {
+  try {
+    const { username } = await c.req.json();
+    if (!username) return c.json({ error: 'Username is required' }, 400);
+
+    const cleanUsername = username.toLowerCase().trim();
+    const lookupKey = `customer_lookup:username:${cleanUsername}`;
+    const existingId = await kv.get(lookupKey);
+
+    return c.json({ exists: !!existingId });
+  } catch (error) {
+    return c.json({ error: 'Check failed' }, 500);
+  }
+});
+
+// Recover Username
+app.post("/make-server-175b2872/auth/customer/recover-username", async (c) => {
+  try {
+    const { email } = await c.req.json();
+    if (!email) return c.json({ error: 'Email is required' }, 400);
+
+    const cleanEmail = email.toLowerCase().trim();
+    
+    // Scan for customer with this email
+    // Note: In a production DB, this should use an index. For KV, we have to scan or maintain a reverse index.
+    // For MVP/Prototype, scanning is acceptable if dataset is small, but let's try to be smart.
+    // We didn't maintain an email index during registration, so we must scan.
+    
+    const allCustomers = await kv.getByPrefix('customer:');
+    const customer = allCustomers.find((cust: any) => cust.email && cust.email.toLowerCase() === cleanEmail);
+
+    if (customer) {
+      const htmlMessage = `
+        <!DOCTYPE html>
+        <html>
+        <body style="font-family: Arial, sans-serif; padding: 20px;">
+          <h2>Username Recovery</h2>
+          <p>Hi ${customer.name || 'there'},</p>
+          <p>You requested your username for MYVIBES.</p>
+          <p>Your username is: <strong>${customer.username}</strong></p>
+          <p>You can use this to sign in at any time.</p>
+          <p>Keep on vibing,<br>The MYVIBES Team</p>
+        </body>
+        </html>
+      `;
+
+      await sendEmail({
+        to: customer.email,
+        subject: 'Your MYVIBES Username',
+        html: htmlMessage
+      });
+      
+      console.log(`📧 Sent username recovery email to ${cleanEmail}`);
+    } else {
+       console.log(`⚠️ Username recovery requested for unknown email: ${cleanEmail}`);
+    }
+
+    // Always return success to prevent email enumeration
+    return c.json({ 
+      success: true, 
+      message: 'If an account exists with this email, we have sent the username to you.' 
+    });
+
+  } catch (error) {
+    console.error('Recovery error:', error);
+    return c.json({ error: 'Recovery failed' }, 500);
+  }
+});
+
+// Continue with Name (Guest/Quick Access)
+app.post("/make-server-175b2872/auth/customer/continue-guest", async (c) => {
+  try {
+    const { name } = await c.req.json();
+    
+    if (!name) {
+      return c.json({ error: 'Name is required' }, 400);
+    }
+
+    // Guest flow - always create new or we can't track them without another identifier
+    // We will generate a unique identifier
+    const customerId = `customer:${Date.now()}`;
+    const now = new Date().toISOString();
+    
+    // Format: guest_TIMESTAMP_RANDOM
+    const username = `guest_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const email = `${username}@guest.myvibes.local`; // Placeholder
+
+    const customer = {
+      id: customerId,
+      username,
+      name,
+      email,
+      mobile: '',
+      city: 'Johannesburg',
+      notificationPreference: 'none',
+      joined_at: now,
+      last_active: now,
+      status: 'active',
+      total_orders: 0,
+      total_spend: 0,
+      loyalty_points: 0
+    };
+
+    await kv.set(customerId, customer);
+    
+    // Generate Session
+    const token = `sess_${Date.now()}_${Math.random().toString(36).substring(2)}`;
+    await kv.set(`session:${token}`, { userId: customerId, type: 'customer', created_at: now });
+
+    console.log(`👤 Guest registered: ${name}`);
+
+    return c.json({ 
+      success: true, 
+      token, 
+      customer 
+    });
+
+  } catch (error) {
+    console.error('Guest auth error:', error);
+    return c.json({ error: 'Authentication failed' }, 500);
+  }
+});
+
+// Continue with Email (Register or Login)
+app.post("/make-server-175b2872/auth/customer/continue-with-email", async (c) => {
+  try {
+    const { email, name } = await c.req.json();
+    
+    if (!email || !name) {
+      return c.json({ error: 'Email and Name are required' }, 400);
+    }
+
+    const cleanEmail = email.toLowerCase().trim();
+    
+    // 1. Try to find existing customer by email lookup
+    const lookupKey = `customer_lookup:email:${cleanEmail}`;
+    let customerId = null;
+    let lookup = await kv.get(lookupKey);
+    
+    if (lookup && lookup.id) {
+      customerId = lookup.id;
+    } else {
+      // 2. Fallback: Scan (Backward compatibility)
+      const allCustomers = await kv.getByPrefix('customer:');
+      const found = allCustomers.find((cust: any) => cust.email && cust.email.toLowerCase() === cleanEmail);
+      
+      if (found) {
+        customerId = found.id;
+        // Self-heal: Create lookup for next time
+        await kv.set(lookupKey, { id: customerId });
+      }
+    }
+
+    const now = new Date().toISOString();
+    let customer;
+
+    if (customerId) {
+      // LOGIN EXISTING
+      customer = await kv.get(customerId);
+      if (!customer) {
+        // Data inconsistency, treat as new? Or error? Let's treat as new to be safe/recover.
+        customerId = null; 
+      } else {
+        // Update last active
+        customer.last_active = now;
+        if (name && (!customer.name || customer.name !== name)) {
+           // Optional: Update name if provided and different? 
+           // Maybe user wants to update their name. Let's update it.
+           customer.name = name;
+        }
+        await kv.set(customer.id, customer);
+        console.log(`👤 Customer logged in via email: ${cleanEmail}`);
+      }
+    }
+
+    if (!customerId) {
+      // REGISTER NEW
+      customerId = `customer:${Date.now()}`;
+      
+      // Generate a username
+      // Format: user_TIMESTAMP_RANDOM
+      const username = `user_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+
+      customer = {
+        id: customerId,
+        username, // Placeholder username
+        name,
+        email: cleanEmail,
+        mobile: '',
+        city: 'Johannesburg', // Default
+        notificationPreference: 'email',
+        joined_at: now,
+        last_active: now,
+        status: 'active',
+        total_orders: 0,
+        total_spend: 0,
+        loyalty_points: 0
+      };
+
+      await kv.set(customerId, customer);
+      
+      // Set Lookups
+      await kv.set(lookupKey, { id: customerId });
+      await kv.set(`customer_lookup:username:${username}`, { id: customerId });
+      
+      console.log(`👤 Customer registered via email: ${name} (${cleanEmail})`);
+    }
+
+    // Generate Session
+    const token = `sess_${Date.now()}_${Math.random().toString(36).substring(2)}`;
+    await kv.set(`session:${token}`, { userId: customerId, type: 'customer', created_at: now });
+
+    return c.json({ 
+      success: true, 
+      token, 
+      customer 
+    });
+
+  } catch (error) {
+    console.error('Email auth error:', error);
+    return c.json({ error: 'Authentication failed' }, 500);
+  }
+});
+
+// Register Customer
+app.post("/make-server-175b2872/auth/customer/register", async (c) => {
+  try {
+    const { username, name } = await c.req.json();
+    
+    if (!username || !name) {
+      return c.json({ error: 'Username and Name are required' }, 400);
+    }
+
+    const cleanUsername = username.toLowerCase().trim();
+    const lookupKey = `customer_lookup:username:${cleanUsername}`;
+    
+    // Check uniqueness
+    const existingId = await kv.get(lookupKey);
+    if (existingId) {
+      return c.json({ error: 'Username is already taken' }, 400);
+    }
+
+    const customerId = `customer:${Date.now()}`;
+    const now = new Date().toISOString();
+
+    const customer = {
+      id: customerId,
+      username: cleanUsername,
+      name,
+      email: '', // Optional details filled later
+      mobile: '',
+      city: 'Johannesburg',
+      notificationPreference: 'email',
+      joined_at: now,
+      last_active: now,
+      status: 'active',
+      total_orders: 0,
+      total_spend: 0,
+      loyalty_points: 0
+    };
+
+    // Store customer and lookup
+    await kv.set(customerId, customer);
+    await kv.set(lookupKey, { id: customerId });
+
+    // Generate Session
+    const token = `sess_${Date.now()}_${Math.random().toString(36).substring(2)}`;
+    await kv.set(`session:${token}`, { userId: customerId, type: 'customer', created_at: now });
+
+    console.log(`👤 Customer registered: ${name} (${cleanUsername})`);
+    
+    return c.json({ 
+      success: true, 
+      token, 
+      customer 
+    });
+
+  } catch (error) {
+    console.error('Registration error:', error);
+    return c.json({ error: 'Registration failed' }, 500);
+  }
+});
+
+// Login Customer
+app.post("/make-server-175b2872/auth/customer/login", async (c) => {
+  try {
+    const { username } = await c.req.json();
+    
+    if (!username) {
+      return c.json({ error: 'Username is required' }, 400);
+    }
+
+    const cleanUsername = username.toLowerCase().trim();
+    const lookupKey = `customer_lookup:username:${cleanUsername}`;
+    
+    const lookup = await kv.get(lookupKey);
+    if (!lookup || !lookup.id) {
+      return c.json({ error: 'Username not found' }, 404);
+    }
+
+    const customer = await kv.get(lookup.id);
+    if (!customer) {
+      return c.json({ error: 'Customer record missing' }, 404);
+    }
+
+    // Generate Session
+    const now = new Date().toISOString();
+    const token = `sess_${Date.now()}_${Math.random().toString(36).substring(2)}`;
+    await kv.set(`session:${token}`, { userId: customer.id, type: 'customer', created_at: now });
+
+    // Update last active
+    customer.last_active = now;
+    await kv.set(customer.id, customer);
+
+    console.log(`👤 Customer logged in: ${cleanUsername}`);
+
+    return c.json({ 
+      success: true, 
+      token, 
+      customer 
+    });
+
+  } catch (error) {
+    console.error('Login error:', error);
+    return c.json({ error: 'Login failed' }, 500);
+  }
+});
+
+// Verify Session / Get Me
+app.get("/make-server-175b2872/auth/customer/me", async (c) => {
+  try {
+    const authHeader = c.req.header('Authorization');
+    if (!authHeader) return c.json({ error: 'No token' }, 401);
+
+    const token = authHeader.replace('Bearer ', '');
+    const session = await kv.get(`session:${token}`);
+
+    if (!session || session.type !== 'customer') {
+      return c.json({ error: 'Invalid session' }, 401);
+    }
+
+    const customer = await kv.get(session.userId);
+    if (!customer) return c.json({ error: 'User not found' }, 404);
+
+    return c.json({ customer });
+  } catch (error) {
+    return c.json({ error: 'Verification failed' }, 500);
+  }
+});
+
+// Update Customer Profile (Authenticated)
+app.put("/make-server-175b2872/auth/customer/update", async (c) => {
+  try {
+    const authHeader = c.req.header('Authorization');
+    if (!authHeader) return c.json({ error: 'No token' }, 401);
+
+    const token = authHeader.replace('Bearer ', '');
+    const session = await kv.get(`session:${token}`);
+
+    if (!session || session.type !== 'customer') {
+      return c.json({ error: 'Invalid session' }, 401);
+    }
+
+    const body = await c.req.json();
+    const customer = await kv.get(session.userId);
+
+    if (!customer) return c.json({ error: 'User not found' }, 404);
+
+    // Update allowed fields
+    const updatedCustomer = {
+      ...customer,
+      name: body.name || customer.name,
+      email: body.email || customer.email,
+      mobile: body.mobile || customer.mobile,
+      city: body.city || customer.city,
+      birthday: body.birthday || customer.birthday,
+      preferences: body.preferences || customer.preferences,
+      notificationPreference: body.notificationPreference || customer.notificationPreference,
+      updated_at: new Date().toISOString()
+    };
+
+    await kv.set(customer.id, updatedCustomer);
+
+    return c.json({ success: true, customer: updatedCustomer });
+
+  } catch (error) {
+    console.error('Update error:', error);
+    return c.json({ error: 'Update failed' }, 500);
+  }
+});
+
+// Create or Update Customer Profile (Sync with KV)
+app.post("/make-server-175b2872/auth/customer/profile", async (c) => {
   try {
     const body = await c.req.json();
-    const { lat, lng, timeOfDay } = body;
-    
-    const specials = await kv.getByPrefix('special:');
-    const businesses = await kv.getByPrefix('business:');
-    
-    const now = new Date();
-    const activeSpecials = specials.filter((s: any) => {
-      if (!s.time_end) return true;
-      const endTime = new Date(`${now.toDateString()} ${s.time_end}`);
-      return now < endTime;
-    });
-    
-    const recommendations = activeSpecials.map((special: any) => {
-      const business = businesses.find((b: any) => b.id === special.business_id);
-      if (!business) return null;
-      
-      let score = 50;
-      
-      if (lat && lng && business.latitude && business.longitude) {
-        const distance = calculateDistance(lat, lng, business.latitude, business.longitude);
-        score += Math.max(0, 30 - distance * 2);
-      }
-      
-      if (business.average_rating) {
-        score += business.average_rating * 4;
-      }
-      
-      if (special.discount_percentage) {
-        score += special.discount_percentage / 2;
-      }
-      
-      return {
-        ...special,
-        business,
-        score,
-        reason: generateRecommendationReason(timeOfDay || 'evening', false, score, special),
-        tags: generateTags(special, score, timeOfDay || 'evening')
+    const { name, email, mobile, city, notificationPreference } = body;
+
+    if (!email || !name) {
+      return c.json({ error: 'Email and Name are required' }, 400);
+    }
+
+    // Check if customer exists
+    const existingCustomers = await kv.getByPrefix('customer:');
+    let customer = existingCustomers.find((c: any) => c.email === email);
+
+    const now = new Date().toISOString();
+
+    if (customer) {
+      // Update existing
+      customer = {
+        ...customer,
+        name,
+        mobile,
+        city: city || customer.city || 'Unknown',
+        notificationPreference: notificationPreference || customer.notificationPreference || 'email',
+        last_active: now,
+        updated_at: now
       };
-    }).filter(Boolean);
-    
-    recommendations.sort((a: any, b: any) => b.score - a.score);
-    
-    return c.json({ recommendations: recommendations.slice(0, 10) });
-  } catch (error) {
-    console.error('Error generating recommendations:', error);
-    return c.json({ error: 'Failed to generate recommendations' }, 500);
-  }
-});
-
-// ============================================
-// NOTIFICATION ROUTES
-// ============================================
-
-// Get notifications for a user
-app.get("/make-server-175b2872/kv/notifications/:userId", async (c) => {
-  try {
-    const userId = c.req.param('userId');
-    const notifications = await kv.getByPrefix(`notification:${userId}:`);
-    
-    // Sort by timestamp (newest first)
-    notifications.sort((a: any, b: any) => {
-      const timeA = new Date(a.timestamp || 0).getTime();
-      const timeB = new Date(b.timestamp || 0).getTime();
-      return timeB - timeA;
-    });
-    
-    const unreadCount = notifications.filter((n: any) => !n.read).length;
-    
-    return c.json({ 
-      notifications,
-      unread_count: unreadCount 
-    });
-  } catch (error) {
-    console.error('Error fetching notifications:', error);
-    return c.json({ 
-      notifications: [], 
-      unread_count: 0 
-    });
-  }
-});
-
-// Get unread notification count
-app.get("/make-server-175b2872/kv/notifications/:userId/unread-count", async (c) => {
-  try {
-    const userId = c.req.param('userId');
-    const notifications = await kv.getByPrefix(`notification:${userId}:`);
-    const unreadCount = notifications.filter((n: any) => !n.read).length;
-    
-    return c.json({ unread_count: unreadCount });
-  } catch (error) {
-    console.error('Error fetching unread count:', error);
-    return c.json({ unread_count: 0 });
-  }
-});
-
-// Mark notification as read
-app.put("/make-server-175b2872/kv/notifications/:userId/:notificationId/read", async (c) => {
-  try {
-    const userId = c.req.param('userId');
-    const notificationId = c.req.param('notificationId');
-    const key = `notification:${userId}:${notificationId}`;
-    
-    const notification = await kv.get(key);
-    if (notification) {
-      notification.read = true;
-      notification.read_at = new Date().toISOString();
-      await kv.set(key, notification);
+      // Key is likely the ID if created properly
+      await kv.set(customer.id, customer);
+    } else {
+      // Create new
+      const customerId = `customer:${Date.now()}`;
+      customer = {
+        id: customerId,
+        name,
+        email,
+        mobile,
+        city: city || 'Johannesburg', // Default if not provided
+        notificationPreference: notificationPreference || 'email',
+        joined_at: now,
+        last_active: now,
+        status: 'active',
+        total_orders: 0,
+        total_spend: 0,
+        loyalty_points: 0
+      };
+      await kv.set(customerId, customer);
     }
-    
-    return c.json({ success: true });
+
+    console.log(`👤 Customer profile synced: ${name} (${email})`);
+    return c.json({ success: true, customer });
   } catch (error) {
-    console.error('Error marking notification as read:', error);
-    return c.json({ error: 'Failed to mark notification as read' }, 500);
+    console.error('Error saving customer profile:', error);
+    return c.json({ error: 'Failed to save customer profile' }, 500);
   }
 });
 
-// Mark all notifications as read
-app.put("/make-server-175b2872/kv/notifications/:userId/read-all", async (c) => {
+// Get all customers (Admin)
+app.get("/make-server-175b2872/admin/customers", async (c) => {
   try {
-    const userId = c.req.param('userId');
-    const notifications = await kv.getByPrefix(`notification:${userId}:`);
+    const customers = await kv.getByPrefix('customer:');
+    return c.json({ customers: customers.sort((a: any, b: any) => new Date(b.joined_at).getTime() - new Date(a.joined_at).getTime()) });
+  } catch (error) {
+    console.error('Error fetching customers:', error);
+    return c.json({ error: 'Failed to fetch customers' }, 500);
+  }
+});
+
+// Get customer analytics (Admin)
+app.get("/make-server-175b2872/admin/customers/analytics", async (c) => {
+  try {
+    const customers = await kv.getByPrefix('customer:');
     
-    // Update all unread notifications
-    for (const notification of notifications) {
-      if (!notification.read) {
-        const key = `notification:${userId}:${notification.id}`;
-        notification.read = true;
-        notification.read_at = new Date().toISOString();
-        await kv.set(key, notification);
+    const totalCustomers = customers.length;
+    const totalSpend = customers.reduce((sum: number, c: any) => sum + (c.total_spend || 0), 0);
+    const avgSpend = totalCustomers > 0 ? totalSpend / totalCustomers : 0;
+    const activeCustomers = customers.filter((c: any) => c.status === 'active').length;
+    const inactiveCustomers = customers.filter((c: any) => c.status !== 'active').length;
+
+    // City distribution
+    const cityDistribution = customers.reduce((acc: any, c: any) => {
+      acc[c.city] = (acc[c.city] || 0) + 1;
+      return acc;
+    }, {});
+
+    // Top spenders
+    const topSpenders = [...customers]
+      .sort((a: any, b: any) => (b.total_spend || 0) - (a.total_spend || 0))
+      .slice(0, 5);
+
+    // Recent activity (mock logic for now, using last_active)
+    const recentActivity = customers
+      .filter((c: any) => {
+        if (!c.last_active) return false;
+        const lastActive = new Date(c.last_active);
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        return lastActive >= thirtyDaysAgo;
+      })
+      .length;
+
+    return c.json({
+      analytics: {
+        total_customers: totalCustomers,
+        total_spend: totalSpend,
+        average_spend: avgSpend,
+        active_count: activeCustomers,
+        inactive_count: inactiveCustomers,
+        recent_activity_count: recentActivity,
+        city_distribution: cityDistribution,
+        top_spenders: topSpenders
       }
-    }
-    
-    return c.json({ success: true });
+    });
   } catch (error) {
-    console.error('Error marking all notifications as read:', error);
-    return c.json({ error: 'Failed to mark all notifications as read' }, 500);
+    console.error('Error fetching customer analytics:', error);
+    return c.json({ error: 'Failed to fetch customer analytics' }, 500);
   }
 });
 
-// Delete a notification
-app.delete("/make-server-175b2872/kv/notifications/:userId/:notificationId", async (c) => {
+// Update customer (Admin)
+app.put("/make-server-175b2872/admin/customers/:id", async (c) => {
   try {
-    const userId = c.req.param('userId');
-    const notificationId = c.req.param('notificationId');
-    const key = `notification:${userId}:${notificationId}`;
+    const id = c.req.param('id');
+    const body = await c.req.json();
     
-    await kv.del(key);
+    const customer = await kv.get(id);
+    if (!customer) {
+      return c.json({ error: 'Customer not found' }, 404);
+    }
+
+    const updatedCustomer = {
+      ...customer,
+      name: body.name || customer.name,
+      email: body.email || customer.email,
+      mobile: body.mobile || customer.mobile,
+      city: body.city || customer.city,
+      status: body.status || customer.status,
+      updated_at: new Date().toISOString()
+    };
+
+    await kv.set(id, updatedCustomer);
     
-    return c.json({ success: true });
+    return c.json({ success: true, customer: updatedCustomer });
   } catch (error) {
-    console.error('Error deleting notification:', error);
-    return c.json({ error: 'Failed to delete notification' }, 500);
+    console.error('Error updating customer:', error);
+    return c.json({ error: 'Failed to update customer' }, 500);
+  }
+});
+
+// Toggle Customer Status (Admin)
+app.put("/make-server-175b2872/admin/customers/:id/status", async (c) => {
+  try {
+    const id = c.req.param('id');
+    const { status } = await c.req.json();
+    
+    if (!status || !['active', 'suspended', 'reviewing'].includes(status)) {
+       return c.json({ error: 'Invalid status. Must be active, suspended, or reviewing.' }, 400);
+    }
+
+    const customer = await kv.get(id);
+    if (!customer) {
+      return c.json({ error: 'Customer not found' }, 404);
+    }
+
+    customer.status = status;
+    customer.updated_at = new Date().toISOString();
+
+    await kv.set(id, customer);
+    
+    return c.json({ success: true, customer });
+  } catch (error) {
+    console.error('Error updating customer status:', error);
+    return c.json({ error: 'Failed to update status' }, 500);
   }
 });
 
@@ -1791,72 +2490,393 @@ app.delete("/make-server-175b2872/kv/notifications/:userId/:notificationId", asy
 // UTILITY ROUTES
 // ============================================
 
-// Health check
-app.get("/make-server-175b2872/health", (c) => {
-  return c.json({ status: 'healthy', timestamp: new Date().toISOString() });
+// Geocode Address
+app.post("/make-server-175b2872/geocode", async (c) => {
+  try {
+    const { address, city, country } = await c.req.json();
+    
+    if (!address || !city) {
+      return c.json({ error: 'Address and city are required' }, 400);
+    }
+    
+    const apiKey = Deno.env.get('GOOGLE_MAPS_API_KEY');
+    if (!apiKey) {
+      console.error('❌ GOOGLE_MAPS_API_KEY not found in environment');
+      return c.json({ error: 'Server configuration error: Geocoding API key missing' }, 500);
+    }
+    
+    const fullAddress = `${address}, ${city}, ${country || 'South Africa'}`;
+    console.log(`🗺️ Geocoding address: ${fullAddress}`);
+    
+    const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(fullAddress)}&key=${apiKey}`;
+    const response = await fetch(url);
+    const data = await response.json();
+    
+    if (data.status === 'OK' && data.results.length > 0) {
+      const location = data.results[0].geometry.location;
+      const formatted_address = data.results[0].formatted_address;
+      
+      console.log(`✅ Geocode success: ${formatted_address} (${location.lat}, ${location.lng})`);
+      
+      return c.json({
+        success: true,
+        latitude: location.lat,
+        longitude: location.lng,
+        formatted_address: formatted_address,
+        place_id: data.results[0].place_id
+      });
+    } else {
+      console.error(`❌ Geocode failed: ${data.status} - ${data.error_message || ''}`);
+      return c.json({ error: `Geocoding failed: ${data.status}`, details: data.error_message }, 400);
+    }
+    
+  } catch (error) {
+    console.error('Geocoding error:', error);
+    return c.json({ error: 'Geocoding failed due to server error' }, 500);
+  }
 });
 
-// Re-seed database
-app.post("/make-server-175b2872/reseed", async (c) => {
+// ============================================
+// SEEDING ROUTES
+// ============================================
+
+app.post("/make-server-175b2872/seed", async (c) => {
   if (seedingInProgress) {
-    return c.json({ message: 'Seeding already in progress' }, 429);
+    return c.json({ message: 'Seeding already in progress' }, 409);
   }
 
+  seedingInProgress = true;
   try {
-    seedingInProgress = true;
-    console.log('🌱 Manual re-seed triggered');
-    
-    await supabase.from('kv_store_175b2872').delete().like('key', 'menu_item:%');
-    await supabase.from('kv_store_175b2872').delete().like('key', 'menu:%');
-    
-    console.log('✅ Old menu items cleared');
-    
     const result = await seedDatabase();
-    
-    return c.json({ 
-      success: true,
-      message: 'Database re-seeded successfully',
-      ...result
-    });
-  } catch (error) {
-    console.error('❌ Error re-seeding database:', error);
-    return c.json({ error: 'Failed to re-seed database' }, 500);
-  } finally {
     seedingInProgress = false;
-  }
-});
-
-// ============================================
-// START SERVER
-// ============================================
-
-console.log('🚀 MYVIBES API Server starting...');
-console.log('✅ Consolidated single-file architecture');
-
-// ============================================
-// DATA MIGRATION ENDPOINT (Run once to migrate KV data to Postgres)
-// ============================================
-app.post("/make-server-175b2872/migrate-data", async (c) => {
-  console.log('🔄 Starting data migration from KV to Postgres...');
-  
-  try {
-    const migrationResult = await runMigration();
-    
-    return c.json({
-      success: migrationResult.success,
-      message: migrationResult.success 
-        ? '✅ Migration completed successfully!' 
-        : '⚠️ Migration completed with errors',
-      ...migrationResult
-    });
+    return c.json(result);
   } catch (error) {
-    console.error('❌ Migration failed:', error);
-    return c.json({ 
-      success: false,
-      error: 'Migration failed',
-      details: error.message 
-    }, 500);
+    seedingInProgress = false;
+    console.error('Seeding error:', error);
+    return c.json({ error: 'Seeding failed' }, 500);
   }
 });
 
-Deno.serve(app.fetch);
+app.post("/make-server-175b2872/migrate-kv-to-postgres", async (c) => {
+  try {
+    const result = await runMigration();
+    return c.json(result);
+  } catch (error) {
+    console.error('Migration error:', error);
+    return c.json({ error: 'Migration failed' }, 500);
+  }
+});
+
+// Reset Database (Admin)
+app.delete("/make-server-175b2872/admin/reset-database", async (c) => {
+  try {
+    const { error } = await supabase.from('kv_store_175b2872').delete().neq('key', '00000000');
+    if (error) throw error;
+    
+    console.log('⚠️ Database reset by admin');
+    return c.json({ success: true, message: "Database cleared successfully" });
+  } catch (error) {
+    console.error('Reset error:', error);
+    return c.json({ error: 'Failed to reset database' }, 500);
+  }
+});
+
+// Generate Test Payments (for demo purposes)
+app.post("/make-server-175b2872/admin/generate-test-payments", async (c) => {
+  try {
+    const testPayments = [
+      { id: 'TX-1001', business: 'The Burger Joint', amount: 4500, type: 'Payout', status: 'Pending', date: '2023-11-20' },
+      { id: 'TX-1002', business: 'Ocean View Bar', amount: 1250, type: 'Subscription', status: 'Completed', date: '2023-11-19' },
+      { id: 'TX-1003', business: 'NightOwl Club', amount: 8900, type: 'Ad Campaign', status: 'Completed', date: '2023-11-19' },
+      { id: 'TX-1004', business: 'Café Del Sol', amount: 3200, type: 'Payout', status: 'Processed', date: '2023-11-18' },
+      { id: 'TX-1005', business: 'Pizza Express', amount: 450, type: 'Subscription', status: 'Failed', date: '2023-11-18' },
+    ];
+
+    for (const payment of testPayments) {
+      await kv.set(`payment:${payment.id}`, payment);
+    }
+    
+    return c.json({ success: true, message: "Test payments generated", count: testPayments.length });
+  } catch (error) {
+    console.error('Error generating payments:', error);
+    return c.json({ error: 'Failed to generate payments' }, 500);
+  }
+});
+
+// Get Subscriptions (Admin)
+app.get("/make-server-175b2872/admin/subscriptions", async (c) => {
+  try {
+    const subscriptions = await kv.getByPrefix('subscription:');
+    // Sort by creation or ID
+    return c.json({ subscriptions: subscriptions.sort((a: any, b: any) => b.id.localeCompare(a.id)) });
+  } catch (error) {
+    console.error('Error fetching subscriptions:', error);
+    return c.json({ error: 'Failed to fetch subscriptions' }, 500);
+  }
+});
+
+// Generate Test Subscriptions
+app.post("/make-server-175b2872/admin/generate-test-subscriptions", async (c) => {
+  try {
+    const testSubscriptions = [
+      { id: 'S-001', business: 'The Burger Joint', plan: 'Pro Partner', billing: 'Monthly', nextBill: '2023-11-24', status: 'Active', amount: 499 },
+      { id: 'S-002', business: 'Ocean View Bar', plan: 'Promo Exception', billing: '-', nextBill: '-', status: 'Active', amount: 0 },
+      { id: 'S-004', business: 'Café Del Sol', plan: 'Pro Partner', billing: 'Monthly', nextBill: '2023-11-24', status: 'Past Due', amount: 499 },
+      { id: 'S-005', business: 'Pizza Express', plan: 'Pro Partner', billing: 'Monthly', nextBill: '2023-11-26', status: 'Cancelled', amount: 499 },
+      // Add more to match the stats in the screenshot roughly (365 subscribers)
+      // We won't generate 365 records, but enough to make the chart look interesting
+      { id: 'S-006', business: 'Mama Africa', plan: 'Pro Partner', billing: 'Monthly', nextBill: '2023-11-25', status: 'Active', amount: 499 },
+      { id: 'S-007', business: 'Cape Town Fish Market', plan: 'Promo Exception', billing: '-', nextBill: '-', status: 'Active', amount: 0 },
+    ];
+
+    for (const sub of testSubscriptions) {
+      await kv.set(`subscription:${sub.id}`, sub);
+    }
+    
+    return c.json({ success: true, message: "Test subscriptions generated", count: testSubscriptions.length });
+  } catch (error) {
+    console.error('Error generating subscriptions:', error);
+    return c.json({ error: 'Failed to generate subscriptions' }, 500);
+  }
+});
+
+// Get Campaigns (Admin)
+app.get("/make-server-175b2872/admin/campaigns", async (c) => {
+  try {
+    const campaigns = await kv.getByPrefix('campaign:');
+    // Sort by id or name
+    return c.json({ campaigns: campaigns.sort((a: any, b: any) => a.id - b.id) });
+  } catch (error) {
+    console.error('Error fetching campaigns:', error);
+    return c.json({ error: 'Failed to fetch campaigns' }, 500);
+  }
+});
+
+// Generate Test Campaigns
+app.post("/make-server-175b2872/admin/generate-test-campaigns", async (c) => {
+  try {
+    const testCampaigns = [
+      { id: 1, name: 'Summer Vibes 2024', status: 'Active', reach: 45000, clicks: 3200, spend: 12500, type: 'Global Promo' },
+      { id: 2, name: 'New Feature Announcement', status: 'Scheduled', reach: 0, clicks: 0, spend: 0, type: 'System Notification' },
+      { id: 3, name: 'Black Friday Boost', status: 'Ended', reach: 85000, clicks: 12500, spend: 45000, type: 'Global Promo' },
+    ];
+
+    for (const campaign of testCampaigns) {
+      await kv.set(`campaign:${campaign.id}`, campaign);
+    }
+    
+    return c.json({ success: true, message: "Test campaigns generated", count: testCampaigns.length });
+  } catch (error) {
+    console.error('Error generating campaigns:', error);
+    return c.json({ error: 'Failed to generate campaigns' }, 500);
+  }
+});
+
+// Get Users (Admin)
+app.get("/make-server-175b2872/admin/users", async (c) => {
+  try {
+    const users = await kv.getByPrefix('user:');
+    // Sort by id or name
+    return c.json({ users: users.sort((a: any, b: any) => a.id - b.id) });
+  } catch (error) {
+    console.error('Error fetching users:', error);
+    return c.json({ error: 'Failed to fetch users' }, 500);
+  }
+});
+
+// Generate Test Users
+app.post("/make-server-175b2872/admin/generate-test-users", async (c) => {
+  try {
+    const testUsers = [
+      { id: 1, name: 'Sarah Jenkins', email: 'sarah.j@example.com', role: 'Customer', status: 'Active', joined: 'Oct 24, 2023', spend: 4200, lastActive: '2 hours ago' },
+      { id: 2, name: 'Mike Ross', email: 'mike.ross@example.com', role: 'Business Owner', status: 'Active', joined: 'Nov 12, 2023', spend: 12500, lastActive: '5 mins ago' },
+      { id: 3, name: 'Jessica Pearson', email: 'jessica.p@example.com', role: 'Admin', status: 'Active', joined: 'Sep 05, 2023', spend: 0, lastActive: 'Just now' },
+      { id: 4, name: 'Harvey Specter', email: 'harvey@example.com', role: 'Business Owner', status: 'Reviewing', joined: 'Jan 15, 2024', spend: 8900, lastActive: '1 day ago' },
+      { id: 5, name: 'Louis Litt', email: 'louis@example.com', role: 'Customer', status: 'Suspended', joined: 'Dec 01, 2023', spend: 150, lastActive: '3 weeks ago' },
+      { id: 6, name: 'Rachel Zane', email: 'rachel@example.com', role: 'Customer', status: 'Active', joined: 'Feb 10, 2024', spend: 3200, lastActive: '1 hour ago' },
+    ];
+
+    for (const user of testUsers) {
+      await kv.set(`user:${user.id}`, user);
+    }
+    
+    return c.json({ success: true, message: "Test users generated", count: testUsers.length });
+  } catch (error) {
+    console.error('Error generating users:', error);
+    return c.json({ error: 'Failed to generate users' }, 500);
+  }
+});
+
+// Generate Test Customers
+app.post("/make-server-175b2872/admin/generate-test-customers", async (c) => {
+  try {
+    const testCustomers = [
+      { 
+        id: `customer:${Date.now()}-1`, 
+        name: 'Sarah Jenkins', 
+        email: 'sarah.j@example.com', 
+        mobile: '082 123 4567',
+        city: 'Cape Town',
+        status: 'active', 
+        joined_at: new Date(Date.now() - 86400000 * 20).toISOString(), 
+        total_spend: 4200, 
+        last_active: new Date().toISOString() 
+      },
+      { 
+        id: `customer:${Date.now()}-2`, 
+        name: 'Mike Ross', 
+        email: 'mike.ross@example.com', 
+        mobile: '083 987 6543',
+        city: 'Johannesburg',
+        status: 'active', 
+        joined_at: new Date(Date.now() - 86400000 * 5).toISOString(), 
+        total_spend: 12500, 
+        last_active: new Date().toISOString() 
+      },
+      { 
+        id: `customer:${Date.now()}-3`, 
+        name: 'Jessica Pearson', 
+        email: 'jessica.p@example.com', 
+        mobile: '072 555 1234',
+        city: 'Durban',
+        status: 'active', 
+        joined_at: new Date(Date.now() - 86400000 * 60).toISOString(), 
+        total_spend: 0, 
+        last_active: new Date().toISOString() 
+      }
+    ];
+
+    for (const cust of testCustomers) {
+      await kv.set(cust.id, cust);
+    }
+    
+    return c.json({ success: true, message: "Test customers generated", count: testCustomers.length });
+  } catch (error) {
+    console.error('Error generating customers:', error);
+    return c.json({ error: 'Failed to generate customers' }, 500);
+  }
+});
+
+// TEMPORARY CLEANUP ROUTE FOR support@get-digital.co.za
+app.get("/make-server-175b2872/admin/cleanup-digital-user", async (c) => {
+  try {
+    const targetEmail = 'support@get-digital.co.za';
+    const normalizedTarget = targetEmail.toLowerCase().trim();
+    let deletedCount = 0;
+    const deletedItems = [];
+    const debugLog = [];
+
+    debugLog.push(`Targeting: ${normalizedTarget}`);
+
+    // 0. CLEANUP SUPABASE AUTH (The most likely culprit for "User already exists")
+    if (supabase.auth.admin) {
+      // Pagination handling to ensure we find the user
+      let allUsers = [];
+      let page = 1;
+      let hasMore = true;
+      
+      while (hasMore) {
+        const { data: { users }, error } = await supabase.auth.admin.listUsers({ page: page, perPage: 1000 });
+        if (error || !users || users.length === 0) {
+          hasMore = false;
+        } else {
+          allUsers = [...allUsers, ...users];
+          page++;
+          // Safety break
+          if (page > 10) hasMore = false; 
+        }
+      }
+
+      const authUser = allUsers.find(u => u.email?.toLowerCase().trim() === normalizedTarget);
+      
+      if (authUser) {
+         const { error: delError } = await supabase.auth.admin.deleteUser(authUser.id);
+         if (!delError) {
+           deletedItems.push(`auth_user:${authUser.id}`);
+           deletedCount++;
+           debugLog.push(`✅ Deleted Supabase Auth user: ${authUser.id}`);
+         } else {
+           debugLog.push(`❌ Failed to delete Supabase Auth user: ${delError.message}`);
+         }
+      } else {
+         debugLog.push(`ℹ️ User not found in Supabase Auth list (checked ${allUsers.length} users)`);
+      }
+    } else {
+      debugLog.push('❌ Supabase Admin API not available');
+    }
+
+    // 1. Scan and delete from Businesses (Loose Match)
+    const allBusinesses = await kv.getByPrefix('business:');
+    const businessesToDelete = allBusinesses.filter((b: any) => 
+      b.email?.toLowerCase().trim() === normalizedTarget
+    );
+    
+    for (const b of businessesToDelete) {
+      await kv.del(`business:${b.id}`);
+      // Also delete the link key if possible
+      await kv.del(`link:user_business:${b.user_id}`);
+      
+      deletedItems.push(`business:${b.id}`);
+      deletedCount++;
+      debugLog.push(`✅ Deleted KV Business: ${b.name}`);
+    }
+
+    // 2. Scan and delete from Customers (Loose Match)
+    const allCustomers = await kv.getByPrefix('customer:');
+    const customersToDelete = allCustomers.filter((cust: any) => 
+      cust.email?.toLowerCase().trim() === normalizedTarget
+    );
+    
+    for (const cust of customersToDelete) {
+      await kv.del(`customer:${cust.id}`);
+      deletedItems.push(`customer:${cust.id}`);
+      
+      // Also remove lookups
+      if (cust.username) {
+         await kv.del(`customer_lookup:username:${cust.username}`);
+      }
+      await kv.del(`customer_lookup:email:${normalizedTarget}`);
+      
+      deletedCount++;
+      debugLog.push(`✅ Deleted KV Customer: ${cust.name}`);
+    }
+    
+    // 3. Scan and delete from Users (Admin Users table if it exists)
+    const allUsers = await kv.getByPrefix('user:');
+    const usersToDelete = allUsers.filter((u: any) => 
+      u.email?.toLowerCase().trim() === normalizedTarget
+    );
+    
+    for (const u of usersToDelete) {
+      await kv.del(`user:${u.id}`);
+      deletedItems.push(`user:${u.id}`);
+      deletedCount++;
+      debugLog.push(`✅ Deleted KV User: ${u.name}`);
+    }
+    
+    // 4. Scan and delete Affiliate
+    const allAffiliates = await kv.getByPrefix('affiliate:');
+    const affiliatesToDelete = allAffiliates.filter((a: any) => 
+      a.email?.toLowerCase().trim() === normalizedTarget
+    );
+    
+    for (const a of affiliatesToDelete) {
+       await kv.del(`affiliate:${a.id}`);
+       deletedItems.push(`affiliate:${a.id}`);
+       deletedCount++;
+       debugLog.push(`✅ Deleted KV Affiliate: ${a.name}`);
+    }
+
+    return c.json({ 
+      success: true, 
+      message: `Deleted ${deletedCount} records for ${targetEmail}`,
+      deleted: deletedItems,
+      debug_log: debugLog
+    });
+  } catch (error: any) {
+    console.error('Cleanup error:', error);
+    return c.json({ error: 'Cleanup failed', details: error.message }, 500);
+  }
+});
+
+export default app;

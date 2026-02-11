@@ -5,7 +5,7 @@ const BASE_URL = `https://${projectId}.supabase.co/functions/v1/make-server-175b
 
 // In-memory cache for rapid reads (reduces localStorage access)
 const memoryCache = new Map<string, { data: any; timestamp: number }>();
-const MEMORY_CACHE_TTL = 60000; // Increased to 60 seconds
+const MEMORY_CACHE_TTL = 5000; // Reduced to 5 seconds to ensure freshness during testing
 
 // Request deduplication map to prevent duplicate simultaneous requests
 const pendingRequests = new Map<string, Promise<any>>();
@@ -108,23 +108,27 @@ export async function seedDatabase() {
 }
 
 // Get all businesses with offline support
-export async function getBusinesses(lat?: number, lng?: number) {
+export async function getBusinesses(lat?: number, lng?: number, forceRefresh: boolean = false) {
   const params = new URLSearchParams();
   if (lat) params.append('lat', lat.toString());
   if (lng) params.append('lng', lng.toString());
+  if (forceRefresh) params.append('_t', Date.now().toString());
   
   const queryString = params.toString();
   
   try {
-    const response = await apiCall(`/businesses${queryString ? `?${queryString}` : ''}`);
+    const response = await apiCall(`/kv/businesses${queryString ? `?${queryString}` : ''}`);
     
     // Handle paginated response format (new Postgres API)
-    const data = response.businesses ? response.businesses : response;
+    const data = response.businesses ? response.businesses : (response.data ? response.data : response);
+    
+    // Ensure we return an array
+    const businessesArray = Array.isArray(data) ? data : [];
     
     // Cache successful response
-    saveToCache(STORAGE_KEYS.BUSINESSES, data);
+    saveToCache(STORAGE_KEYS.BUSINESSES, businessesArray);
     updateLastSync();
-    return data;
+    return businessesArray;
   } catch (error) {
     console.warn('Using cached businesses data');
     // Return cached data if available
@@ -156,7 +160,7 @@ export async function getBusinessById(id: string, forceRefresh: boolean = false)
     try {
       // Add timestamp to URL to bypass browser/CDN cache
       const timestamp = new Date().getTime();
-      const data = await apiCall(`/businesses/${id}?_=${timestamp}`);
+      const data = await apiCall(`/kv/businesses/${id}?_=${timestamp}`);
       saveToCache(cacheKey, data);
       console.log(`✅ Successfully refreshed business: ${data.business?.name || id}`);
       return data;
@@ -170,7 +174,7 @@ export async function getBusinessById(id: string, forceRefresh: boolean = false)
     console.log(`🔍 Fetching business with ID: ${id}`);
     // Add timestamp to URL to bypass stale cache
     const timestamp = new Date().getTime();
-    const data = await apiCall(`/businesses/${id}?_=${timestamp}`);
+    const data = await apiCall(`/kv/businesses/${id}?_=${timestamp}`);
     // Cache individual business data
     saveToCache(cacheKey, data);
     console.log(`✅ Successfully fetched business: ${data.business?.name || id}`);
@@ -192,7 +196,7 @@ export async function getBusinessById(id: string, forceRefresh: boolean = false)
 // Get all specials with offline support
 export async function getSpecials() {
   try {
-    const data = await apiCall('/specials');
+    const data = await apiCall('/kv/specials');
     const specials = data.specials || data.data || [];
     saveToCache(STORAGE_KEYS.SPECIALS, specials);
     updateLastSync();
@@ -207,7 +211,7 @@ export async function getSpecials() {
 // Get all events with offline support
 export async function getEvents() {
   try {
-    const data = await apiCall('/events');
+    const data = await apiCall('/kv/events');
     const events = data.events || data.data || [];
     saveToCache(STORAGE_KEYS.EVENTS, events);
     updateLastSync();
@@ -660,6 +664,87 @@ export async function cancelReservation(reservationId: string, userEmail: string
   } catch (error) {
     console.error('Failed to cancel reservation:', error);
     return false;
+  }
+}
+
+// ============================================
+// CUSTOMER AUTH API
+// ============================================
+
+export async function checkUsername(username: string) {
+  try {
+    const data = await apiCall('/auth/customer/check-username', {
+      method: 'POST',
+      body: JSON.stringify({ username })
+    });
+    return data.exists;
+  } catch (error) {
+    console.error('Check username failed:', error);
+    return false;
+  }
+}
+
+export async function loginCustomer(username: string) {
+  try {
+    const data = await apiCall('/auth/customer/login', {
+      method: 'POST',
+      body: JSON.stringify({ username })
+    });
+    return data;
+  } catch (error) {
+    console.error('Login failed:', error);
+    throw error;
+  }
+}
+
+export async function registerCustomer(username: string, name: string) {
+  try {
+    const data = await apiCall('/auth/customer/register', {
+      method: 'POST',
+      body: JSON.stringify({ username, name })
+    });
+    return data;
+  } catch (error) {
+    console.error('Registration failed:', error);
+    throw error;
+  }
+}
+
+export async function recoverUsername(email: string) {
+  try {
+    const data = await apiCall('/auth/customer/recover-username', {
+      method: 'POST',
+      body: JSON.stringify({ email })
+    });
+    return data.success;
+  } catch (error) {
+    console.error('Recovery failed:', error);
+    return false;
+  }
+}
+
+// ============================================
+// USER PROFILE API
+// ============================================
+
+// Save or update customer profile
+export async function saveCustomerProfile(profile: {
+  name: string;
+  email: string;
+  mobile: string;
+  city?: string;
+  notificationPreference?: 'email' | 'whatsapp';
+}) {
+  try {
+    const response = await apiCall('/auth/customer/profile', {
+      method: 'POST',
+      body: JSON.stringify(profile)
+    });
+    return response;
+  } catch (error) {
+    console.error('Failed to save customer profile:', error);
+    // Throw to allow caller to handle retry or UI feedback
+    throw error;
   }
 }
 

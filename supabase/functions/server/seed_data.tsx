@@ -631,6 +631,191 @@ const seedAffiliates = [
   }
 ];
 
+const seedAds = [
+  {
+    id: 'ad001',
+    business_id: 'palms',
+    business_name: 'The Palms',
+    title: 'Sunset Cocktails',
+    description: 'Experience the best sunset views in Camps Bay with our signature cocktails.',
+    video_url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', // Placeholder
+    platform: 'instagram',
+    status: 'approved',
+    views: 1250,
+    clicks: 85,
+    created_at: '2026-01-10T14:30:00Z',
+    approved_at: '2026-01-11T09:00:00Z',
+    approved_by: 'Admin'
+  },
+  {
+    id: 'ad002',
+    business_id: 'ocean-basket',
+    business_name: 'Ocean Basket',
+    title: 'Seafood Platter Special',
+    description: 'Fresh seafood platter for two. Only R399!',
+    video_url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+    platform: 'facebook',
+    status: 'pending',
+    views: 0,
+    clicks: 0,
+    created_at: '2026-01-15T10:00:00Z'
+  },
+  {
+    id: 'ad003',
+    business_id: 'marble',
+    business_name: 'Marble Restaurant',
+    title: 'Live Jazz Fridays',
+    description: 'Join us for live jazz every Friday night.',
+    video_url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+    platform: 'tiktok',
+    status: 'rejected',
+    views: 0,
+    clicks: 0,
+    created_at: '2026-01-12T16:45:00Z',
+    rejected_at: '2026-01-13T11:20:00Z',
+    rejected_by: 'Admin',
+    rejection_reason: 'Video quality is too low'
+  },
+  {
+    id: 'ad004',
+    business_id: 'col-cacchio',
+    business_name: "Col'Cacchio Pizzeria",
+    title: 'Pizza Night',
+    description: 'Buy any 2 large pizzas and get a free bottle of wine.',
+    video_url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+    platform: 'instagram',
+    status: 'approved',
+    views: 3400,
+    clicks: 210,
+    created_at: '2026-01-05T12:00:00Z',
+    approved_at: '2026-01-05T14:00:00Z',
+    approved_by: 'Admin'
+  }
+];
+
+const seedCustomers = [
+  {
+    id: 'cust001',
+    name: 'Michael Jordan',
+    email: 'michael.j@example.com',
+    phone: '+27 82 123 4567',
+    city: 'Cape Town',
+    total_orders: 15,
+    total_spend: 4500,
+    last_active: '2026-01-15T10:00:00Z',
+    joined_at: '2025-11-01T09:00:00Z',
+    status: 'active'
+  },
+  {
+    id: 'cust002',
+    name: 'Sarah Connor',
+    email: 'sarah.c@example.com',
+    phone: '+27 72 987 6543',
+    city: 'Johannesburg',
+    total_orders: 8,
+    total_spend: 2100,
+    last_active: '2026-01-14T18:30:00Z',
+    joined_at: '2025-12-10T14:00:00Z',
+    status: 'active'
+  },
+  {
+    id: 'cust003',
+    name: 'James Bond',
+    email: '007@example.com',
+    phone: '+27 83 007 0007',
+    city: 'Durban',
+    total_orders: 25,
+    total_spend: 12500,
+    last_active: '2026-01-16T20:00:00Z',
+    joined_at: '2025-10-05T11:00:00Z',
+    status: 'active'
+  },
+  {
+    id: 'cust004',
+    name: 'Lara Croft',
+    email: 'lara.c@example.com',
+    phone: '+27 61 555 1234',
+    city: 'Cape Town',
+    total_orders: 3,
+    total_spend: 850,
+    last_active: '2025-12-28T12:00:00Z',
+    joined_at: '2025-12-20T10:00:00Z',
+    status: 'inactive'
+  },
+  {
+    id: 'cust005',
+    name: 'Bruce Wayne',
+    email: 'bruce.w@example.com',
+    phone: '+27 82 999 8888',
+    city: 'Johannesburg',
+    total_orders: 42,
+    total_spend: 25000,
+    last_active: '2026-01-16T21:00:00Z',
+    joined_at: '2025-09-15T08:00:00Z',
+    status: 'active'
+  },
+  {
+    id: 'cust006',
+    name: 'Clark Kent',
+    email: 'clark.k@example.com',
+    phone: '+27 71 222 3333',
+    city: 'Pretoria',
+    total_orders: 12,
+    total_spend: 3200,
+    last_active: '2026-01-10T13:00:00Z',
+    joined_at: '2025-11-20T15:00:00Z',
+    status: 'active'
+  },
+  {
+    id: 'cust007',
+    name: 'Diana Prince',
+    email: 'diana.p@example.com',
+    phone: '+27 73 444 5555',
+    city: 'Cape Town',
+    total_orders: 20,
+    total_spend: 6800,
+    last_active: '2026-01-15T19:00:00Z',
+    joined_at: '2025-10-25T12:00:00Z',
+    status: 'active'
+  },
+  {
+    id: 'cust008',
+    name: 'Peter Parker',
+    email: 'peter.p@example.com',
+    phone: '+27 84 666 7777',
+    city: 'Johannesburg',
+    total_orders: 5,
+    total_spend: 1200,
+    last_active: '2026-01-05T17:00:00Z',
+    joined_at: '2026-01-01T09:00:00Z',
+    status: 'active'
+  },
+  {
+    id: 'cust009',
+    name: 'Tony Stark',
+    email: 'tony.s@example.com',
+    phone: '+27 82 111 2222',
+    city: 'Durban',
+    total_orders: 50,
+    total_spend: 35000,
+    last_active: '2026-01-16T22:00:00Z',
+    joined_at: '2025-08-10T14:00:00Z',
+    status: 'active'
+  },
+  {
+    id: 'cust010',
+    name: 'Natasha Romanoff',
+    email: 'natasha.r@example.com',
+    phone: '+27 76 333 4444',
+    city: 'Cape Town',
+    total_orders: 18,
+    total_spend: 5400,
+    last_active: '2026-01-12T11:00:00Z',
+    joined_at: '2025-11-05T16:00:00Z',
+    status: 'active'
+  }
+];
+
 export async function seedDatabase() {
   const startTime = Date.now();
   try {
@@ -870,6 +1055,20 @@ export async function seedDatabase() {
       await kv.set(`expense:${expense.id}`, expense);
       console.log(`  ✓ Added expense: ${expense.description} - R${expense.amount}`);
     }
+
+    // Seed ads
+    console.log('🎥 Seeding social media ads...');
+    for (const ad of seedAds) {
+      await kv.set(`ad:${ad.id}`, ad);
+      console.log(`  ✓ Added ad: ${ad.title} (${ad.status})`);
+    }
+
+    // Seed customers
+    console.log('👥 Seeding customers...');
+    for (const customer of seedCustomers) {
+      await kv.set(`customer:${customer.id}`, customer);
+      console.log(`  ✓ Added customer: ${customer.name}`);
+    }
     
     // Store metadata
     await kv.set('seed:metadata', {
@@ -886,7 +1085,8 @@ export async function seedDatabase() {
       rating_trends_count: seedRatingTrends.length,
       affiliates_count: seedAffiliates.length,
       commissions_count: seedCommissions.length,
-      expenses_count: seedExpenses.length
+      expenses_count: seedExpenses.length,
+      customers_count: seedCustomers.length
     });
     
     const endTime = Date.now();
@@ -894,7 +1094,7 @@ export async function seedDatabase() {
     const totalRecords = seedBusinesses.length + seedSpecials.length + seedEvents.length + 
                         seedMenuItems.length + seedReviews.length + seedAnalytics.length + 
                         seedPopularTimes.length + seedCuisineStats.length + seedDemographics.length + 
-                        seedRatingTrends.length;
+                        seedRatingTrends.length + seedCustomers.length;
     
     console.log('✅ Database seeding completed successfully!');
     return {
@@ -910,7 +1110,7 @@ export async function seedDatabase() {
         cuisine_stats: seedCuisineStats.length,
         demographics: seedDemographics.length,
         rating_trends: seedRatingTrends.length,
-        customers: 0,
+        customers: seedCustomers.length,
         reservations: 0,
         affiliates: seedAffiliates.length,
         commissions: seedCommissions.length,

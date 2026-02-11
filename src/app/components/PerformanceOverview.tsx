@@ -180,8 +180,9 @@ export function PerformanceOverview() {
       {/* Revenue & Bookings Trend */}
       <Card className="p-6">
         <h3 className="text-lg font-semibold mb-4">Revenue & Bookings Trend</h3>
-        <ResponsiveContainer width="100%" height={300}>
-          <AreaChart data={analytics}>
+        <div className="h-[300px] w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={analytics}>
             <defs>
               <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor="#FF6B35" stopOpacity={0.8}/>
@@ -225,14 +226,16 @@ export function PerformanceOverview() {
             />
           </AreaChart>
         </ResponsiveContainer>
+        </div>
       </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Popular Times */}
         <Card className="p-6">
           <h3 className="text-lg font-semibold mb-4">Popular Booking Times</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={popularTimes}>
+          <div className="h-[300px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={popularTimes}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
               <XAxis dataKey="hour" stroke="#888" />
               <YAxis stroke="#888" />
@@ -242,13 +245,15 @@ export function PerformanceOverview() {
               <Bar dataKey="bookings" fill="#3498DB" radius={[8, 8, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
+          </div>
         </Card>
 
         {/* Rating Trends */}
         <Card className="p-6">
           <h3 className="text-lg font-semibold mb-4">Rating Trends</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={ratingTrends}>
+          <div className="h-[300px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={ratingTrends}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
               <XAxis dataKey="month" stroke="#888" />
               <YAxis domain={[0, 5]} stroke="#888" />
@@ -265,13 +270,14 @@ export function PerformanceOverview() {
               />
             </LineChart>
           </ResponsiveContainer>
+          </div>
         </Card>
 
         {/* Cuisine Popularity */}
         <Card className="p-6">
           <h3 className="text-lg font-semibold mb-4">Cuisine Popularity</h3>
-          <div className="flex items-center justify-center">
-            <ResponsiveContainer width="100%" height={300}>
+          <div className="flex items-center justify-center h-[300px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
                   data={cuisineStats}
@@ -298,8 +304,9 @@ export function PerformanceOverview() {
         {/* Customer Demographics */}
         <Card className="p-6">
           <h3 className="text-lg font-semibold mb-4">Customer Demographics</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={demographics} layout="vertical">
+          <div className="h-[300px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={demographics} layout="vertical">
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
               <XAxis type="number" stroke="#888" />
               <YAxis dataKey="ageGroup" type="category" stroke="#888" />
@@ -309,6 +316,7 @@ export function PerformanceOverview() {
               <Bar dataKey="count" fill="#9B59B6" radius={[0, 8, 8, 0]} />
             </BarChart>
           </ResponsiveContainer>
+          </div>
         </Card>
       </div>
     </div>

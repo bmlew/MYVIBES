@@ -12,6 +12,7 @@ import {
   User 
 } from 'lucide-react';
 import { DebugPanel } from './components/DebugPanel';
+import { CustomerAuthScreen } from './components/CustomerAuthScreen';
 import { UserProfileModal } from './components/UserProfileModal';
 import { CustomerProfile } from './components/CustomerProfile';
 import { CustomerProfileSetup } from './components/CustomerProfileSetup';
@@ -49,10 +50,15 @@ interface UserLocation {
 }
 
 interface UserProfile {
+  id: string;
+  username: string;
   name: string;
   email: string;
   mobile: string;
+  city?: string;
   notificationPreference?: 'email' | 'whatsapp';
+  birthday?: string;
+  preferences?: string[];
 }
 
 interface Business {
@@ -71,6 +77,7 @@ interface Business {
   average_rating?: number;
   total_reviews?: number;
   distance?: number;
+  is_active?: boolean;
 }
 
 interface Special {
@@ -92,6 +99,7 @@ interface Event {
   description: string;
   event_date: string;
   start_time: string;
+  location?: string;
   business?: Business;
 }
 
@@ -130,13 +138,115 @@ export function CustomerApp() {
   const hasRequestedInitialLocationRef = useRef(false); // Prevent initial location request loop
   const locationNameSetRef = useRef(false); // Track if location name has been successfully set
   const lastLocationSuccessTime = useRef<number>(0); // Track when location last succeeded
+  const [reservationInitialData, setReservationInitialData] = useState<{date?: string, time?: string, notes?: string} | undefined>(undefined);
 
   // User profile states
-  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  // Initialize from localStorage for instant ("Optimistic") auth
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(() => {
+    try {
+      const saved = localStorage.getItem('vibespot_customer_profile');
+      return saved ? JSON.parse(saved) : null;
+    } catch (e) {
+      return null;
+    }
+  });
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [showProfileSetup, setShowProfileSetup] = useState(false);
+  // Only show loading if we DON'T have a local profile
+  const [authLoading, setAuthLoading] = useState(() => {
+    return !localStorage.getItem('vibespot_customer_profile');
+  });
 
-  // Notification states
+  // Authentication Effect
+  useEffect(() => {
+    const checkAuth = async () => {
+      const token = localStorage.getItem('vibespot_session_token');
+      const localProfileStr = localStorage.getItem('vibespot_customer_profile');
+      
+      // If no token...
+      if (!token) {
+        // But if we have a local profile, keep the user logged in (Guest/Offline Mode)
+        if (localProfileStr) {
+          console.log('⚠️ No token found, but profile exists. Maintaining session in offline mode.');
+          try {
+             // Ensure state matches local storage
+             const profile = JSON.parse(localProfileStr);
+             setUserProfile(profile);
+          } catch (e) {
+             // If parse fails, then we must logout
+             console.error('❌ Corrupt local profile, logging out.');
+             setUserProfile(null);
+             localStorage.removeItem('vibespot_customer_profile');
+          }
+        } else {
+          // No token and no profile -> Logout
+          setUserProfile(null);
+        }
+        setAuthLoading(false);
+        return;
+      }
+
+      try {
+        const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-175b2872/auth/customer/me`, {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          // Update profile with latest from server
+          setUserProfile(data.customer);
+          // Update local storage to keep it fresh
+          localStorage.setItem('vibespot_customer_profile', JSON.stringify(data.customer));
+          console.log('✅ Auto-logged in as:', data.customer.username);
+        } else {
+          // Only log out if specifically unauthorized (401)
+          if (response.status === 401) {
+            console.log('ℹ️ Session expired, clearing local session'); // Downgraded from warn/error
+            localStorage.removeItem('vibespot_session_token');
+            localStorage.removeItem('vibespot_customer_profile'); 
+            setUserProfile(null);
+          } else {
+            // Server error or other issue - keep user logged in (offline mode)
+            console.warn('⚠️ Server validation failed but keeping local session:', response.status);
+          }
+        }
+      } catch (err) {
+        // Network error - keep user logged in (offline mode)
+        console.error('⚠️ Auth check failed (network), working offline:', err);
+      } finally {
+        setAuthLoading(false);
+      }
+    };
+
+    checkAuth();
+  }, []);
+
+  const handleLoginSuccess = (user: UserProfile, token: string) => {
+    setUserProfile(user);
+    // CRITICAL: Save both token and profile to localStorage for persistence
+    localStorage.setItem('vibespot_session_token', token);
+    localStorage.setItem('vibespot_customer_profile', JSON.stringify(user));
+    setAuthLoading(false);
+    
+    // Background sync to ensure admin visibility (legacy support)
+    if (user.email) {
+      api.saveCustomerProfile({
+        name: user.name,
+        email: user.email,
+        mobile: user.mobile,
+        city: user.city || 'Johannesburg'
+      }).catch(console.error);
+    }
+  };
+
+  const handleLogout = () => {
+    setUserProfile(null);
+    localStorage.removeItem('vibespot_session_token');
+    localStorage.removeItem('vibespot_customer_profile'); // Ensure complete cleanup
+    setCurrentView('home');
+  };
   const [unreadCount, setUnreadCount] = useState(0);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const previousCountRef = useRef(0);
@@ -180,11 +290,11 @@ export function CustomerApp() {
           });
         }
         
-        const nameMatch = b.name.toLowerCase().includes(query);
-        const descMatch = b.description?.toLowerCase().includes(query);
+        const nameMatch = (b.name || '').toLowerCase().includes(query);
+        const descMatch = (b.description || '').toLowerCase().includes(query);
         const cuisineMatch = b.cuisine_types?.some(c => c.toLowerCase().includes(query));
-        const cityMatch = b.city?.toLowerCase().includes(query);
-        const typeMatch = b.business_type?.toLowerCase().includes(query);
+        const cityMatch = (b.city || '').toLowerCase().includes(query);
+        const typeMatch = (b.business_type || '').toLowerCase().includes(query);
         
         if (nameMatch || descMatch || cuisineMatch || cityMatch || typeMatch) {
           console.log('✅ Match found:', b.name, '- Matched on:', {
@@ -290,11 +400,22 @@ export function CustomerApp() {
       return;
     }
     
-    // Reject special IDs or malformed IDs that start with "special-"
+    // Handle special IDs - attempt to extract business ID
     if (venueId.startsWith('special-') || venueId.startsWith('special:')) {
-      console.error('❌ Invalid business ID (special ID detected):', venueId);
-      console.warn('⚠️ This appears to be a special ID, not a business ID. Skipping navigation.');
-      return;
+      console.warn('⚠️ Special ID detected in navigation:', venueId);
+      
+      // Try to extract business ID (format: special:business-ID:timestamp)
+      // Look for the part that is "business-..."
+      // Some IDs might be like business-123 or business-1770649105228
+      const businessIdMatch = venueId.match(/(business-[\w-]+)/);
+      
+      if (businessIdMatch && businessIdMatch[1]) {
+        console.log(`✅ Recovered business ID from special ID: ${businessIdMatch[1]}`);
+        venueId = businessIdMatch[1];
+      } else {
+        console.error('❌ Could not recover valid business ID from:', venueId);
+        return;
+      }
     }
     
     console.log(`📍 Opening venue detail for: ${venueId}`);
@@ -334,7 +455,7 @@ export function CustomerApp() {
   // Handle carousel item click (memoized to prevent infinite loops)
   const handleCarouselItemClick = useCallback(async (item: any) => {
     // ALWAYS prioritize item.business_id over item.business?.id to avoid special ID issues
-    const businessId = item.business_id || item.business?.id;
+    let businessId = item.business_id || item.business?.id;
     
     // Validate businessId before proceeding
     if (!businessId) {
@@ -342,11 +463,19 @@ export function CustomerApp() {
       return;
     }
     
-    // Reject special IDs or malformed IDs
+    // Check for special IDs and attempt to recover
     if (businessId.startsWith('special-') || businessId.startsWith('special:')) {
-      console.error('❌ Invalid business ID in carousel (special ID detected):', businessId);
-      console.warn('⚠️ Item data:', item);
-      return;
+      console.warn('⚠️ Special ID detected in carousel item:', businessId);
+      const businessIdMatch = businessId.match(/(business-[\w-]+)/);
+      
+      if (businessIdMatch && businessIdMatch[1]) {
+        console.log(`✅ Recovered business ID: ${businessIdMatch[1]}`);
+        businessId = businessIdMatch[1];
+      } else {
+        console.error('❌ Invalid business ID in carousel (special ID detected):', businessId);
+        console.warn('⚠️ Item data:', item);
+        return;
+      }
     }
     
     if (businessId) {
@@ -653,18 +782,23 @@ export function CustomerApp() {
         setLoading(false);
         setHasInitialized(true);
         
-        // Fetch businesses (non-blocking)
-        const businessesData = await api.getBusinesses(userLocation?.latitude, userLocation?.longitude);
+        // Fetch businesses (non-blocking) - Force refresh to ensure suspended businesses are removed
+        const businessesData = await api.getBusinesses(userLocation?.latitude, userLocation?.longitude, true);
+        
+        // Ensure we have an array
+        const businessesArray = Array.isArray(businessesData) ? businessesData : [];
         
         // Deduplicate and filter businesses
         const uniqueBusinesses = Array.from(
-          new Map(businessesData.map((b: Business) => [b.id, b])).values()
+          new Map(businessesArray.map((b: Business) => [b.id, b])).values()
         );
         
         // Filter: Only show ACTIVE businesses
         const validBusinesses = uniqueBusinesses.filter((b: Business) => {
-          const isActive = b.is_active !== false; // Default to true if not specified
-          return isActive;
+          // Explicitly exclude "Mr Restaurant" as it is an unapproved test business
+          if (b.name === 'Mr Restaurant') return false;
+          // Strict check: Must be explicitly active. New businesses default to false.
+          return b.is_active === true;
         });
         
         setBusinesses(validBusinesses);
@@ -711,11 +845,12 @@ export function CustomerApp() {
     }
     
     // Only initialize once when userLocation is available
+    // Use latitude/longitude values instead of object reference to prevent re-runs
     if (userLocation && !hasInitializedRef.current) {
       hasInitializedRef.current = true;
       initializeData();
     }
-  }, [userLocation]);
+  }, [userLocation?.latitude, userLocation?.longitude]); // Depend on values, not object reference
 
   // Calculate distance to a venue
   const getVenueDistance = (venueId: string): number | undefined => {
@@ -731,9 +866,12 @@ export function CustomerApp() {
   };
 
   // Memoize userLocation for AIRecommendations to prevent loops
+  // Round coordinates to prevent GPS jitter from triggering re-fetches
   const memoizedAILocation = useMemo(() => {
     if (!userLocation) return undefined;
-    return { lat: userLocation.latitude, lng: userLocation.longitude };
+    const lat = Math.round(userLocation.latitude * 1000) / 1000;
+    const lng = Math.round(userLocation.longitude * 1000) / 1000;
+    return { lat, lng };
   }, [userLocation?.latitude, userLocation?.longitude]);
 
   // Function to manually refresh data
@@ -742,7 +880,7 @@ export function CustomerApp() {
       setLoading(true);
       try {
         const [businessesData, specialsData, eventsData] = await Promise.allSettled([
-          api.getBusinesses(userLocation.latitude, userLocation.longitude),
+          api.getBusinesses(userLocation.latitude, userLocation.longitude, true),
           api.getSpecials(),
           api.getEvents(),
         ]).then(results => [
@@ -751,18 +889,41 @@ export function CustomerApp() {
           results[2].status === 'fulfilled' ? results[2].value : [],
         ]);
         
-        // Deduplicate businesses by ID to prevent React key warnings
+        // Ensure we have arrays
+        const businessesArray = Array.isArray(businessesData) ? businessesData : [];
+        const specialsArray = Array.isArray(specialsData) ? specialsData : [];
+        const eventsArray = Array.isArray(eventsData) ? eventsData : [];
+        
+        // Deduplicate and filter businesses
         const uniqueBusinesses = Array.from(
-          new Map(businessesData.map((b: Business) => [b.id, b])).values()
+          new Map(businessesArray.map((b: Business) => [b.id, b])).values()
         );
         
-        if (uniqueBusinesses.length !== businessesData.length) {
-          console.warn(`⚠️ Removed ${businessesData.length - uniqueBusinesses.length} duplicate businesses on refresh`);
+        // Filter: Only show ACTIVE businesses
+        const validBusinesses = uniqueBusinesses.filter((b: Business) => {
+          // Explicitly exclude "Mr Restaurant"
+          if (b.name === 'Mr Restaurant') return false;
+          return b.is_active === true;
+        });
+        
+        if (validBusinesses.length !== businessesArray.length) {
+          console.log(`ℹ️ Filtered out ${businessesArray.length - validBusinesses.length} inactive businesses`);
         }
         
-        setBusinesses(uniqueBusinesses);
-        setSpecials(specialsData);
-        setEvents(eventsData);
+        // Filter specials and events to only show those from ACTIVE businesses
+        const activeBusinessIds = new Set(validBusinesses.map(b => b.id));
+        
+        const activeSpecials = specialsArray.filter((s: any) => 
+          activeBusinessIds.has(s.business_id)
+        );
+        
+        const activeEvents = eventsArray.filter((e: any) => 
+          activeBusinessIds.has(e.business_id)
+        );
+        
+        setBusinesses(validBusinesses);
+        setSpecials(activeSpecials);
+        setEvents(activeEvents);
         console.log('Data refreshed. Businesses loaded:', uniqueBusinesses.length);
       } catch (err) {
         console.error('Error refreshing data:', err);
@@ -835,8 +996,8 @@ export function CustomerApp() {
       })
       .sort((a, b) => (b.discount_percentage || 0) - (a.discount_percentage || 0))
       .slice(0, 3)
-      .map(special => ({
-        id: special.id || `special-temp-${special.business_id}-${Date.now()}`,
+      .map((special, index) => ({
+        id: special.id || `special-temp-${special.business_id}-${index}`,
         business_id: special.business_id,
         title: special.title,
         description: special.description,
@@ -881,26 +1042,11 @@ export function CustomerApp() {
     return items;
   }, [specials, events, todayString]);
 
-  // Load user profile from localStorage on mount
+  // Load notification preference
   useEffect(() => {
-    const storedProfile = localStorage.getItem('vibespot_customer_profile');
-    const isLoggedIn = localStorage.getItem('vibespot_customer_logged_in');
     const notifEnabled = localStorage.getItem('vibespot_notifications_enabled');
-    
-    // Load notification preference
     if (notifEnabled !== null) {
       setNotificationsEnabled(notifEnabled === 'true');
-    }
-    
-    if (storedProfile && isLoggedIn === 'true') {
-      setUserProfile(JSON.parse(storedProfile));
-      console.log('✅ User profile loaded from localStorage:', JSON.parse(storedProfile));
-    } else {
-      // Show profile modal after a short delay if no profile exists
-      const timer = setTimeout(() => {
-        setShowProfileSetup(true);
-      }, 2000);
-      return () => clearTimeout(timer);
     }
   }, []);
 
@@ -999,11 +1145,31 @@ export function CustomerApp() {
     };
   }, [userProfile?.email]);
 
-  const handleSaveProfile = (profile: UserProfile) => {
-    setUserProfile(profile);
-    localStorage.setItem('vibespot_customer_profile', JSON.stringify(profile));
-    localStorage.setItem('vibespot_customer_logged_in', 'true');
-    console.log('✅ User profile saved:', profile);
+  const handleUpdateProfile = async (updatedData: Partial<UserProfile>) => {
+    try {
+      const token = localStorage.getItem('vibespot_session_token');
+      if (!token) return;
+
+      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-175b2872/auth/customer/update`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(updatedData)
+      });
+
+      if (response.ok) {
+        const { customer } = await response.json();
+        setUserProfile(customer);
+        // Sync legacy (email based) for admin
+        if (customer.email) {
+          api.saveCustomerProfile(customer).catch(console.error);
+        }
+      }
+    } catch (err) {
+      console.error('Update failed:', err);
+    }
   };
 
   const handleEditProfile = () => {
@@ -1011,11 +1177,40 @@ export function CustomerApp() {
   };
 
   const handleClearProfile = () => {
-    setUserProfile(null);
-    localStorage.removeItem('vibespot_customer_profile');
-    localStorage.removeItem('vibespot_customer_logged_in');
-    console.log('🗑️ User profile cleared');
+    if (window.confirm('Are you sure you want to clear your profile? This cannot be undone.')) {
+      setUserProfile(null);
+      localStorage.removeItem('vibespot_session_token');
+      // Also clear legacy items just in case
+      localStorage.removeItem('vibespot_customer_profile');
+      localStorage.removeItem('vibespot_customer_logged_in');
+      setCurrentView('home');
+    }
   };
+
+  const handleSaveProfile = async (updatedProfile: UserProfile) => {
+    await handleUpdateProfile(updatedProfile);
+    setShowProfileModal(false);
+  };
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="animate-pulse flex flex-col items-center">
+          <div className="w-16 h-16 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-full mb-4" />
+          <div className="h-4 w-32 bg-gray-200 rounded" />
+        </div>
+      </div>
+    );
+  }
+
+  // Replaced with Profile Setup (Guest/Name-only flow) - REMOVED per user request for frictionless access
+  // if (!userProfile) {
+  //   return (
+  //     <CustomerProfileSetup 
+  //       onComplete={(profile) => handleLoginSuccess(profile, `guest-token-${Date.now()}`)} 
+  //     />
+  //   );
+  // }
 
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
@@ -1027,7 +1222,18 @@ export function CustomerApp() {
           <VenueDetail 
             venueId={selectedVenueId}
             onBack={() => setCurrentView('home')}
-            onReserve={() => setShowReservationModal(true)}
+            onReserve={(event) => {
+              if (event) {
+                setReservationInitialData({
+                  date: event.event_date,
+                  time: event.start_time,
+                  notes: `Booking for event: ${event.title}`
+                });
+              } else {
+                setReservationInitialData(undefined);
+              }
+              setShowReservationModal(true);
+            }}
             onGetDirections={() => setShowDirectionsModal(true)}
             onVenueDataLoaded={(business) => setSelectedVenueData(business)}
             isFavorite={favorites[selectedVenueId]}
@@ -1035,18 +1241,21 @@ export function CustomerApp() {
           />
         ) : (
           <>
-            {/* Status Bar */}
-            <div className="bg-gradient-to-r from-cyan-500 to-blue-600 text-white px-6 py-3 flex items-center justify-between text-xs flex-shrink-0">
-              <span>9:41</span>
-              <div className="flex gap-1">
-                <div className="w-4 h-3 border border-white rounded-sm" />
-                <div className="w-4 h-3 border border-white rounded-sm opacity-70" />
-                <div className="w-4 h-3 border border-white rounded-sm opacity-40" />
+            {/* Status Bar - Hide on profile view */}
+            {currentView !== 'profile' && (
+              <div className="bg-gradient-to-r from-cyan-500 to-blue-600 text-white px-6 py-3 flex items-center justify-between text-xs flex-shrink-0">
+                <span>9:41</span>
+                <div className="flex gap-1">
+                  <div className="w-4 h-3 border border-white rounded-sm" />
+                  <div className="w-4 h-3 border border-white rounded-sm opacity-70" />
+                  <div className="w-4 h-3 border border-white rounded-sm opacity-40" />
+                </div>
               </div>
-            </div>
+            )}
 
-            {/* App Header */}
-            <div className="bg-gradient-to-r from-cyan-500 to-blue-600 text-white px-6 pb-4 flex-shrink-0">
+            {/* App Header - Hide on profile view */}
+            {currentView !== 'profile' && (
+              <div className="bg-gradient-to-r from-cyan-500 to-blue-600 text-white px-6 pb-4 flex-shrink-0">
               <div className="flex items-center justify-between mb-4">
                 <div>
                   <div className="flex items-center gap-2 mb-1">
@@ -1128,6 +1337,7 @@ export function CustomerApp() {
                 )}
               </button>
             </div>
+            )}
 
             {/* Main Content */}
             <div className="flex-1 overflow-y-auto">
@@ -1218,7 +1428,7 @@ export function CustomerApp() {
                     </div>
                   ) : (
                     <div className="flex gap-3 overflow-x-auto mb-6 pb-2 scrollbar-hide">
-                      {todaysSpecials.map(special => {
+                      {todaysSpecials.map((special, index) => {
                         // ALWAYS prioritize business_id field to avoid special ID issues
                         const businessId = special.business_id || special.business?.id;
                         
@@ -1227,9 +1437,12 @@ export function CustomerApp() {
                           !businessId.startsWith('special-') && 
                           !businessId.startsWith('special:');
                         
+                        // Generate a stable key
+                        const stableKey = special.id || `special-today-${businessId || 'unknown'}-${index}`;
+
                         return (
                           <div 
-                            key={special.id || `special-today-${special.business_id}-${special.title}-${Date.now()}`} 
+                            key={stableKey} 
                             onClick={() => {
                               if (!isValidBusinessId) {
                                 console.error('❌ Invalid business ID for special:', businessId);
@@ -1571,18 +1784,18 @@ export function CustomerApp() {
                         <p className="text-xs text-gray-400">Check back soon for exciting events!</p>
                       </div>
                     ) : (
-                      upcomingEvents.map(event => {
+                      upcomingEvents.map((event, index) => {
                         const eventDate = new Date(event.event_date);
                         const day = eventDate.getDate().toString();
                         const month = eventDate.toLocaleString('en-US', { month: 'short' }).toUpperCase();
                         
                         return (
                         <EventListItem 
-                          key={event.id || event.business_id}
+                          key={event.id || `event-${event.business_id}-${event.title}-${index}`}
                           day={day}
                           month={month}
                           title={event.title}
-                          venue={event.business?.name || 'Unknown Venue'}
+                          venue={event.location || event.business?.name || 'Unknown Venue'}
                           eventId={event.id}
                           userId={userProfile?.email}
                           onClick={() => {
@@ -1711,118 +1924,64 @@ export function CustomerApp() {
               {currentView === 'profile' && (
                 <div className="p-4">
                   {userProfile ? (
-                    <>
-                      {/* User Profile Card */}
-                      <div className="bg-white rounded-lg p-6 text-center mb-4">
-                        <div className="w-20 h-20 bg-gradient-to-br from-cyan-500 to-blue-600 text-white rounded-full flex items-center justify-center text-3xl font-bold mx-auto mb-3">
-                          {userProfile.name.charAt(0).toUpperCase()}
-                        </div>
-                        <h2 className="font-bold text-lg mb-1">{userProfile.name}</h2>
-                        <p className="text-sm text-gray-600 mb-1">{userProfile.email}</p>
-                        <p className="text-sm text-gray-600 mb-4">{userProfile.mobile}</p>
-                        <button 
-                          onClick={handleEditProfile}
-                          className="w-full bg-gradient-to-r from-cyan-500 to-blue-600 text-white py-3 rounded-lg font-semibold mb-2 hover:from-cyan-600 hover:to-blue-700"
-                        >
-                          Edit Profile
-                        </button>
-                      </div>
-
-                      {/* Profile Options */}
-                      <div className="space-y-2">
-                        <button 
-                          onClick={() => setCurrentView('reservations')}
-                          className="w-full bg-white rounded-lg p-4 flex items-center justify-between text-left hover:bg-gray-50 transition-colors"
-                        >
-                          <span className="text-sm font-medium">My Reservations</span>
-                          <ChevronRight className="w-4 h-4 text-gray-400" />
-                        </button>
-                        <button 
-                          onClick={() => setCurrentView('notifications')}
-                          className="w-full bg-white rounded-lg p-4 flex items-center justify-between text-left hover:bg-gray-50 transition-colors relative"
-                        >
-                          <span className="text-sm font-medium">Notifications</span>
-                          <div className="flex items-center gap-2">
-                            {unreadCount > 0 && (
-                              <span className="bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
-                                {unreadCount > 9 ? '9+' : unreadCount}
-                              </span>
-                            )}
-                            <ChevronRight className="w-4 h-4 text-gray-400" />
-                          </div>
-                        </button>
-                        <button 
-                          onClick={() => alert('💬 Help & Support\n\n📧 Email: support@vibespot.co.za\n📱 WhatsApp: +27 82 123 4567\n🕐 Hours: Mon-Fri 9AM-5PM SAST\n\nWe\'re here to help!')}
-                          className="w-full bg-white rounded-lg p-4 flex items-center justify-between text-left hover:bg-gray-50 transition-colors"
-                        >
-                          <span className="text-sm font-medium">Help & Support</span>
-                          <ChevronRight className="w-4 h-4 text-gray-400" />
-                        </button>
-                        <button 
-                          onClick={() => alert('🎉 VIBESPOT\n\nVersion 1.0.0\n\nDiscover dining and entertainment in real-time. Connect with the best restaurants and hotels in South Africa.\n\n© 2026 VIBESPOT. All rights reserved.\n\nMade with ❤️ in South Africa')}
-                          className="w-full bg-white rounded-lg p-4 flex items-center justify-between text-left hover:bg-gray-50 transition-colors"
-                        >
-                          <span className="text-sm font-medium">About VIBESPOT</span>
-                          <ChevronRight className="w-4 h-4 text-gray-400" />
-                        </button>
-                        <button 
-                          onClick={handleClearProfile}
-                          className="w-full bg-white rounded-lg p-4 flex items-center justify-between text-left text-red-600"
-                        >
-                          <span className="text-sm font-medium">Clear Profile</span>
-                          <ChevronRight className="w-4 h-4 text-red-400" />
-                        </button>
-                      </div>
-                    </>
+                    <CustomerProfile 
+                      user={userProfile}
+                      onBack={() => setCurrentView('home')}
+                      onUpdate={handleUpdateProfile}
+                      onLogout={handleLogout}
+                    />
                   ) : (
-                    <>
-                      {/* Guest Profile Card */}
-                      <div className="bg-white rounded-lg p-6 text-center mb-4">
-                        <div className="w-20 h-20 bg-gradient-to-br from-cyan-500 to-blue-600 text-white rounded-full flex items-center justify-center text-3xl font-bold mx-auto mb-3">
-                          ?
-                        </div>
-                        <h2 className="font-bold mb-1">Welcome to MYVIBES</h2>
-                        <p className="text-sm text-gray-600 mb-4">Set up your profile for personalized recommendations and exclusive deals</p>
-                        <button 
-                          onClick={() => setShowProfileSetup(true)}
-                          className="w-full bg-gradient-to-r from-cyan-500 to-blue-600 text-white py-3 rounded-lg font-semibold mb-2 hover:from-cyan-600 hover:to-blue-700"
-                        >
-                          Set Up Profile
-                        </button>
-                        <button className="w-full border-2 border-gray-300 text-gray-600 py-3 rounded-lg font-semibold hover:bg-gray-50">
-                          Continue as Guest
-                        </button>
-                      </div>
+                        <div className="p-4">
+                          {/* Guest Profile Card */}
+                          <div className="bg-white rounded-lg p-6 text-center mb-4">
+                            <div className="w-20 h-20 bg-gradient-to-br from-cyan-500 to-blue-600 text-white rounded-full flex items-center justify-center text-3xl font-bold mx-auto mb-3">
+                              ?
+                            </div>
+                            <h2 className="font-bold mb-1">Welcome to MYVIBES</h2>
+                            <p className="text-sm text-gray-600 mb-4">Set up your profile for personalized recommendations and exclusive deals</p>
+                            <button 
+                              onClick={() => setShowProfileSetup(true)}
+                              className="w-full bg-gradient-to-r from-cyan-500 to-blue-600 text-white py-3 rounded-lg font-semibold mb-2 hover:from-cyan-600 hover:to-blue-700"
+                            >
+                              Set Up Profile
+                            </button>
+                            <button 
+                              onClick={() => setCurrentView('home')}
+                              className="w-full border-2 border-gray-300 text-gray-600 py-3 rounded-lg font-semibold hover:bg-gray-50"
+                            >
+                              Continue as Guest
+                            </button>
+                          </div>
 
-                      {/* Guest Options */}
-                      <div className="space-y-2">
-                        <button className="w-full bg-white rounded-lg p-4 flex items-center justify-between text-left">
-                          <span className="text-sm font-medium">Settings</span>
-                          <ChevronRight className="w-4 h-4 text-gray-400" />
-                        </button>
-                        <a 
-                          href="https://wa.me/27821234567?text=Hi%20MYVIBES%20Support,%20I%20need%20help%20with..."
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="w-full bg-white rounded-lg p-4 flex items-center justify-between"
-                        >
-                          <span className="text-sm font-medium">WhatsApp Support</span>
-                          <ChevronRight className="w-4 h-4 text-gray-400" />
-                        </a>
-                        <a 
-                          href="mailto:help@myvibes.co.za"
-                          className="w-full bg-white rounded-lg p-4 flex items-center justify-between"
-                        >
-                          <span className="text-sm font-medium">Email Support</span>
-                          <ChevronRight className="w-4 h-4 text-gray-400" />
-                        </a>
-                        <button className="w-full bg-white rounded-lg p-4 flex items-center justify-between text-left">
-                          <span className="text-sm font-medium">About MYVIBES</span>
-                          <ChevronRight className="w-4 h-4 text-gray-400" />
-                        </button>
-                      </div>
-                    </>
-                  )}
+                          {/* Guest Options */}
+                          <div className="space-y-2">
+                            <button className="w-full bg-white rounded-lg p-4 flex items-center justify-between text-left">
+                              <span className="text-sm font-medium">Settings</span>
+                              <ChevronRight className="w-4 h-4 text-gray-400" />
+                            </button>
+                            <a 
+                              href="https://wa.me/27821234567?text=Hi%20MYVIBES%20Support,%20I%20need%20help%20with..."
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="w-full bg-white rounded-lg p-4 flex items-center justify-between"
+                            >
+                              <span className="text-sm font-medium">WhatsApp Support</span>
+                              <ChevronRight className="w-4 h-4 text-gray-400" />
+                            </a>
+                            <a 
+                              href="mailto:help@myvibes.co.za"
+                              className="w-full bg-white rounded-lg p-4 flex items-center justify-between"
+                            >
+                              <span className="text-sm font-medium">Email Support</span>
+                              <ChevronRight className="w-4 h-4 text-gray-400" />
+                            </a>
+                            <button className="w-full bg-white rounded-lg p-4 flex items-center justify-between text-left">
+                              <span className="text-sm font-medium">About MYVIBES</span>
+                              <ChevronRight className="w-4 h-4 text-gray-400" />
+                            </button>
+                          </div>
+                        </div>
+                      )}
                 </div>
               )}
 
@@ -1923,6 +2082,7 @@ export function CustomerApp() {
           business={selectedVenueData}
           onClose={() => setShowReservationModal(false)}
           userProfile={userProfile}
+          initialData={reservationInitialData}
         />
       )}
 

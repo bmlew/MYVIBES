@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { X, Calendar, Clock, Users, Phone, Mail, User } from 'lucide-react';
 import * as api from '@/utils/api';
 
@@ -6,9 +6,14 @@ interface ReservationModalProps {
   business: any;
   onClose: () => void;
   userProfile?: any;
+  initialData?: {
+    date?: string;
+    time?: string;
+    notes?: string;
+  };
 }
 
-export function ReservationModal({ business, onClose, userProfile }: ReservationModalProps) {
+export function ReservationModal({ business, onClose, userProfile, initialData }: ReservationModalProps) {
   const [loading, setLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [formData, setFormData] = useState({
@@ -16,10 +21,22 @@ export function ReservationModal({ business, onClose, userProfile }: Reservation
     customer_email: userProfile?.email || '',
     customer_phone: userProfile?.mobile || userProfile?.phone || '',
     party_size: 2,
-    reservation_date: '',
-    reservation_time: '',
-    special_requests: ''
+    reservation_date: initialData?.date || '',
+    reservation_time: initialData?.time || '',
+    special_requests: initialData?.notes || ''
   });
+
+  // Update form data when user profile changes
+  useEffect(() => {
+    if (userProfile) {
+      setFormData(prev => ({
+        ...prev,
+        customer_name: userProfile.name || prev.customer_name,
+        customer_email: userProfile.email || prev.customer_email,
+        customer_phone: userProfile.mobile || userProfile.phone || prev.customer_phone
+      }));
+    }
+  }, [userProfile]);
 
   // Calculate estimated spend per person based on price range
   const getEstimatedSpendPerPerson = (priceRange: string) => {

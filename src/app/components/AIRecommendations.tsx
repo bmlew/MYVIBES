@@ -1,7 +1,7 @@
 import { Sparkles, TrendingUp, Clock, Calendar, Users } from 'lucide-react';
 import { Card } from './ui/card';
 import { Badge } from './ui/badge';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, memo } from 'react';
 import * as api from '@/utils/api';
 
 interface AIRecommendationsProps {
@@ -23,7 +23,7 @@ interface Recommendation {
   score?: number; // Score from backend
 }
 
-export function AIRecommendations({ userLocation, currentTime = new Date(), onVenueClick }: AIRecommendationsProps) {
+function AIRecommendationsComponent({ userLocation, currentTime = new Date(), onVenueClick }: AIRecommendationsProps) {
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -38,8 +38,23 @@ export function AIRecommendations({ userLocation, currentTime = new Date(), onVe
         );
         
         // Transform backend recommendations to match our interface
-        const transformedRecs = Array.isArray(recs) ? recs.map((rec: any) => ({
-          id: rec.id || rec.business?.id || `rec-${Date.now()}-${Math.random()}`,
+        const transformedRecs = Array.isArray(recs) 
+          ? recs
+              .filter((rec: any) => {
+                // Filter out inactive businesses
+                if (rec.business && rec.business.is_active === false) return false;
+                // If is_active is undefined, assume active, UNLESS strict mode is needed.
+                // Given the user's strict requirement for "activated by admin", we should check for true.
+                if (rec.business && rec.business.is_active !== true) return false;
+                
+                // Explicitly exclude "Mr Restaurant"
+                if (rec.business && rec.business.name === 'Mr Restaurant') return false;
+                if (rec.venue === 'Mr Restaurant') return false;
+                
+                return true;
+              })
+              .map((rec: any, index: number) => ({
+                id: rec.id || rec.business?.id || `rec-${index}`,
           type: 'special' as const,
           title: rec.title || rec.business?.name || 'Special Offer',
           venue: rec.business?.name || rec.venue || 'Local Restaurant',
@@ -168,3 +183,5 @@ export function AIRecommendations({ userLocation, currentTime = new Date(), onVe
     </div>
   );
 }
+
+export const AIRecommendations = memo(AIRecommendationsComponent);

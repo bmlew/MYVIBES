@@ -1,16 +1,28 @@
-import { ArrowLeft, MapPin, Clock, Star, Heart, Share2, Phone, Navigation, Loader2, RefreshCw } from 'lucide-react';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
-import { Button } from './ui/button';
-import { SpecialCard } from './SpecialCard';
 import { RatingReview } from './RatingReview';
 import { PhoneModal } from './PhoneModal';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import * as api from '@/utils/api';
+import { 
+  ArrowLeft, 
+  Heart, 
+  Share2, 
+  RefreshCw, 
+  Loader2, 
+  Star, 
+  MapPin, 
+  Clock, 
+  Navigation, 
+  Phone,
+  Calendar
+} from 'lucide-react';
+import { Button } from './ui/button';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
+import { SpecialCard } from './SpecialCard';
 
 interface VenueDetailProps {
   venueId: string;
   onBack: () => void;
-  onReserve: () => void;
+  onReserve: (event?: Event) => void;
   onGetDirections: () => void;
   distance?: number;
   onVenueDataLoaded?: (business: Business) => void;
@@ -44,6 +56,7 @@ interface Event {
   start_time: string;
   end_time?: string;
   price?: number;
+  location?: string;
 }
 
 interface Business {
@@ -67,6 +80,7 @@ interface Business {
   opening_hours?: Record<string, string>;
   age_group?: string; // Backward compatibility - old format
   age_groups?: string[]; // New format - multiple selection
+  is_active?: boolean;
 }
 
 interface VenueData {
@@ -77,65 +91,71 @@ interface VenueData {
 }
 
 export function VenueDetail({ venueId, onBack, onReserve, onGetDirections, distance, onVenueDataLoaded, isFavorite, onToggleFavorite }: VenueDetailProps) {
-  const [venueData, setVenueData] = useState<VenueData | null>(null);
+  const [business, setBusiness] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [showPhoneModal, setShowPhoneModal] = useState(false);
   const [eventInterests, setEventInterests] = useState<Record<string, 'interested' | 'going' | null>>({});
-  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const fetchVenueData = async (forceRefresh: boolean = false) => {
+  // Memoize fetchVenueData to prevent recreation on every render
+  const fetchVenueData = useCallback(async (forceRefresh = false) => {
     try {
       if (forceRefresh) {
         setIsRefreshing(true);
       } else {
         setLoading(true);
       }
+
+      const data = await api.getBusinessById(venueId, forceRefresh);
       
-      const data = await api.getBusinessById(venueId, true); // Always force refresh to get latest data
-      
-      if (data && data.business) {
-        setVenueData(data);
-        setError(null);
+      if (data?.business) {
+        // Merge separate data arrays into the business object for easy access in UI
+        const fullBusinessData = {
+          ...data.business,
+          specials: data.specials || [],
+          events: data.events || [],
+          menu_items: data.menu_items || [],
+          reviews: data.reviews || []
+        };
         
-        // Track the view for analytics
-        api.trackBusinessView(data.business.id).catch(() => {
-          // Silently ignore tracking failures
-        });
+        setBusiness(fullBusinessData);
         
         if (onVenueDataLoaded) {
-          onVenueDataLoaded(data.business);
+          onVenueDataLoaded(fullBusinessData);
         }
-      } else if (data) {
-        console.error(`[VenueDetail] Invalid data structure:`, data);
-        setError('Invalid venue data received');
       } else {
-        console.error(`[VenueDetail] No data received for venue: ${venueId}`);
-        setError('Venue not found');
+        console.error('No business data returned');
       }
-    } catch (err) {
-      console.error(`[VenueDetail] Error fetching venue ${venueId}:`, err);
-      setError('Failed to load venue details. Please try again.');
+    } catch (error) {
+      console.error('Error fetching venue data:', error);
     } finally {
       setLoading(false);
       setIsRefreshing(false);
     }
-  };
+  }, [venueId]); // Only recreate when venueId changes
 
   useEffect(() => {
     fetchVenueData();
-  }, [venueId]); // Only depend on venueId to prevent infinite loop
+  }, [fetchVenueData]); // Now safe to depend on fetchVenueData
 
   // Auto-refresh when page regains focus (user comes back to the app)
+  // Throttled to prevent looping if focus events fire rapidly
   useEffect(() => {
+    const lastFocusTime = { current: 0 };
+    
     const handleFocus = () => {
+      const now = Date.now();
+      if (now - lastFocusTime.current < 5000) { // 5 second throttle
+        return;
+      }
+      lastFocusTime.current = now;
       console.log('🔄 Page regained focus, refreshing venue data...');
       fetchVenueData(true);
     };
 
     window.addEventListener('focus', handleFocus);
     return () => window.removeEventListener('focus', handleFocus);
-  }, [venueId]);
+  }, [fetchVenueData]); // Now safe to depend on fetchVenueData
 
   const handleManualRefresh = () => {
     console.log('🔄 Manual refresh triggered');
@@ -153,7 +173,8 @@ export function VenueDetail({ venueId, onBack, onReserve, onGetDirections, dista
     );
   }
 
-  if (error || !venueData) {
+  // Strict check: if business is not active or is "Mr Restaurant", treat as unavailable
+  if (business && (business.is_active !== true || business.name === 'Mr Restaurant')) {
     return (
       <div className="h-full flex flex-col bg-white">
         <div className="p-4 border-b">
@@ -164,17 +185,18 @@ export function VenueDetail({ venueId, onBack, onReserve, onGetDirections, dista
         </div>
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center p-6">
-            <p className="text-gray-600 mb-4">{error || 'Venue not found'}</p>
-            <Button onClick={onBack} variant="outline">Go Back</Button>
+            <div className="bg-gray-100 rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-4">
+              <span className="text-2xl">🚫</span>
+            </div>
+            <h2 className="text-xl font-bold mb-2">Venue Unavailable</h2>
+            <p className="text-gray-600 mb-6">This venue is not currently active on MYVIBES.</p>
+            <Button onClick={onBack}>Find Other Venues</Button>
           </div>
         </div>
       </div>
     );
   }
 
-  const { business, menu_items, specials, events } = venueData;
-
-  // Add safety check for business data
   if (!business) {
     return (
       <div className="h-full flex flex-col bg-white">
@@ -198,7 +220,7 @@ export function VenueDetail({ venueId, onBack, onReserve, onGetDirections, dista
   const displayAgeGroups = business.age_groups || (business.age_group ? [business.age_group] : []);
 
   // Group menu items by category - SHOW ALL ITEMS including unavailable ones
-  const menuByCategory = (menu_items || [])
+  const menuByCategory = (business.menu_items || [])
     .reduce((acc, item) => {
       if (!acc[item.category]) {
         acc[item.category] = [];
@@ -374,7 +396,7 @@ export function VenueDetail({ venueId, onBack, onReserve, onGetDirections, dista
       {/* Action Buttons */}
       <div className="px-6 py-3 border-b border-gray-100 flex gap-2">
         <Button 
-          onClick={onReserve}
+          onClick={() => onReserve()}
           className="flex-1 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white"
         >
           Reserve Table
@@ -472,13 +494,13 @@ export function VenueDetail({ venueId, onBack, onReserve, onGetDirections, dista
 
         <TabsContent value="specials" className="p-6 mt-0">
           <h3 className="font-bold text-lg mb-4">Today's Specials</h3>
-          {specials.length === 0 ? (
+          {business.specials.length === 0 ? (
             <div className="text-center py-8 text-gray-500">
               <p>No specials available at the moment</p>
             </div>
           ) : (
             <div className="grid grid-cols-2 gap-3">
-              {specials.map((special, index) => (
+              {business.specials.map((special, index) => (
                 <SpecialCard 
                   key={special.id || `special-${index}`}
                   image={special.image_url || 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=400'}
@@ -494,13 +516,13 @@ export function VenueDetail({ venueId, onBack, onReserve, onGetDirections, dista
 
         <TabsContent value="events" className="p-6 mt-0">
           <h3 className="font-bold text-lg mb-4">Upcoming Events</h3>
-          {events.length === 0 ? (
+          {business.events.length === 0 ? (
             <div className="text-center py-8 text-gray-500">
               <p>No upcoming events</p>
             </div>
           ) : (
             <div className="space-y-3">
-              {events.map((event, index) => {
+              {business.events.map((event, index) => {
                 const eventDate = new Date(event.event_date);
                 const day = eventDate.getDate();
                 const month = eventDate.toLocaleString('en-US', { month: 'short' });
@@ -519,6 +541,12 @@ export function VenueDetail({ venueId, onBack, onReserve, onGetDirections, dista
                         <p className="text-xs text-gray-600 mb-1">
                           {event.start_time}{event.end_time ? ` - ${event.end_time}` : ''}
                         </p>
+                        {event.location && (
+                          <p className="text-xs text-gray-500 mb-1 flex items-center gap-1">
+                            <MapPin className="w-3 h-3" />
+                            {event.location}
+                          </p>
+                        )}
                         <p className="text-xs text-gray-500">{event.description}</p>
                         {event.price && (
                           <p className="text-xs text-gray-600 mt-1">R{event.price} per person</p>
@@ -553,6 +581,13 @@ export function VenueDetail({ venueId, onBack, onReserve, onGetDirections, dista
                         }`}
                       >
                         {currentInterest === 'going' ? '✓ Going' : '🎉 Going'}
+                      </button>
+                      <button
+                        onClick={() => onReserve(event)}
+                        className="flex-1 py-2 px-3 rounded-lg text-xs font-medium bg-white border border-gray-300 text-gray-700 hover:border-cyan-400 hover:bg-cyan-50 transition-all flex items-center justify-center gap-1"
+                      >
+                        <Calendar className="w-3 h-3" />
+                        Book
                       </button>
                     </div>
                   </div>

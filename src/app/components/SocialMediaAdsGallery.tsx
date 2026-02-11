@@ -1,8 +1,68 @@
 import React, { useState, useEffect } from 'react';
-import { Card } from '@/app/components/ui/card';
-import { Button } from '@/app/components/ui/button';
+import { Card } from './ui/card';
+import { Button } from './ui/button';
 import { ExternalLink, Eye, TrendingUp, Video, X, Play } from 'lucide-react';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
+import exampleImage from 'figma:asset/b16d8d7a9225753705f0ca7894a9ac98b84a7cf3.png';
+
+const MOCK_ADS: SocialMediaAd[] = [
+  {
+    id: 'mock-1',
+    business_id: 'biz-1',
+    business_name: 'The Velvet Lounge',
+    platform: 'instagram',
+    video_url: '',
+    title: 'Summer Sunset Sessions 🍹',
+    description: 'Join us every Friday for the best sunset views in the city. Half price cocktails 5-7pm!',
+    thumbnail_url: exampleImage,
+    status: 'approved',
+    approved_at: new Date().toISOString(),
+    views: 1250,
+    clicks: 85
+  },
+  {
+    id: 'mock-2',
+    business_id: 'biz-2',
+    business_name: 'Urban Burger Co.',
+    platform: 'tiktok',
+    video_url: 'https://assets.mixkit.co/videos/preview/mixkit-friends-eating-burgers-at-a-restaurant-4636-large.mp4',
+    title: 'POV: You found the best burger in town 🍔',
+    description: 'Tag a friend who owes you this burger!',
+    thumbnail_url: 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&q=80&w=600',
+    status: 'approved',
+    approved_at: new Date().toISOString(),
+    views: 8500,
+    clicks: 420
+  },
+  {
+    id: 'mock-3',
+    business_id: 'biz-3',
+    business_name: 'Neon Nights Club',
+    platform: 'facebook',
+    video_url: '',
+    title: 'DJ Snake Live This Saturday! 🎧',
+    description: 'Limited early bird tickets available now. Don\'t miss out!',
+    thumbnail_url: 'https://images.unsplash.com/photo-1574391884720-2e41ca0b7b11?auto=format&fit=crop&q=80&w=600',
+    status: 'approved',
+    approved_at: new Date().toISOString(),
+    views: 3200,
+    clicks: 150
+  },
+  {
+    id: 'mock-4',
+    business_id: 'biz-4',
+    business_name: 'Zen Spa & Wellness',
+    platform: 'google',
+    video_url: '',
+    title: 'Weekend Relaxation Package',
+    description: 'Book a couples massage and get a complimentary champagne lunch.',
+    thumbnail_url: 'https://images.unsplash.com/photo-1540555700478-4be289fbecef?auto=format&fit=crop&q=80&w=600',
+    status: 'approved',
+    approved_at: new Date().toISOString(),
+    views: 980,
+    clicks: 45
+  }
+];
 
 interface SocialMediaAd {
   id: string;
@@ -41,10 +101,17 @@ export function SocialMediaAdsGallery() {
 
       if (response.ok) {
         const data = await response.json();
-        setAds(data.ads || []);
+        if (data.ads && data.ads.length > 0) {
+          setAds(data.ads);
+        } else {
+          setAds(MOCK_ADS);
+        }
+      } else {
+        setAds(MOCK_ADS);
       }
     } catch (error) {
       console.error('Error loading approved ads:', error);
+      setAds(MOCK_ADS);
     } finally {
       setLoading(false);
     }
@@ -112,6 +179,11 @@ export function SocialMediaAdsGallery() {
     return colors[platform] || 'from-cyan-500 to-blue-600';
   };
 
+  const isVideoFile = (url: string) => {
+    if (!url) return false;
+    return url.match(/\.(mp4|mov|webm)(\?|$)/i) || url.includes('/storage/v1/object/sign/');
+  };
+
   if (loading) {
     return (
       <section className="py-12 sm:py-16 bg-gray-50">
@@ -131,19 +203,19 @@ export function SocialMediaAdsGallery() {
 
   return (
     <>
-      <section className="py-12 sm:py-16 bg-gradient-to-br from-gray-50 to-cyan-50">
+      <section id="social-media-feed" className="py-12 sm:py-16 bg-gradient-to-br from-gray-50 to-cyan-50">
         <div className="max-w-7xl mx-auto px-4">
           {/* Section Header */}
           <div className="text-center mb-12">
-            <div className="inline-flex items-center gap-2 bg-gradient-to-r from-cyan-500 to-blue-600 text-white px-4 py-2 rounded-full mb-4">
+            <div className="inline-flex items-center gap-2 bg-gradient-to-r from-pink-500 to-purple-600 text-white px-4 py-2 rounded-full mb-4 shadow-md">
               <Video className="w-5 h-5" />
-              <span className="font-semibold">Featured Content</span>
+              <span className="font-semibold">Live Feed</span>
             </div>
             <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-gray-900 mb-4">
-              What's Happening Now
+              Social Media Spotlight
             </h2>
             <p className="text-lg text-gray-600 max-w-2xl mx-auto">
-              Check out the latest specials, events, and experiences from top venues on MYVIBE
+              Discover trending campaigns, exclusive reels, and approved media highlights from our partners.
             </p>
           </div>
 
@@ -166,12 +238,32 @@ export function SocialMediaAdsGallery() {
                         onError={(e) => {
                           // Fallback to gradient if image fails to load
                           e.currentTarget.style.display = 'none';
-                          e.currentTarget.parentElement!.classList.add(`bg-gradient-to-br`, getPlatformColor(ad.platform));
+                          const colors = getPlatformColor(ad.platform).split(' ');
+                          e.currentTarget.parentElement!.classList.add('bg-gradient-to-br', ...colors);
                         }}
                       />
                       {/* Play Overlay */}
                       <div className="absolute inset-0 bg-black/20 group-hover:bg-black/30 transition-colors flex items-center justify-center">
                         <div className="w-16 h-16 rounded-full bg-white/90 flex items-center justify-center transform group-hover:scale-110 transition-transform">
+                          <Play className="w-8 h-8 text-gray-900 ml-1" fill="currentColor" />
+                        </div>
+                      </div>
+                    </div>
+                  ) : isVideoFile(ad.video_url) ? (
+                    <div className="relative aspect-[3/4] overflow-hidden bg-black">
+                      <video 
+                         src={ad.video_url} 
+                         className="w-full h-full object-cover opacity-80"
+                         muted
+                         loop
+                         onMouseOver={(e) => e.currentTarget.play()}
+                         onMouseOut={(e) => {
+                           e.currentTarget.pause();
+                           e.currentTarget.currentTime = 0;
+                         }}
+                      />
+                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                         <div className="w-16 h-16 rounded-full bg-white/90 flex items-center justify-center">
                           <Play className="w-8 h-8 text-gray-900 ml-1" fill="currentColor" />
                         </div>
                       </div>
@@ -225,9 +317,9 @@ export function SocialMediaAdsGallery() {
                   const element = document.getElementById('all-ads-section');
                   element?.scrollIntoView({ behavior: 'smooth' });
                 }}
-                className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white px-8 py-6 text-lg"
+                className="bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-600 hover:to-purple-700 text-white px-8 py-6 text-lg shadow-lg hover:shadow-xl transition-all"
               >
-                View All {ads.length} Featured Ads
+                View All Campaigns
                 <TrendingUp className="w-5 h-5 ml-2" />
               </Button>
             </div>
@@ -252,8 +344,18 @@ export function SocialMediaAdsGallery() {
               <X className="w-5 h-5" />
             </button>
 
-            {/* Thumbnail */}
-            {selectedAd.thumbnail_url ? (
+            {/* Media Content */}
+            {isVideoFile(selectedAd.video_url) ? (
+              <div className="relative aspect-video overflow-hidden bg-black">
+                <video 
+                  src={selectedAd.video_url} 
+                  controls 
+                  className="w-full h-full"
+                  poster={selectedAd.thumbnail_url}
+                  autoPlay
+                />
+              </div>
+            ) : selectedAd.thumbnail_url ? (
               <div className="relative aspect-video overflow-hidden bg-gray-100">
                 <img
                   src={selectedAd.thumbnail_url}
@@ -311,7 +413,7 @@ export function SocialMediaAdsGallery() {
         <section id="all-ads-section" className="py-12 sm:py-16 bg-white">
           <div className="max-w-7xl mx-auto px-4">
             <h3 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-8 text-center">
-              All Featured Content
+              All Social Media Campaigns
             </h3>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
               {ads.slice(8).map((ad) => (

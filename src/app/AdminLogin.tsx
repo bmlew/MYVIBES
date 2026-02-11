@@ -16,7 +16,7 @@ export default function AdminLogin() {
     setLoading(true);
 
     // Simple admin authentication (in production, this should be more secure)
-    if (email === 'admin@vibespot.co.za' && password === 'Admin@2025') {
+    if (email === 'admin@myvibes.co.za' && password === 'Admin@2025') {
       localStorage.setItem('admin_authenticated', 'true');
       navigate('/admin');
     } else {
@@ -34,7 +34,7 @@ export default function AdminLogin() {
             <Shield className="w-10 h-10 text-white" />
           </div>
           <h1 className="text-3xl font-bold text-white mb-2">Admin Portal</h1>
-          <p className="text-white/70">VIBESPOT Platform Administration</p>
+          <p className="text-white/70">MYVIBES Platform Administration</p>
         </div>
 
         {/* Login Form */}
@@ -51,7 +51,7 @@ export default function AdminLogin() {
                 onChange={(e) => setEmail(e.target.value)}
                 required
                 className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-white/30"
-                placeholder="admin@vibespot.co.za"
+                placeholder="admin@myvibes.co.za"
               />
             </div>
 
@@ -99,7 +99,7 @@ export default function AdminLogin() {
         <div className="mt-6 bg-yellow-500/20 backdrop-blur-md rounded-lg border border-yellow-500/30 p-4">
           <p className="text-sm text-yellow-200 text-center">
             <strong>Demo Credentials:</strong><br />
-            Email: admin@vibespot.co.za<br />
+            Email: admin@myvibes.co.za<br />
             Password: Admin@2025
           </p>
         </div>

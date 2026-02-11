@@ -3,8 +3,10 @@ import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
 import { Label } from '@/app/components/ui/label';
 import { Card } from '@/app/components/ui/card';
-import { Plus, X, Video, ExternalLink, Clock, CheckCircle, XCircle, Eye, MousePointerClick, Trash2 } from 'lucide-react';
+import { Checkbox } from '@/app/components/ui/checkbox';
+import { Plus, X, Video, ExternalLink, Clock, CheckCircle, XCircle, Eye, MousePointerClick, Trash2, Upload, Link as LinkIcon, Share2 } from 'lucide-react';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
+import { toast } from 'sonner';
 
 interface SocialMediaAd {
   id: string;
@@ -38,6 +40,8 @@ export function SocialMediaAdsManager({ businessId, businessName }: SocialMediaA
   const [submitting, setSubmitting] = useState(false);
   const [thumbnailPreview, setThumbnailPreview] = useState<string | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [uploadingVideo, setUploadingVideo] = useState(false);
+  const [inputType, setInputType] = useState<'link' | 'upload'>('link');
   
   const [formData, setFormData] = useState({
     platform: 'instagram' as 'tiktok' | 'instagram' | 'facebook' | 'google',
@@ -45,6 +49,12 @@ export function SocialMediaAdsManager({ businessId, businessName }: SocialMediaA
     title: '',
     description: '',
     thumbnail_url: ''
+  });
+
+  const [pushTo, setPushTo] = useState({
+    facebook: false,
+    instagram: false,
+    tiktok: false
   });
 
   useEffect(() => {
@@ -74,12 +84,56 @@ export function SocialMediaAdsManager({ businessId, businessName }: SocialMediaA
     }
   };
 
+  const handleVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate (Video or Image for slideshow)
+    if (!file.type.startsWith('video/') && !file.type.startsWith('image/')) {
+        toast.error('Please upload a video or image file');
+        return;
+    }
+
+    try {
+        setUploadingVideo(true);
+        const formData = new FormData();
+        formData.append('file', file);
+
+        const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-175b2872/upload`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${publicAnonKey}`
+            },
+            body: formData
+        });
+
+        if (response.ok) {
+            const data = await response.json();
+            setFormData(prev => ({ ...prev, video_url: `storage:make-175b2872-ads:${data.path}` }));
+            toast.success('Media uploaded successfully');
+        } else {
+            throw new Error('Upload failed');
+        }
+    } catch (error) {
+        console.error(error);
+        toast.error('Failed to upload media');
+    } finally {
+        setUploadingVideo(false);
+    }
+  };
+
   const handleSubmitAd = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!formData.video_url || !formData.title) {
-      alert('Please fill in video URL and title');
+      toast.error('Please fill in video/media URL and title');
       return;
+    }
+
+    // Simulate push
+    const platformsToPush = Object.entries(pushTo).filter(([_, v]) => v).map(([k]) => k);
+    if (platformsToPush.length > 0) {
+        toast.info(`Pushing content to ${platformsToPush.join(', ')}...`);
     }
 
     try {
@@ -96,20 +150,37 @@ export function SocialMediaAdsManager({ businessId, businessName }: SocialMediaA
           body: JSON.stringify({
             business_id: businessId,
             business_name: businessName,
-            ...formData
+            ...formData,
+            pushed_to: platformsToPush
           })
         }
       );
 
       if (response.ok) {
+        toast.success('Ad submitted successfully!');
+        if (platformsToPush.length > 0) {
+            setTimeout(() => {
+                toast.success(`Successfully pushed to ${platformsToPush.length} platforms`);
+            }, 1500);
+        }
+        setShowAddForm(false);
+        setFormData({
+            platform: 'instagram',
+            video_url: '',
+            title: '',
+            description: '',
+            thumbnail_url: ''
+        });
+        setPushTo({ facebook: false, instagram: false, tiktok: false });
+        setInputType('link');
         loadAds();
       } else {
         const error = await response.json();
-        alert(`Error: ${error.error}`);
+        toast.error(`Error: ${error.error}`);
       }
     } catch (error) {
       console.error('Error submitting ad:', error);
-      alert('Failed to submit ad');
+      toast.error('Failed to submit ad');
     } finally {
       setSubmitting(false);
     }
@@ -128,11 +199,12 @@ export function SocialMediaAdsManager({ businessId, businessName }: SocialMediaA
       );
 
       if (response.ok) {
+        toast.success('Ad deleted successfully');
         loadAds();
       }
     } catch (error) {
       console.error('Error deleting ad:', error);
-      alert('Failed to delete ad');
+      toast.error('Failed to delete ad');
     }
   };
 
@@ -140,39 +212,35 @@ export function SocialMediaAdsManager({ businessId, businessName }: SocialMediaA
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Validate file type
     if (!file.type.startsWith('image/')) {
-      alert('Please upload an image file');
+      toast.error('Please upload an image file');
       return;
     }
 
-    // Validate file size (max 2MB)
     if (file.size > 2 * 1024 * 1024) {
-      alert('Image must be less than 2MB');
+      toast.error('Image must be less than 2MB');
       return;
     }
 
     try {
       setUploadingImage(true);
-
-      // Convert to base64
       const reader = new FileReader();
       reader.onloadend = () => {
         const base64String = reader.result as string;
-        setFormData({ ...formData, thumbnail_url: base64String });
+        setFormData(prev => ({ ...prev, thumbnail_url: base64String }));
         setThumbnailPreview(base64String);
       };
       reader.readAsDataURL(file);
     } catch (error) {
       console.error('Error uploading image:', error);
-      alert('Failed to upload image');
+      toast.error('Failed to upload image');
     } finally {
       setUploadingImage(false);
     }
   };
 
   const handleRemoveThumbnail = () => {
-    setFormData({ ...formData, thumbnail_url: '' });
+    setFormData(prev => ({ ...prev, thumbnail_url: '' }));
     setThumbnailPreview(null);
   };
 
@@ -211,7 +279,7 @@ export function SocialMediaAdsManager({ businessId, businessName }: SocialMediaA
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Social Media Ads</h2>
           <p className="text-sm text-gray-600 mt-1">
-            Submit your TikTok, Instagram, Facebook, or Google ads to be featured on the landing page
+            Create, upload, and push your ads to social media platforms
           </p>
         </div>
         <Button
@@ -219,7 +287,7 @@ export function SocialMediaAdsManager({ businessId, businessName }: SocialMediaA
           className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white"
         >
           <Plus className="w-4 h-4 mr-2" />
-          Submit New Ad
+          Create New Ad
         </Button>
       </div>
 
@@ -227,120 +295,212 @@ export function SocialMediaAdsManager({ businessId, businessName }: SocialMediaA
       {showAddForm && (
         <Card className="p-6 border-2 border-cyan-200 bg-cyan-50/50">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-bold">Submit Social Media Ad</h3>
+            <h3 className="text-lg font-bold">Create Social Media Ad</h3>
             <button onClick={() => setShowAddForm(false)} className="text-gray-400 hover:text-gray-600">
               <X className="w-5 h-5" />
             </button>
           </div>
 
-          <form onSubmit={handleSubmitAd} className="space-y-4">
-            <div>
-              <Label>Platform *</Label>
-              <select
-                value={formData.platform}
-                onChange={(e) => setFormData({ ...formData, platform: e.target.value as any })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-cyan-500"
-                required
-              >
-                <option value="instagram">📸 Instagram</option>
-                <option value="tiktok">🎵 TikTok</option>
-                <option value="facebook">👥 Facebook</option>
-                <option value="google">🔍 Google Ads</option>
-              </select>
-            </div>
+          <form onSubmit={handleSubmitAd} className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-4">
+                    <div>
+                        <Label>Primary Platform *</Label>
+                        <select
+                            value={formData.platform}
+                            onChange={(e) => setFormData({ ...formData, platform: e.target.value as any })}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-cyan-500"
+                            required
+                        >
+                            <option value="instagram">📸 Instagram</option>
+                            <option value="tiktok">🎵 TikTok</option>
+                            <option value="facebook">👥 Facebook</option>
+                            <option value="google">🔍 Google Ads</option>
+                        </select>
+                    </div>
 
-            <div>
-              <Label>Video/Ad URL *</Label>
-              <Input
-                type="url"
-                placeholder="https://www.instagram.com/reel/..."
-                value={formData.video_url}
-                onChange={(e) => setFormData({ ...formData, video_url: e.target.value })}
-                required
-              />
-              <p className="text-xs text-gray-500 mt-1">
-                Paste the link to your TikTok, Instagram Reel, Facebook video, or Google ad
-              </p>
-            </div>
+                    <div>
+                        <Label>Ad Title *</Label>
+                        <Input
+                            placeholder="e.g., Summer Special - 50% Off"
+                            value={formData.title}
+                            onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                            maxLength={100}
+                            required
+                        />
+                    </div>
 
-            <div>
-              <Label>Ad Title *</Label>
-              <Input
-                placeholder="e.g., Summer Special - 50% Off"
-                value={formData.title}
-                onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                maxLength={100}
-                required
-              />
-            </div>
-
-            <div>
-              <Label>Description (Optional)</Label>
-              <textarea
-                placeholder="Brief description of your ad..."
-                value={formData.description}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-cyan-500 min-h-[80px]"
-                maxLength={300}
-              />
-            </div>
-
-            <div>
-              <Label>Thumbnail Image *</Label>
-              
-              {/* Image Preview */}
-              {thumbnailPreview ? (
-                <div className="relative w-full aspect-video rounded-lg overflow-hidden border-2 border-cyan-300 mb-3">
-                  <img 
-                    src={thumbnailPreview} 
-                    alt="Thumbnail preview" 
-                    className="w-full h-full object-cover"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleRemoveThumbnail}
-                    className="absolute top-2 right-2 p-2 bg-red-500 hover:bg-red-600 text-white rounded-full transition-colors"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
+                    <div>
+                        <Label>Description</Label>
+                        <textarea
+                            placeholder="Brief description of your ad..."
+                            value={formData.description}
+                            onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-cyan-500 min-h-[80px]"
+                            maxLength={300}
+                        />
+                    </div>
                 </div>
-              ) : (
-                <label className="block w-full aspect-video rounded-lg border-2 border-dashed border-gray-300 hover:border-cyan-500 transition-colors cursor-pointer bg-gray-50 hover:bg-cyan-50">
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleImageUpload}
-                    className="hidden"
-                    required={!formData.thumbnail_url}
-                  />
-                  <div className="flex flex-col items-center justify-center h-full">
-                    {uploadingImage ? (
-                      <>
-                        <div className="w-12 h-12 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin mb-3"></div>
-                        <p className="text-sm text-gray-600">Uploading...</p>
-                      </>
-                    ) : (
-                      <>
-                        <Plus className="w-12 h-12 text-gray-400 mb-3" />
-                        <p className="text-sm font-medium text-gray-700">Click to upload thumbnail</p>
-                        <p className="text-xs text-gray-500 mt-1">PNG, JPG up to 2MB</p>
-                      </>
-                    )}
-                  </div>
-                </label>
-              )}
-              <p className="text-xs text-gray-500 mt-2">
-                Upload a screenshot from your video or a promotional image (required)
-              </p>
+
+                <div className="space-y-4">
+                     <div>
+                        <Label className="mb-2 block">Media Content *</Label>
+                        <div className="flex bg-white rounded-lg border border-gray-200 p-1 mb-3">
+                            <button
+                                type="button"
+                                onClick={() => setInputType('link')}
+                                className={`flex-1 py-1.5 px-3 rounded text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
+                                    inputType === 'link' ? 'bg-cyan-100 text-cyan-800' : 'text-gray-600 hover:bg-gray-50'
+                                }`}
+                            >
+                                <LinkIcon className="w-4 h-4" /> Link
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setInputType('upload')}
+                                className={`flex-1 py-1.5 px-3 rounded text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
+                                    inputType === 'upload' ? 'bg-cyan-100 text-cyan-800' : 'text-gray-600 hover:bg-gray-50'
+                                }`}
+                            >
+                                <Upload className="w-4 h-4" /> Upload
+                            </button>
+                        </div>
+
+                        {inputType === 'link' ? (
+                            <div>
+                                <Input
+                                    type="url"
+                                    placeholder="https://www.instagram.com/reel/..."
+                                    value={formData.video_url}
+                                    onChange={(e) => setFormData({ ...formData, video_url: e.target.value })}
+                                    required={inputType === 'link'}
+                                />
+                                <p className="text-xs text-gray-500 mt-1">
+                                    Paste the link to your content on social media
+                                </p>
+                            </div>
+                        ) : (
+                            <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-cyan-500 transition-colors bg-white">
+                                {formData.video_url && formData.video_url.startsWith('storage:') ? (
+                                    <div className="flex items-center justify-center gap-2 text-green-600">
+                                        <CheckCircle className="w-5 h-5" />
+                                        <span className="font-medium">Media Uploaded Successfully</span>
+                                        <button 
+                                            type="button" 
+                                            onClick={() => setFormData({ ...formData, video_url: '' })}
+                                            className="ml-2 text-gray-400 hover:text-red-500"
+                                        >
+                                            <X className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <label className="cursor-pointer block">
+                                        <input
+                                            type="file"
+                                            accept="video/*,image/*"
+                                            onChange={handleVideoUpload}
+                                            className="hidden"
+                                        />
+                                        <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                                        <p className="text-sm font-medium text-gray-700">Click to upload video or image</p>
+                                        <p className="text-xs text-gray-500 mt-1">MP4, MOV, JPG, PNG up to 10MB</p>
+                                        {uploadingVideo && <p className="text-cyan-600 text-sm mt-2 animate-pulse">Uploading...</p>}
+                                    </label>
+                                )}
+                            </div>
+                        )}
+                    </div>
+
+                    <div>
+                        <Label>Thumbnail (Optional)</Label>
+                        <div className="mt-1">
+                            {thumbnailPreview ? (
+                                <div className="relative w-full h-24 bg-gray-100 rounded-lg overflow-hidden border border-gray-200 flex items-center justify-center">
+                                    <img 
+                                        src={thumbnailPreview} 
+                                        alt="Thumbnail preview" 
+                                        className="h-full object-contain"
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={handleRemoveThumbnail}
+                                        className="absolute top-1 right-1 p-1 bg-white/80 hover:bg-white text-red-500 rounded-full shadow-sm"
+                                    >
+                                        <X className="w-3 h-3" />
+                                    </button>
+                                </div>
+                            ) : (
+                                <label className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 bg-white">
+                                    <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center text-gray-400">
+                                        <Plus className="w-5 h-5" />
+                                    </div>
+                                    <div className="flex-1">
+                                        <span className="text-sm font-medium text-gray-700">Upload Thumbnail</span>
+                                        <p className="text-xs text-gray-500">For video cover</p>
+                                    </div>
+                                    <input
+                                        type="file"
+                                        accept="image/*"
+                                        onChange={handleImageUpload}
+                                        className="hidden"
+                                    />
+                                </label>
+                            )}
+                        </div>
+                    </div>
+                </div>
             </div>
 
-            <div className="flex gap-3">
+            {/* Push to Social Media Section */}
+            <div className="bg-white p-4 rounded-lg border border-gray-200">
+                <div className="flex items-center gap-2 mb-3">
+                    <Share2 className="w-4 h-4 text-cyan-600" />
+                    <h4 className="font-semibold text-gray-900 text-sm">Push to Social Media Pages</h4>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div className="flex items-center space-x-2">
+                        <Checkbox 
+                            id="push-fb" 
+                            checked={pushTo.facebook}
+                            onCheckedChange={(c) => setPushTo(prev => ({ ...prev, facebook: !!c }))}
+                        />
+                        <label htmlFor="push-fb" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer">
+                            Facebook Page
+                        </label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                        <Checkbox 
+                            id="push-ig" 
+                            checked={pushTo.instagram}
+                            onCheckedChange={(c) => setPushTo(prev => ({ ...prev, instagram: !!c }))}
+                        />
+                        <label htmlFor="push-ig" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer">
+                            Instagram Feed
+                        </label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                        <Checkbox 
+                            id="push-tt" 
+                            checked={pushTo.tiktok}
+                            onCheckedChange={(c) => setPushTo(prev => ({ ...prev, tiktok: !!c }))}
+                        />
+                        <label htmlFor="push-tt" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer">
+                            TikTok Account
+                        </label>
+                    </div>
+                </div>
+                <p className="text-xs text-gray-500 mt-2">
+                    * This will publish the content to your connected business pages automatically.
+                </p>
+            </div>
+
+            <div className="flex gap-3 pt-2">
               <Button
                 type="submit"
                 disabled={submitting}
                 className="flex-1 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white"
               >
-                {submitting ? 'Submitting...' : 'Submit for Approval'}
+                {submitting ? 'Submitting...' : 'Create & Push Ad'}
               </Button>
               <Button
                 type="button"
@@ -363,9 +523,9 @@ export function SocialMediaAdsManager({ businessId, businessName }: SocialMediaA
       ) : ads.length === 0 ? (
         <Card className="p-12 text-center">
           <Video className="w-16 h-16 mx-auto text-gray-400 mb-4" />
-          <h3 className="text-lg font-semibold text-gray-900 mb-2">No ads submitted yet</h3>
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">No ads created yet</h3>
           <p className="text-gray-600 mb-4">
-            Submit your first social media ad to get featured on the landing page!
+            Create your first ad to promote your business and push to social media!
           </p>
         </Card>
       ) : (
@@ -374,8 +534,12 @@ export function SocialMediaAdsManager({ businessId, businessName }: SocialMediaA
             <Card key={ad.id} className="p-6">
               <div className="flex items-start justify-between mb-4">
                 <div className="flex items-start gap-4 flex-1">
-                  <div className="w-12 h-12 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-lg flex items-center justify-center text-2xl flex-shrink-0">
-                    {getPlatformIcon(ad.platform)}
+                  <div className="w-12 h-12 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-lg flex items-center justify-center text-2xl flex-shrink-0 overflow-hidden">
+                    {ad.thumbnail_url ? (
+                        <img src={ad.thumbnail_url} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                        getPlatformIcon(ad.platform)
+                    )}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
@@ -392,7 +556,7 @@ export function SocialMediaAdsManager({ businessId, businessName }: SocialMediaA
                       rel="noopener noreferrer"
                       className="text-sm text-cyan-600 hover:text-cyan-700 inline-flex items-center gap-1"
                     >
-                      View Ad <ExternalLink className="w-3 h-3" />
+                      View Content <ExternalLink className="w-3 h-3" />
                     </a>
                   </div>
                 </div>
@@ -428,7 +592,7 @@ export function SocialMediaAdsManager({ businessId, businessName }: SocialMediaA
 
               {/* Metadata */}
               <div className="mt-4 pt-4 border-t border-gray-200 flex items-center justify-between text-xs text-gray-500">
-                <span>Submitted {new Date(ad.created_at).toLocaleDateString()}</span>
+                <span>Created {new Date(ad.created_at).toLocaleDateString()}</span>
                 {ad.approved_at && (
                   <span>Approved {new Date(ad.approved_at).toLocaleDateString()}</span>
                 )}

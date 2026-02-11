@@ -34,9 +34,11 @@ import {
   Clock,
   Trash2,
   Image as ImageIcon,
-  Video
+  Video,
+  Database
 } from 'lucide-react';
 import { PerformanceOverview } from '@/app/components/PerformanceOverview';
+import { DataSeeder } from '@/app/components/debug/DataSeeder';
 import { AIInsights } from '@/app/components/AIInsights';
 import { AnalyticsCharts } from '@/app/components/AnalyticsCharts';
 import { BusinessProfileChecklist } from '@/app/components/BusinessProfileChecklist';
@@ -44,9 +46,9 @@ import { SocialMediaAdsManager } from '@/app/components/SocialMediaAdsManager';
 import { ReservationsManager } from '@/app/components/ReservationsManager';
 import { BusinessProfileSettings } from '@/app/components/BusinessProfileSettings';
 import { Toast, useToast } from '@/app/components/Toast';
-import { projectId, publicAnonKey } from '/utils/supabase/info';
+import { projectId, publicAnonKey } from '../../utils/supabase/info';
 
-type DashboardView = 'overview' | 'menu' | 'specials' | 'events' | 'analytics' | 'reviews' | 'settings' | 'ml-insights' | 'ads' | 'reservations';
+type DashboardView = 'overview' | 'menu' | 'specials' | 'events' | 'analytics' | 'reviews' | 'settings' | 'ml-insights' | 'ads' | 'reservations' | 'debug';
 
 interface Special {
   id?: string;
@@ -141,7 +143,59 @@ const DEFAULT_OPENING_HOURS = {
 
 export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardProps) {
   const { toast, showSuccess, showError, showInfo, hideToast } = useToast();
-  const businessId = localStorage.getItem('business_id') || 'palms';
+  const businessId = localStorage.getItem('business_id');
+
+  const getAuthToken = () => {
+    // Check if we're using a test business ID
+    const businessId = localStorage.getItem('business_id');
+    const TEST_IDS = ['palms', 'ocean-basket', 'marble', 'col-cacchio', 'tashas', 'nandos', 'karma', 'butchers-grill'];
+    
+    // Always use anon key for test businesses
+    if (businessId && TEST_IDS.includes(businessId)) {
+      return publicAnonKey;
+    }
+
+    const token = localStorage.getItem('business_auth_token');
+    
+    // Validate token format (basic JWT check: 3 parts)
+    // This prevents sending garbage tokens that cause 401 Invalid JWT errors from the Gateway
+    if (token && token !== 'undefined' && token !== 'null' && token.split('.').length === 3) {
+      // Check for token expiration to avoid 401 from Gateway
+      try {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        const now = Math.floor(Date.now() / 1000);
+        if (payload.exp && payload.exp < now) {
+          console.warn('Token expired');
+          return null;
+        }
+      } catch (e) {
+        console.error('Error parsing token:', e);
+        return null;
+      }
+      return token;
+    }
+    
+    // No valid token found
+    return null;
+  };
+
+  // Helper to handle API errors globally
+  const handleApiError = (response: Response, action: string) => {
+    if (response.status === 401 || response.status === 403) {
+      console.error(`Auth error during ${action}: ${response.status}`);
+      showError('Session expired. Please log in again.');
+      if (onLogout) onLogout();
+      return true; // Handled
+    }
+    return false; // Not handled
+  };
+
+  useEffect(() => {
+    if (!businessId && onLogout) {
+      onLogout();
+    }
+  }, [businessId, onLogout]);
+
   const [subscriptionPrice, setSubscriptionPrice] = useState(SUBSCRIPTION_CONFIG.MONTHLY_PRICE_FORMATTED);
   const [currentView, setCurrentView] = useState<DashboardView>('overview');
   const [showAddSpecialForm, setShowAddSpecialForm] = useState(false);
@@ -184,6 +238,8 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
     title: '',
     description: '',
     price: '',
+    percentage: '',
+    discountType: 'fixed_price' as 'fixed_price' | 'percentage',
     startDate: '',
     endDate: '',
     startTime: '',
@@ -296,6 +352,7 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
   const filterValidMenuItems = (items: MenuItem[]): MenuItem[] => {
     const businessId = localStorage.getItem('business_id') || 'palms';
     return items.filter((item: MenuItem) => {
+      if (!item) return false;
       if (!item.id) {
         console.warn('Skipping menu item without ID:', item);
         return false;
@@ -313,7 +370,7 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
     
     const fetchBusinessSettings = async () => {
       try {
-        const businessId = localStorage.getItem('business_id') || 'palms';
+        const businessId = localStorage.getItem('business_id');
         if (!businessId) return;
 
         const response = await fetch(
@@ -445,7 +502,7 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
     const fetchSpecials = async () => {
       try {
         setLoadingSpecials(true);
-        const businessId = localStorage.getItem('business_id') || 'palms';
+        const businessId = localStorage.getItem('business_id');
         
         const response = await fetch(
           `https://${projectId}.supabase.co/functions/v1/make-server-175b2872/kv/specials`,
@@ -458,7 +515,7 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
         if (response.ok) {
           const data = await response.json();
           // Filter specials to only show this business's specials
-          const mySpecials = (data.specials || []).filter((s: Special) => s.business_id === businessId);
+          const mySpecials = (data.specials || []).filter((s: Special) => s && s.business_id === businessId);
           console.log(`[BusinessDashboard] Loaded ${mySpecials.length} specials for business ${businessId}`);
           setSpecials(mySpecials);
         }
@@ -491,7 +548,7 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
     const fetchMenuItems = async () => {
       try {
         setLoadingMenuItems(true);
-        const businessId = localStorage.getItem('business_id') || 'palms';
+        const businessId = localStorage.getItem('business_id');
         
         const response = await fetch(
           `https://${projectId}.supabase.co/functions/v1/make-server-175b2872/kv/menu_items`,
@@ -504,7 +561,7 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
         if (response.ok) {
           const data = await response.json();
           // Filter menu items to only show this business's items
-          const myMenuItems = (data.menu_items || []).filter((item: MenuItem) => item.business_id === businessId);
+          const myMenuItems = (data.menu_items || []).filter((item: MenuItem) => item && item.business_id === businessId);
           const validMenuItems = filterValidMenuItems(myMenuItems);
           console.log(`[BusinessDashboard] Loaded ${validMenuItems.length} valid menu items for business ${businessId}`);
           setMenuItems(validMenuItems);
@@ -539,7 +596,7 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
     const fetchEvents = async () => {
       try {
         setLoadingEvents(true);
-        const businessId = localStorage.getItem('business_id') || 'palms';
+        const businessId = localStorage.getItem('business_id');
         
         const response = await fetch(
           `https://${projectId}.supabase.co/functions/v1/make-server-175b2872/kv/events`,
@@ -552,7 +609,7 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
         if (response.ok) {
           const data = await response.json();
           // Filter events to only show this business's events
-          const myEvents = (data.events || []).filter((event: Event) => event.business_id === businessId);
+          const myEvents = (data.events || []).filter((event: Event) => event && event.business_id === businessId);
           console.log(`[BusinessDashboard] Loaded ${myEvents.length} events for business ${businessId}`);
           setEvents(myEvents);
         }
@@ -585,7 +642,7 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
     const fetchReviews = async () => {
       try {
         setLoadingReviews(true);
-        const businessId = localStorage.getItem('business_id') || 'palms';
+        const businessId = localStorage.getItem('business_id');
         const response = await fetch(
           `https://${projectId}.supabase.co/functions/v1/make-server-175b2872/kv/reviews/${businessId}`,
           {
@@ -627,7 +684,7 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
     const fetchAnalytics = async () => {
       try {
         setLoadingAnalytics(true);
-        const businessId = localStorage.getItem('business_id') || 'palms';
+        const businessId = localStorage.getItem('business_id');
         const response = await fetch(
           `https://${projectId}.supabase.co/functions/v1/make-server-175b2872/analytics/business/${businessId}`,
           {
@@ -665,7 +722,7 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
 
     try {
       setSendingReply(true);
-      const businessId = localStorage.getItem('business_id') || 'palms';
+      const businessId = localStorage.getItem('business_id');
       
       const response = await fetch(
         `https://${projectId}.supabase.co/functions/v1/make-server-175b2872/kv/reviews/${reviewId}/reply`,
@@ -725,7 +782,7 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
         setLoadingInsights(true);
 
         // Fetch AI insights from business insights endpoint
-        const businessId = localStorage.getItem('business_id') || 'palms';
+        const businessId = localStorage.getItem('business_id');
         const insightsResponse = await fetch(
           `https://${projectId}.supabase.co/functions/v1/make-server-175b2872/businesses/${businessId}/insights`,
           {
@@ -804,10 +861,12 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
         {
           method: 'DELETE',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            'Authorization': `Bearer ${getAuthToken()}`
           }
         }
       );
+
+      if (handleApiError(response, 'end special')) return;
 
       if (response.ok) {
         // Remove from state
@@ -863,8 +922,19 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
     }
 
     // Validate required fields
-    if (!specialFormData.title || !specialFormData.price || !specialFormData.startDate || !specialFormData.endDate) {
-      showError('Please fill in all required fields (Title, Price, Start Date, End Date)');
+    if (!specialFormData.title || !specialFormData.startDate || !specialFormData.endDate) {
+      showError('Please fill in all required fields (Title, Start Date, End Date)');
+      return;
+    }
+
+    // Validate price or percentage based on discount type
+    if (specialFormData.discountType === 'fixed_price' && !specialFormData.price) {
+      showError('Please enter a price for the special');
+      return;
+    }
+
+    if (specialFormData.discountType === 'percentage' && !specialFormData.percentage) {
+      showError('Please enter a discount percentage');
       return;
     }
 
@@ -877,13 +947,14 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
 
     try {
       setSavingSpecial(true);
-      const businessId = localStorage.getItem('business_id') || 'palms';
+      const businessId = localStorage.getItem('business_id');
       
       const specialData = {
         business_id: businessId,
         title: specialFormData.title,
         description: specialFormData.description,
-        price: specialFormData.price,
+        price: specialFormData.discountType === 'fixed_price' ? specialFormData.price : null,
+        discount_percentage: specialFormData.discountType === 'percentage' ? Number(specialFormData.percentage) : null,
         start_date: specialFormData.startDate,
         end_date: specialFormData.endDate,
         time_start: specialFormData.startTime || null,
@@ -906,11 +977,13 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
       const response = await fetch(url, {
         method,
         headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
+          'Authorization': `Bearer ${getAuthToken()}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify(specialData)
       });
+
+      if (handleApiError(response, 'save special')) return;
 
       if (response.ok) {
         const data = await response.json();
@@ -928,7 +1001,7 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
         
         if (specialsResponse.ok) {
           const specialsData = await specialsResponse.json();
-          const mySpecials = (specialsData.specials || []).filter((s: Special) => s.business_id === businessId);
+          const mySpecials = (specialsData.specials || []).filter((s: Special) => s && s.business_id === businessId);
           setSpecials(mySpecials);
           localStorage.setItem('business_specials', JSON.stringify(mySpecials));
         }
@@ -943,6 +1016,8 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
           title: '',
           description: '',
           price: '',
+          percentage: '',
+          discountType: 'fixed_price',
           startDate: '',
           endDate: '',
           startTime: '',
@@ -974,6 +1049,8 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
       title: special.title || '',
       description: special.description || '',
       price: special.price ? String(special.price) : '',
+      percentage: special.discount_percentage ? String(special.discount_percentage) : '',
+      discountType: (special.discount_percentage && special.discount_percentage > 0) ? 'percentage' : 'fixed_price',
       startDate: special.start_date || '',
       endDate: special.end_date || '',
       startTime: special.time_start || '',
@@ -1005,7 +1082,7 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
     }
 
     try {
-      const businessId = localStorage.getItem('business_id') || 'palms';
+      const businessId = localStorage.getItem('business_id');
       
       // Prepare menu item data
       const menuItemData = {
@@ -1026,12 +1103,14 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            'Authorization': `Bearer ${getAuthToken()}`,
             'Content-Type': 'application/json'
           },
           body: JSON.stringify(menuItemData)
         }
       );
+
+      if (handleApiError(response, 'add menu item')) return;
 
       if (response.ok) {
         // Clear business cache to force fresh data fetch by customer app
@@ -1053,7 +1132,7 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
         
         if (refreshResponse.ok) {
           const data = await refreshResponse.json();
-          const myMenuItems = (data.menu_items || []).filter((item: MenuItem) => item.business_id === businessId);
+          const myMenuItems = (data.menu_items || []).filter((item: MenuItem) => item && item.business_id === businessId);
           setMenuItems(filterValidMenuItems(myMenuItems));
         }
         
@@ -1088,14 +1167,16 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
         {
           method: 'DELETE',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            'Authorization': `Bearer ${getAuthToken()}`
           }
         }
       );
 
+      if (handleApiError(response, 'delete menu item')) return;
+
       if (response.ok) {
         // Clear business cache to force fresh data fetch by customer app
-        const businessId = localStorage.getItem('business_id') || 'palms';
+        const businessId = localStorage.getItem('business_id');
         const cacheKey = `vibespot_cache_businesses_${businessId}`;
         localStorage.removeItem(cacheKey);
         console.log(`✅ Cleared cache for business: ${businessId}`);
@@ -1115,7 +1196,7 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
         if (refreshResponse.ok) {
           const data = await refreshResponse.json();
           const businessId = localStorage.getItem('business_id') || 'palms';
-          const myMenuItems = (data.menu_items || []).filter((item: MenuItem) => item.business_id === businessId);
+          const myMenuItems = (data.menu_items || []).filter((item: MenuItem) => item && item.business_id === businessId);
           setMenuItems(filterValidMenuItems(myMenuItems));
         }
       } else {
@@ -1148,7 +1229,7 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
           {
             method: 'DELETE',
             headers: {
-              'Authorization': `Bearer ${publicAnonKey}`
+              'Authorization': `Bearer ${getAuthToken()}`
             }
           }
         )
@@ -1175,8 +1256,8 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
       
       if (refreshResponse.ok) {
         const data = await refreshResponse.json();
-        const businessId = localStorage.getItem('business_id') || 'palms';
-        const myMenuItems = (data.menu_items || []).filter((item: MenuItem) => item.business_id === businessId);
+        const businessId = localStorage.getItem('business_id');
+        const myMenuItems = (data.menu_items || []).filter((item: MenuItem) => item && item.business_id === businessId);
         setMenuItems(filterValidMenuItems(myMenuItems));
       }
     } catch (error) {
@@ -1207,7 +1288,7 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
           {
             method: 'DELETE',
             headers: {
-              'Authorization': `Bearer ${publicAnonKey}`
+              'Authorization': `Bearer ${getAuthToken()}`
             }
           }
         )
@@ -1235,7 +1316,7 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
         if (refreshResponse.ok) {
           const data = await refreshResponse.json();
           const businessId = localStorage.getItem('business_id') || 'palms';
-          const myMenuItems = (data.menu_items || []).filter((item: MenuItem) => item.business_id === businessId);
+          const myMenuItems = (data.menu_items || []).filter((item: MenuItem) => item && item.business_id === businessId);
           setMenuItems(filterValidMenuItems(myMenuItems));
         }
       }
@@ -1284,7 +1365,7 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
     }
 
     try {
-      const businessId = localStorage.getItem('business_id') || 'palms';
+      const businessId = localStorage.getItem('business_id');
       
       // Prepare menu item data
       const menuItemData = {
@@ -1305,16 +1386,18 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
         {
           method: 'PUT',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            'Authorization': `Bearer ${getAuthToken()}`,
             'Content-Type': 'application/json'
           },
           body: JSON.stringify(menuItemData)
         }
       );
 
+      if (handleApiError(response, 'update menu item')) return;
+
       if (response.ok) {
         // Clear business cache to force fresh data fetch by customer app
-        const businessId = localStorage.getItem('business_id') || 'palms';
+        const businessId = localStorage.getItem('business_id');
         const cacheKey = `vibespot_cache_businesses_${businessId}`;
         localStorage.removeItem(cacheKey);
         console.log(`✅ Cleared cache for business: ${businessId}`);
@@ -1334,7 +1417,7 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
         if (refreshResponse.ok) {
           const data = await refreshResponse.json();
           const businessId = localStorage.getItem('business_id') || 'palms';
-          const myMenuItems = (data.menu_items || []).filter((item: MenuItem) => item.business_id === businessId);
+          const myMenuItems = (data.menu_items || []).filter((item: MenuItem) => item && item.business_id === businessId);
           setMenuItems(filterValidMenuItems(myMenuItems));
         }
         
@@ -1366,7 +1449,7 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
     }
 
     try {
-      const businessId = localStorage.getItem('business_id') || 'palms';
+      const businessId = localStorage.getItem('business_id');
       const newStatus = !item.is_available;
       
       const response = await fetch(
@@ -1374,7 +1457,7 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
         {
           method: 'PUT',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            'Authorization': `Bearer ${getAuthToken()}`,
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
@@ -1435,7 +1518,7 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            'Authorization': `Bearer ${getAuthToken()}`,
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
@@ -1449,6 +1532,8 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
           })
         }
       );
+
+      if (handleApiError(response, 'create event')) return;
 
       if (response.ok) {
         const data = await response.json();
@@ -1516,7 +1601,7 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
         {
           method: 'PUT',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            'Authorization': `Bearer ${getAuthToken()}`,
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
@@ -1602,7 +1687,7 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
         {
           method: 'DELETE',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            'Authorization': `Bearer ${getAuthToken()}`
           }
         }
       );
@@ -1723,14 +1808,14 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
       }
 
       // Import all items
-      const businessId = localStorage.getItem('business_id') || 'palms';
+      const businessId = localStorage.getItem('business_id');
       const promises = itemsToImport.map(item => 
         fetch(
           `https://${projectId}.supabase.co/functions/v1/make-server-175b2872/kv/menu_items`,
           {
             method: 'POST',
             headers: {
-              'Authorization': `Bearer ${publicAnonKey}`,
+              'Authorization': `Bearer ${getAuthToken()}`,
               'Content-Type': 'application/json'
             },
             body: JSON.stringify({
@@ -1782,7 +1867,7 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
     setUploadingLogo(true);
     setLogoImageError(false);
     try {
-      const businessId = localStorage.getItem('business_id') || 'palms';
+      const businessId = localStorage.getItem('business_id');
       const formData = new FormData();
       formData.append('logo', logoFile);
 
@@ -1793,7 +1878,7 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            'Authorization': `Bearer ${getAuthToken()}`
           },
           body: formData
         }
@@ -1836,7 +1921,7 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
     setUploadingCover(true);
     setCoverImageError(false);
     try {
-      const businessId = localStorage.getItem('business_id') || 'palms';
+      const businessId = localStorage.getItem('business_id');
       const formData = new FormData();
       formData.append('cover', coverFile);
 
@@ -1847,7 +1932,7 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            'Authorization': `Bearer ${getAuthToken()}`
           },
           body: formData
         }
@@ -1941,7 +2026,7 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
           {
             method: 'PUT',
             headers: {
-              'Authorization': `Bearer ${publicAnonKey}`,
+              'Authorization': `Bearer ${getAuthToken()}`,
               'Content-Type': 'application/json'
             },
             body: JSON.stringify({
@@ -2059,7 +2144,7 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
         {
           method: 'PUT',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            'Authorization': `Bearer ${getAuthToken()}`,
             'Content-Type': 'application/json'
           },
           body: JSON.stringify(updatePayload)
@@ -2242,6 +2327,15 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
             <span>Social Media Ads</span>
           </button>
           <button
+            onClick={() => setCurrentView('debug')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
+              currentView === 'debug' ? 'bg-white/20' : 'hover:bg-white/10'
+            }`}
+          >
+            <Database className="w-5 h-5" />
+            <span>Debug Tools</span>
+          </button>
+          <button
             onClick={() => setCurrentView('settings')}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
               currentView === 'settings' ? 'bg-white/20' : 'hover:bg-white/10'
@@ -2282,6 +2376,7 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
             {currentView === 'reviews' && 'Reviews & Ratings'}
             {currentView === 'reservations' && 'Reservations'}
             {currentView === 'ads' && 'Social Media Ads'}
+            {currentView === 'debug' && 'Debug Tools'}
             {currentView === 'settings' && 'Business Settings'}
           </h2>
           <p className="text-gray-600">{businessName || settingsFormData.name}</p>
@@ -2971,6 +3066,8 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
                     title: '',
                     description: '',
                     price: '',
+                    percentage: '',
+                    discountType: 'fixed_price',
                     startDate: '',
                     endDate: '',
                     startTime: '',
@@ -3071,14 +3168,66 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <Label htmlFor="special-price">Price *</Label>
-                      <Input 
-                        id="special-price" 
-                        type="text" 
-                        placeholder="R50" 
-                        value={specialFormData.price} 
-                        onChange={(e) => setSpecialFormData({ ...specialFormData, price: e.target.value })} 
-                      />
+                      <Label className="mb-2 block">Discount Type</Label>
+                      <div className="flex bg-gray-100 p-1 rounded-lg h-10 items-center">
+                        <button
+                          type="button"
+                          onClick={() => setSpecialFormData({ ...specialFormData, discountType: 'fixed_price' })}
+                          className={`flex-1 h-8 text-sm rounded-md transition-all ${
+                            specialFormData.discountType === 'fixed_price'
+                              ? 'bg-white text-black shadow-sm font-medium'
+                              : 'text-gray-500 hover:text-gray-700'
+                          }`}
+                        >
+                          Fixed Price
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSpecialFormData({ ...specialFormData, discountType: 'percentage' })}
+                          className={`flex-1 h-8 text-sm rounded-md transition-all ${
+                            specialFormData.discountType === 'percentage'
+                              ? 'bg-white text-black shadow-sm font-medium'
+                              : 'text-gray-500 hover:text-gray-700'
+                          }`}
+                        >
+                          Percentage
+                        </button>
+                      </div>
+                    </div>
+                    
+                    <div>
+                      {specialFormData.discountType === 'fixed_price' ? (
+                        <>
+                          <Label htmlFor="special-price">Price *</Label>
+                          <div className="relative">
+                            <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">R</span>
+                            <Input 
+                              id="special-price" 
+                              type="number" 
+                              placeholder="50" 
+                              className="pl-8"
+                              value={specialFormData.price} 
+                              onChange={(e) => setSpecialFormData({ ...specialFormData, price: e.target.value })} 
+                            />
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <Label htmlFor="special-percentage">Discount Percentage *</Label>
+                          <div className="relative">
+                            <Input 
+                              id="special-percentage" 
+                              type="number" 
+                              placeholder="50" 
+                              min="1"
+                              max="100"
+                              value={specialFormData.percentage} 
+                              onChange={(e) => setSpecialFormData({ ...specialFormData, percentage: e.target.value })} 
+                            />
+                            <span className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500">%</span>
+                          </div>
+                        </>
+                      )}
                     </div>
                   </div>
 
@@ -3279,6 +3428,15 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
                       <div>
                         <div className="flex items-center gap-2 mb-1">
                           <h4 className="font-semibold">{special.title}</h4>
+                          {special.discount_percentage ? (
+                            <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">
+                              {special.discount_percentage}% OFF
+                            </span>
+                          ) : special.price ? (
+                            <span className="text-xs bg-gray-100 text-gray-700 px-2 py-0.5 rounded-full font-medium">
+                              R{special.price}
+                            </span>
+                          ) : null}
                           {special.image_url && (
                             <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
                               🤖 AI Image
@@ -3340,7 +3498,22 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
           <div>
             <div className="mb-6 flex gap-3">
               <Button 
-                onClick={() => setShowAddEventForm(!showAddEventForm)}
+                onClick={() => {
+                  if (!showAddEventForm) {
+                    // Pre-fill location from business settings if available and location is empty
+                    const defaultLocation = settingsFormData.address 
+                      ? `${settingsFormData.address}${settingsFormData.city ? `, ${settingsFormData.city}` : ''}`
+                      : settingsFormData.city || '';
+                    
+                    if (!eventFormData.location && defaultLocation) {
+                      setEventFormData(prev => ({
+                        ...prev,
+                        location: defaultLocation
+                      }));
+                    }
+                  }
+                  setShowAddEventForm(!showAddEventForm);
+                }}
                 className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white"
               >
                 <Plus className="w-4 h-4 mr-2" />
@@ -3454,7 +3627,22 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
 
                   {/* Location */}
                   <div className="border-t pt-4 mt-4">
-                    <Label htmlFor="event-location">Location</Label>
+                    <div className="flex justify-between items-center mb-2">
+                      <Label htmlFor="event-location">Location</Label>
+                      <button 
+                        type="button"
+                        className="text-xs text-blue-600 hover:text-blue-800 underline"
+                        onClick={() => {
+                          const address = settingsFormData.address 
+                            ? `${settingsFormData.address}${settingsFormData.city ? `, ${settingsFormData.city}` : ''}`
+                            : settingsFormData.city || '';
+                          if (address) setEventFormData(prev => ({...prev, location: address}));
+                          else showInfo("No business address found in settings");
+                        }}
+                      >
+                        Use Business Address
+                      </button>
+                    </div>
                     <Input 
                       id="event-location" 
                       placeholder="e.g., Main Hall" 
@@ -3607,6 +3795,11 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
                                   <p className="text-sm text-gray-600">
                                     📅 {event.event_date} {event.event_time && `• 🕐 ${event.event_time}`}
                                   </p>
+                                  {event.location && (
+                                    <p className="text-sm text-gray-600 mt-0.5">
+                                      📍 {event.location}
+                                    </p>
+                                  )}
                                 </div>
                                 <div className="flex items-center gap-3">
                                   <div className="text-right">
@@ -3667,6 +3860,11 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
                                   <p className="text-sm text-gray-500">
                                     📅 {event.event_date} {event.event_time && `• 🕐 ${event.event_time}`}
                                   </p>
+                                  {event.location && (
+                                    <p className="text-sm text-gray-500 mt-0.5">
+                                      📍 {event.location}
+                                    </p>
+                                  )}
                                 </div>
                                 <div className="flex items-center gap-3">
                                   <div className="text-right">
@@ -4300,7 +4498,7 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
                         method: 'POST',
                         headers: {
                           'Content-Type': 'application/json',
-                          'Authorization': `Bearer ${publicAnonKey}`
+                          'Authorization': `Bearer ${getAuthToken()}`
                         },
                         body: JSON.stringify({
                           business_id: businessId,
@@ -4470,6 +4668,13 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
             businessId={businessId}
             businessName={businessName || settingsFormData.name}
           />
+        )}
+
+        {/* Debug Tools */}
+        {currentView === 'debug' && (
+          <div className="space-y-6">
+            <DataSeeder />
+          </div>
         )}
 
         {/* Settings */}

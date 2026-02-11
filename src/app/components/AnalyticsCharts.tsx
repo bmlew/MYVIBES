@@ -15,8 +15,9 @@ export function AnalyticsCharts({ viewsData, categoryData, performanceData }: An
       {/* Views & Clicks Trend */}
       <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-200">
         <h3 className="font-bold mb-4">Views & Engagement Trend (Last 7 Days)</h3>
-        <ResponsiveContainer width="100%" height={300}>
-          <LineChart data={viewsData}>
+        <div className="h-[300px] w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={viewsData}>
             <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
             <XAxis dataKey="date" stroke="#666" fontSize={12} />
             <YAxis stroke="#666" fontSize={12} />
@@ -49,14 +50,16 @@ export function AnalyticsCharts({ viewsData, categoryData, performanceData }: An
             />
           </LineChart>
         </ResponsiveContainer>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Category Distribution */}
         <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-200">
           <h3 className="font-bold mb-4">Traffic by Category</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <PieChart>
+          <div className="h-[300px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
               <Pie
                 data={categoryData}
                 cx="50%"
@@ -74,13 +77,15 @@ export function AnalyticsCharts({ viewsData, categoryData, performanceData }: An
               <Tooltip />
             </PieChart>
           </ResponsiveContainer>
+          </div>
         </div>
 
         {/* Performance by Type */}
         <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-200">
           <h3 className="font-bold mb-4">Performance by Type</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={performanceData}>
+          <div className="h-[300px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={performanceData}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
               <XAxis dataKey="name" stroke="#666" fontSize={12} />
               <YAxis stroke="#666" fontSize={12} />
@@ -97,6 +102,7 @@ export function AnalyticsCharts({ viewsData, categoryData, performanceData }: An
               <Bar dataKey="revenue" fill="#9B59B6" name="Revenue Impact" radius={[8, 8, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
+          </div>
         </div>
       </div>
     </div>

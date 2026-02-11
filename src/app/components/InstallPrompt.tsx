@@ -5,7 +5,7 @@ import { showInstallPrompt, isAppInstalled, setupInstallPrompt } from '@/utils/p
 
 /**
  * Install Prompt Component for PWA
- * Shows a banner prompting users to install the MYVIBE app
+ * Shows a banner prompting users to install the MYVIBES app
  */
 export function InstallPrompt() {
   const [showPrompt, setShowPrompt] = useState(false);
@@ -88,9 +88,9 @@ export function InstallPrompt() {
           </div>
           
           <div className="flex-1">
-            <h3 className="font-bold text-lg mb-1">Install MYVIBE</h3>
+            <h3 className="font-bold text-lg mb-1">Install MYVIBES</h3>
             <p className="text-sm text-white/90 mb-3">
-              Get the full app experience! Install MYVIBE for faster access, offline support, and push notifications.
+              Get the full app experience! Install MYVIBES for faster access, offline support, and push notifications.
             </p>
             
             <div className="flex gap-2">
