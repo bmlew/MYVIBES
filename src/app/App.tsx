@@ -42,14 +42,30 @@ const DisclaimersPage = lazy(() => import('./components/DisclaimersPage').then(m
 const AffiliatePortal = lazy(() => import('./components/AffiliatePortal').then(m => ({ default: m.AffiliatePortal })));
 
 // Loading fallback component
-const LoadingFallback = () => (
-  <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-cyan-50 to-blue-50">
-    <div className="text-center">
-      <div className="w-16 h-16 mx-auto mb-4 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin"></div>
-      <p className="text-gray-600 font-medium">Loading MYVIBES...</p>
+const LoadingFallback = () => {
+  const [showSlowLoading, setShowSlowLoading] = useState(false);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setShowSlowLoading(true);
+    }, 5000); // Show message after 5 seconds
+    return () => clearTimeout(timer);
+  }, []);
+
+  return (
+    <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-cyan-50 to-blue-50">
+      <div className="text-center">
+        <div className="w-16 h-16 mx-auto mb-4 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin"></div>
+        <p className="text-gray-600 font-medium">Loading MYVIBES...</p>
+        {showSlowLoading && (
+          <p className="text-amber-600 text-sm mt-4 animate-pulse">
+            This is taking longer than expected. Please check your connection.
+          </p>
+        )}
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 type AppMode = 'landing' | 'customer' | 'business' | 'roi' | 'admin';
 
