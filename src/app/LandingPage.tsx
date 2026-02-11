@@ -19,6 +19,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 
 const SocialMediaAdsGallery = lazy(() => import('./components/SocialMediaAdsGallery'));
 
+// Rebuild trigger comment
+
 interface LandingPageProps {
   onTryDemo: () => void;
   onRegisterBusiness: () => void;
