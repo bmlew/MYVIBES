@@ -3,7 +3,7 @@ import { Card } from './ui/card';
 import { Button } from './ui/button';
 import { ExternalLink, Eye, TrendingUp, Video, X, Play } from 'lucide-react';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
-import exampleImage from 'figma:asset/b16d8d7a9225753705f0ca7894a9ac98b84a7cf3.png';
+const exampleImage = 'https://images.unsplash.com/photo-1615234404856-e19b0a45f760?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxjb2NrdGFpbHMlMjBzdW5zZXQlMjBiYXJ8ZW58MXx8fHwxNzcwODEwNzY2fDA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral';
 
 const MOCK_ADS: SocialMediaAd[] = [
   {

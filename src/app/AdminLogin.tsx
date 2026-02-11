@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router'; // Changed from 'react-router-dom'
 import { Lock, Shield } from 'lucide-react';
-import logoImage from 'figma:asset/04edb180b09418137585603fd7c27350b99e878f.png';
 
 export default function AdminLogin() {
   const navigate = useNavigate();
