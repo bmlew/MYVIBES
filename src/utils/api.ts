@@ -699,9 +699,12 @@ export async function loginCustomer(username: string) {
 
 export async function registerCustomer(username: string, name: string) {
   try {
+    // Check for referral code
+    const referralCode = localStorage.getItem('myvibes_referral_code');
+    
     const data = await apiCall('/auth/customer/register', {
       method: 'POST',
-      body: JSON.stringify({ username, name })
+      body: JSON.stringify({ username, name, referral_code: referralCode })
     });
     return data;
   } catch (error) {

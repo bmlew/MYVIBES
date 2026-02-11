@@ -2416,7 +2416,7 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
                   <p className="text-sm opacity-90">Total Clicks</p>
                   <Eye className="w-5 h-5 opacity-75" />
                 </div>
-                <p className="text-4xl font-bold">{loadingAnalytics ? '...' : (analytics?.metrics.total_clicks || 0).toLocaleString()}</p>
+                <p className="text-4xl font-bold">{loadingAnalytics ? '...' : (analytics?.metrics?.total_clicks || 0).toLocaleString()}</p>
                 <p className="text-xs opacity-75 mt-2">Carousel & venue clicks</p>
               </div>
 
@@ -2425,8 +2425,8 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
                   <p className="text-sm opacity-90">Click-Through Rate</p>
                   <TrendingUp className="w-5 h-5 opacity-75" />
                 </div>
-                <p className="text-4xl font-bold">{loadingAnalytics ? '...' : (analytics?.metrics.ctr || 0).toFixed(1)}%</p>
-                <p className="text-xs opacity-75 mt-2">{loadingAnalytics ? '' : `${analytics?.metrics.total_views || 0} total views`}</p>
+                <p className="text-4xl font-bold">{loadingAnalytics ? '...' : (analytics?.metrics?.ctr || 0).toFixed(1)}%</p>
+                <p className="text-xs opacity-75 mt-2">{loadingAnalytics ? '' : `${analytics?.metrics?.total_views || 0} total views`}</p>
               </div>
 
               <div className="bg-gradient-to-br from-green-500 to-emerald-600 text-white rounded-lg p-6 shadow-lg">
@@ -2434,8 +2434,8 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
                   <p className="text-sm opacity-90">Reservations</p>
                   <Calendar className="w-5 h-5 opacity-75" />
                 </div>
-                <p className="text-4xl font-bold">{loadingAnalytics ? '...' : (analytics?.metrics.total_reservations || 0)}</p>
-                <p className="text-xs opacity-75 mt-2">{loadingAnalytics ? '' : `${analytics?.metrics.conversion_rate || 0}% conversion`}</p>
+                <p className="text-4xl font-bold">{loadingAnalytics ? '...' : (analytics?.metrics?.total_reservations || 0)}</p>
+                <p className="text-xs opacity-75 mt-2">{loadingAnalytics ? '' : `${analytics?.metrics?.conversion_rate || 0}% conversion`}</p>
               </div>
 
               <div className="bg-gradient-to-br from-cyan-500 to-blue-600 text-white rounded-lg p-6 shadow-lg">
@@ -2443,7 +2443,7 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
                   <p className="text-sm opacity-90">Revenue Generated</p>
                   <DollarSign className="w-5 h-5 opacity-75" />
                 </div>
-                <p className="text-4xl font-bold">R{loadingAnalytics ? '...' : (analytics?.metrics.estimated_revenue || 0).toLocaleString()}</p>
+                <p className="text-4xl font-bold">R{loadingAnalytics ? '...' : (analytics?.metrics?.estimated_revenue || 0).toLocaleString()}</p>
                 <p className="text-xs opacity-75 mt-2">Platform value delivered</p>
               </div>
             </div>

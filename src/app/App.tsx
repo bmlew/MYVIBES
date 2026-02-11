@@ -80,6 +80,13 @@ export default function App() {
     const path = window.location.pathname;
     const params = new URLSearchParams(window.location.search);
     
+    // Check for referral code
+    const refCode = params.get('ref') || params.get('referral');
+    if (refCode) {
+      console.log('📢 Referral code detected:', refCode);
+      localStorage.setItem('myvibes_referral_code', refCode.toUpperCase());
+    }
+
     // Match /review/:businessId pattern
     const reviewMatch = path.match(/^\/review\/([^/]+)$/);
     if (reviewMatch) {

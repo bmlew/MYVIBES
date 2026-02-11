@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Plus, Image as ImageIcon, Globe, Clock, CheckCircle2, Loader2 
+  Plus, Image as ImageIcon, Globe, Clock, CheckCircle2, Loader2, X 
 } from 'lucide-react';
 import { Button } from '@/app/components/ui/button';
 import { Card } from '@/app/components/ui/card';
@@ -18,6 +18,9 @@ interface Campaign {
   clicks: number;
   spend: number;
   type: string;
+  media_url?: string;
+  budget?: number;
+  start_date?: string;
 }
 
 export function SocialMediaManager() {
@@ -25,6 +28,20 @@ export function SocialMediaManager() {
   const [showCreate, setShowCreate] = useState(false);
   const [loading, setLoading] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
+  
+  // Form State
+  const [formData, setFormData] = useState({
+    name: '',
+    type: 'Global Promo (All Apps)',
+    message: '',
+    start_date: '',
+    budget: '',
+    media_url: ''
+  });
+  const [mediaPreview, setMediaPreview] = useState<string | null>(null);
+  const [uploadingMedia, setUploadingMedia] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   const API_URL = `https://${projectId}.supabase.co/functions/v1/make-server-175b2872`;
 
@@ -74,6 +91,108 @@ export function SocialMediaManager() {
     } finally {
       setIsGenerating(false);
     }
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/') && !file.type.startsWith('video/')) {
+      toast.error('Please upload an image or video file');
+      return;
+    }
+
+    // Size limit check (10MB)
+    if (file.size > 10 * 1024 * 1024) {
+        toast.error('File size must be less than 10MB');
+        return;
+    }
+
+    try {
+      setUploadingMedia(true);
+      const uploadFormData = new FormData();
+      uploadFormData.append('file', file);
+
+      const response = await fetch(`${API_URL}/upload`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${publicAnonKey}`
+        },
+        body: uploadFormData
+      });
+
+      if (!response.ok) throw new Error('Upload failed');
+
+      const data = await response.json();
+      setFormData(prev => ({ ...prev, media_url: data.full_path }));
+      
+      // Create local preview
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setMediaPreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+      
+      toast.success('Media uploaded successfully');
+    } catch (error) {
+      console.error('Upload error:', error);
+      toast.error('Failed to upload media');
+    } finally {
+      setUploadingMedia(false);
+    }
+  };
+
+  const handleCreateCampaign = async () => {
+    if (!formData.name) {
+      toast.error('Please enter a campaign name');
+      return;
+    }
+
+    if (!formData.media_url) {
+        toast.error('Please upload creative media');
+        return;
+    }
+
+    try {
+      setSubmitting(true);
+      const response = await fetch(`${API_URL}/admin/campaigns`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${publicAnonKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(formData)
+      });
+
+      if (!response.ok) throw new Error('Failed to create campaign');
+
+      toast.success('Campaign launched successfully');
+      setShowCreate(false);
+      
+      // Reset form
+      setFormData({
+        name: '',
+        type: 'Global Promo (All Apps)',
+        message: '',
+        start_date: '',
+        budget: '',
+        media_url: ''
+      });
+      setMediaPreview(null);
+      fetchCampaigns();
+    } catch (error) {
+      console.error('Create campaign error:', error);
+      toast.error('Failed to create campaign');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleRemoveMedia = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setFormData(prev => ({ ...prev, media_url: '' }));
+    setMediaPreview(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   return (
@@ -164,11 +283,19 @@ export function SocialMediaManager() {
             <div className="space-y-4">
               <div>
                 <label className="text-sm font-medium mb-1 block">Campaign Name</label>
-                <Input placeholder="e.g., Holiday Special" />
+                <Input 
+                    placeholder="e.g., Holiday Special" 
+                    value={formData.name}
+                    onChange={(e) => setFormData({...formData, name: e.target.value})}
+                />
               </div>
               <div>
                 <label className="text-sm font-medium mb-1 block">Campaign Type</label>
-                <select className="w-full px-3 py-2 bg-white border border-slate-200 rounded-md">
+                <select 
+                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-md"
+                    value={formData.type}
+                    onChange={(e) => setFormData({...formData, type: e.target.value})}
+                >
                   <option>Global Promo (All Apps)</option>
                   <option>System Notification</option>
                   <option>Partner Spotlight</option>
@@ -176,25 +303,84 @@ export function SocialMediaManager() {
               </div>
               <div>
                 <label className="text-sm font-medium mb-1 block">Message / Caption</label>
-                <Textarea placeholder="Enter your message..." rows={4} />
+                <Textarea 
+                    placeholder="Enter your message..." 
+                    rows={4} 
+                    value={formData.message}
+                    onChange={(e) => setFormData({...formData, message: e.target.value})}
+                />
               </div>
             </div>
             <div className="space-y-4">
-              <div className="border-2 border-dashed border-slate-300 rounded-lg h-40 flex flex-col items-center justify-center text-slate-400 hover:border-cyan-400 hover:bg-cyan-50 transition-colors cursor-pointer">
-                <ImageIcon className="w-8 h-8 mb-2" />
-                <span className="text-sm">Upload Creative Media</span>
+              <input 
+                  type="file" 
+                  ref={fileInputRef} 
+                  className="hidden" 
+                  accept="image/*,video/*"
+                  onChange={handleFileChange}
+              />
+              <div 
+                  onClick={() => fileInputRef.current?.click()}
+                  className={`border-2 border-dashed rounded-lg h-40 flex flex-col items-center justify-center transition-all cursor-pointer relative overflow-hidden ${
+                      mediaPreview ? 'border-cyan-500 bg-cyan-50' : 'border-slate-300 text-slate-400 hover:border-cyan-400 hover:bg-cyan-50'
+                  }`}
+              >
+                {uploadingMedia ? (
+                    <div className="flex flex-col items-center">
+                        <Loader2 className="w-8 h-8 mb-2 animate-spin text-cyan-600" />
+                        <span className="text-sm text-cyan-600">Uploading...</span>
+                    </div>
+                ) : mediaPreview ? (
+                    <>
+                        <img src={mediaPreview} alt="Preview" className="w-full h-full object-contain" />
+                        <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
+                            <span className="text-white font-medium">Click to change</span>
+                        </div>
+                        <button 
+                            onClick={handleRemoveMedia}
+                            className="absolute top-2 right-2 p-1 bg-white rounded-full shadow-md text-slate-700 hover:text-red-500"
+                        >
+                            <X className="w-4 h-4" />
+                        </button>
+                    </>
+                ) : (
+                    <>
+                        <ImageIcon className="w-8 h-8 mb-2" />
+                        <span className="text-sm">Upload Creative Media</span>
+                    </>
+                )}
               </div>
               <div className="flex gap-4">
                 <div className="flex-1">
                   <label className="text-sm font-medium mb-1 block">Start Date</label>
-                  <Input type="date" />
+                  <Input 
+                      type="date" 
+                      value={formData.start_date}
+                      onChange={(e) => setFormData({...formData, start_date: e.target.value})}
+                  />
                 </div>
                 <div className="flex-1">
                   <label className="text-sm font-medium mb-1 block">Budget (Optional)</label>
-                  <Input type="number" placeholder="R 0.00" />
+                  <Input 
+                      type="number" 
+                      placeholder="R 0.00" 
+                      value={formData.budget}
+                      onChange={(e) => setFormData({...formData, budget: e.target.value})}
+                  />
                 </div>
               </div>
-              <Button className="w-full bg-slate-900 text-white mt-2">Launch Campaign</Button>
+              <Button 
+                className="w-full bg-slate-900 text-white mt-2" 
+                onClick={handleCreateCampaign}
+                disabled={submitting || uploadingMedia}
+              >
+                {submitting ? (
+                    <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Launching...
+                    </>
+                ) : 'Launch Campaign'}
+              </Button>
             </div>
           </div>
         </Card>

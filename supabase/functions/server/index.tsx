@@ -305,12 +305,9 @@ app.post("/make-server-175b2872/auth/business/register", async (c) => {
 
     if (validAffiliate) {
       validAffiliate.total_referrals = (validAffiliate.total_referrals || 0) + 1;
-      await kv.set(`affiliate:${validAffiliate.id}`, validAffiliate);
+      await kv.set(validAffiliate.id, validAffiliate); // Fixed key format
       console.log(`💰 Affiliate ${validAffiliate.name} credited with new referral. Total: ${validAffiliate.total_referrals}`);
     }
-
-    // Auto-seed content if requested for testing
-    // (This is handled by a separate admin call usually, but we could do it here if needed)
 
     return c.json({
       success: true,
@@ -322,6 +319,262 @@ app.post("/make-server-175b2872/auth/business/register", async (c) => {
     console.error('Registration error:', error);
     return c.json({ error: `Registration failed: ${error.message || error}` }, 500);
   }
+});
+
+// ============================================
+// AFFILIATE ROUTES
+// ============================================
+
+// Affiliate Registration
+app.post("/make-server-175b2872/affiliates/register", async (c) => {
+  try {
+    const body = await c.req.json();
+    const { name, email, phone, bank_name, account_number, branch_code } = body;
+
+    if (!name || !email) {
+      return c.json({ error: 'Name and Email are required' }, 400);
+    }
+
+    // Check if email exists
+    const existingAffiliates = await kv.getByPrefix('affiliate:');
+    if (existingAffiliates.find((a: any) => a.email === email)) {
+        return c.json({ error: 'Affiliate with this email already exists' }, 400);
+    }
+
+    const affiliateId = `affiliate:${Date.now()}`;
+    const code = name.substring(0, 3).toUpperCase() + Math.floor(1000 + Math.random() * 9000); // Simple code generation
+
+    const newAffiliate = {
+      id: affiliateId,
+      name,
+      email,
+      phone,
+      code,
+      bank_details: {
+          bank_name: bank_name || '',
+          account_number: account_number || '',
+          branch_code: branch_code || ''
+      },
+      status: 'approved',
+      pending_balance: 0,
+      total_earnings: 0,
+      paid_earnings: 0,
+      total_referrals: 0,
+      app_downloads: 0,
+      joined_at: new Date().toISOString()
+    };
+
+    await kv.set(affiliateId, newAffiliate);
+    return c.json({ success: true, affiliate: newAffiliate });
+  } catch (error) {
+    console.error('Affiliate registration error:', error);
+    return c.json({ error: 'Failed to register affiliate' }, 500);
+  }
+});
+
+// Get Affiliate by Email (Simple Login)
+app.post("/make-server-175b2872/affiliates/login", async (c) => {
+    try {
+        const { email } = await c.req.json();
+        const affiliates = await kv.getByPrefix('affiliate:');
+        const affiliate = affiliates.find((a: any) => a.email === email);
+        
+        if (!affiliate) return c.json({ error: 'Affiliate not found' }, 404);
+        
+        return c.json({ success: true, affiliate });
+    } catch (error) {
+        return c.json({ error: 'Login failed' }, 500);
+    }
+});
+
+// Update Affiliate Bank Details
+app.put("/make-server-175b2872/affiliates/:id/bank-details", async (c) => {
+    try {
+        const id = c.req.param('id');
+        const { bank_name, account_number, branch_code } = await c.req.json();
+        
+        const affiliate = await kv.get(id);
+        if (!affiliate) return c.json({ error: 'Affiliate not found' }, 404);
+        
+        affiliate.bank_details = { bank_name, account_number, branch_code };
+        await kv.set(id, affiliate);
+        
+        return c.json({ success: true, affiliate });
+    } catch (error) {
+        return c.json({ error: 'Update failed' }, 500);
+    }
+});
+
+// Get Affiliate Commissions
+app.get("/make-server-175b2872/affiliates/:id/commissions", async (c) => {
+    try {
+        const id = c.req.param('id');
+        const commissions = await kv.getByPrefix('comm:');
+        const myCommissions = commissions.filter((comm: any) => comm.affiliate_id === id);
+        return c.json({ commissions: myCommissions.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime()) });
+    } catch (error) {
+        return c.json({ error: 'Failed to fetch commissions' }, 500);
+    }
+});
+
+// Admin: Get All Affiliates (Reconciliation)
+app.get("/make-server-175b2872/admin/affiliates", async (c) => {
+    try {
+        const affiliates = await kv.getByPrefix('affiliate:');
+        return c.json({ affiliates });
+    } catch (error) {
+        return c.json({ error: 'Failed to fetch affiliates' }, 500);
+    }
+});
+
+// Admin: Mark Affiliate Paid
+app.post("/make-server-175b2872/admin/affiliates/:id/pay", async (c) => {
+    try {
+        const id = c.req.param('id');
+        const affiliate = await kv.get(id);
+        if (!affiliate) return c.json({ error: 'Affiliate not found' }, 404);
+        
+        const amountToPay = affiliate.pending_balance;
+        if (amountToPay <= 0) return c.json({ error: 'No pending balance' }, 400);
+        
+        // Update Affiliate
+        affiliate.paid_earnings = (affiliate.paid_earnings || 0) + amountToPay;
+        affiliate.pending_balance = 0;
+        await kv.set(id, affiliate);
+        
+        // Record Payout Transaction
+        const payoutId = `payout:${Date.now()}`;
+        const payout = {
+            id: payoutId,
+            affiliate_id: id,
+            amount: amountToPay,
+            date: new Date().toISOString(),
+            status: 'processed'
+        };
+        await kv.set(payoutId, payout);
+        
+        // Update Commissions to 'paid'
+        const commissions = await kv.getByPrefix('comm:');
+        const affiliateComms = commissions.filter((comm: any) => comm.affiliate_id === id && comm.status === 'pending');
+        
+        for (const comm of affiliateComms) {
+            comm.status = 'paid';
+            await kv.set(comm.id, comm);
+        }
+        
+        return c.json({ success: true, affiliate, payout });
+    } catch (error) {
+        return c.json({ error: 'Payout failed' }, 500);
+    }
+});
+
+// Admin: Batch Pay All Affiliates
+app.post("/make-server-175b2872/admin/affiliates/pay-all", async (c) => {
+    try {
+        const affiliates = await kv.getByPrefix('affiliate:');
+        const pendingAffiliates = affiliates.filter((a: any) => (a.pending_balance || 0) > 0 && a.bank_details?.bank_name);
+        
+        if (pendingAffiliates.length === 0) {
+            return c.json({ message: 'No pending payouts to process' });
+        }
+
+        let totalPaid = 0;
+        let count = 0;
+
+        for (const affiliate of pendingAffiliates) {
+            const amount = affiliate.pending_balance;
+            
+            // Update Affiliate
+            affiliate.pending_balance = 0;
+            affiliate.paid_earnings = (affiliate.paid_earnings || 0) + amount;
+            affiliate.last_payout_date = new Date().toISOString();
+            
+            await kv.set(affiliate.id, affiliate);
+            
+            // Record Payout Transaction
+            const payoutId = `payout:${Date.now()}_${count}`;
+            const payout = {
+                id: payoutId,
+                business: 'Affiliate Payout Batch',
+                affiliate_id: affiliate.id,
+                amount: amount,
+                type: 'Payout',
+                status: 'Processed',
+                date: new Date().toISOString(),
+                recipient: affiliate.name
+            };
+            await kv.set(payoutId, payout);
+
+            // Update Commissions
+            const commissions = await kv.getByPrefix('comm:');
+            const affiliateComms = commissions.filter((comm: any) => comm.affiliate_id === affiliate.id && comm.status === 'pending');
+            for (const comm of affiliateComms) {
+                comm.status = 'paid';
+                await kv.set(comm.id, comm);
+            }
+
+            totalPaid += amount;
+            count++;
+        }
+
+        return c.json({ success: true, count, totalPaid, message: `Successfully paid R${totalPaid} to ${count} affiliates` });
+    } catch (error) {
+        console.error('Batch payout error:', error);
+        return c.json({ error: 'Batch payout failed' }, 500);
+    }
+});
+
+// Process Monthly Subscription (Simulation)
+app.post("/make-server-175b2872/admin/process-subscription", async (c) => {
+    try {
+        const { business_id, amount, is_promo } = await c.req.json();
+        
+        const business = await kv.get(business_id);
+        if (!business) return c.json({ error: 'Business not found' }, 404);
+        
+        // Record Payment
+        const paymentId = `pay:${Date.now()}`;
+        const payment = {
+            id: paymentId,
+            business_id,
+            business_name: business.name,
+            amount,
+            date: new Date().toISOString(),
+            status: 'completed',
+            type: 'Subscription'
+        };
+        await kv.set(paymentId, payment);
+        
+        // Handle Affiliate Commission
+        let commission = null;
+        if (business.referred_by && !is_promo && amount > 0) {
+            const affiliate = await kv.get(business.referred_by);
+            if (affiliate) {
+                const commissionAmount = amount * 0.10;
+                const commissionId = `comm:${Date.now()}`;
+                commission = {
+                    id: commissionId,
+                    affiliate_id: affiliate.id,
+                    business_id,
+                    business_name: business.name,
+                    amount: commissionAmount,
+                    status: 'pending',
+                    date: new Date().toISOString(),
+                    type: 'Recurring Subscription'
+                };
+                await kv.set(commissionId, commission);
+                
+                affiliate.pending_balance = (affiliate.pending_balance || 0) + commissionAmount;
+                affiliate.total_earnings = (affiliate.total_earnings || 0) + commissionAmount;
+                await kv.set(affiliate.id, affiliate);
+            }
+        }
+        
+        return c.json({ success: true, payment, commission });
+    } catch (error) {
+        console.error('Processing failed', error);
+        return c.json({ error: 'Processing failed' }, 500);
+    }
 });
 
 // Admin Route: Seed Content
@@ -979,6 +1232,69 @@ app.delete("/make-server-175b2872/kv/menu_items/:id", async (c) => {
 
 // --- REVIEWS ---
 
+// Submit a review
+app.post("/make-server-175b2872/kv/reviews", async (c) => {
+  try {
+    const body = await c.req.json();
+    const { business_id, user_name, rating, comment, user_phone, user_email } = body;
+
+    if (!business_id || !rating || !comment) {
+      return c.json({ error: 'Missing required fields' }, 400);
+    }
+
+    const reviewId = `review:${business_id}:${Date.now()}`;
+    const review = {
+      id: reviewId,
+      business_id,
+      user_name: user_name || 'Anonymous',
+      user_avatar: null,
+      rating,
+      comment,
+      created_at: new Date().toISOString(),
+      helpful_count: 0,
+      user_phone: user_phone || null,
+      user_email: user_email || null
+    };
+
+    await kv.set(reviewId, review);
+
+    // Update business average rating
+    try {
+      const allReviews = await kv.getByPrefix(`review:${business_id}:`);
+      const totalReviews = allReviews.length; // Includes the one we just added (kv.set is usually immediate in this context, or we just append)
+      
+      // Calculate new average
+      // Note: KV might be eventually consistent, so let's use the local data + stored data
+      // Filter out the one we just added to avoid double counting if it appears, or just recalculate
+      // Actually simpler: fetch all, if it includes ours great, if not add it to calculation
+      
+      // Let's just trust the prefix scan returns it, or append it manually for calculation
+      const reviewList = [...allReviews];
+      if (!reviewList.find(r => r.id === reviewId)) {
+        reviewList.push(review);
+      }
+      
+      const sum = reviewList.reduce((acc: number, r: any) => acc + (Number(r.rating) || 0), 0);
+      const avg = sum / reviewList.length;
+
+      const business = await kv.get(`business:${business_id}`);
+      if (business) {
+        business.average_rating = Number(avg.toFixed(1));
+        business.total_reviews = reviewList.length;
+        await kv.set(`business:${business_id}`, business);
+      }
+    } catch (err) {
+      console.error('Error updating business stats:', err);
+      // Don't fail the request if stats update fails
+    }
+
+    return c.json({ success: true, review });
+  } catch (error) {
+    console.error('Error submitting review:', error);
+    return c.json({ error: 'Failed to submit review' }, 500);
+  }
+});
+
 // Get reviews for business
 app.get("/make-server-175b2872/kv/reviews/:businessId", async (c) => {
   try {
@@ -1592,15 +1908,47 @@ app.get("/make-server-175b2872/ads/all", async (c) => {
   }
 });
 
-// Get approved ads (Public)
+// Get approved ads (Public) - Includes Active Campaigns
 app.get("/make-server-175b2872/ads/approved", async (c) => {
   try {
     const ads = await kv.getByPrefix('ad:');
     const approvedAds = ads.filter((ad: any) => ad.status === 'approved');
     
+    // Fetch active campaigns
+    const campaigns = await kv.getByPrefix('campaign:');
+    const activeCampaigns = campaigns.filter((camp: any) => {
+      // Include Active or Scheduled (if started)
+      // For simplicity, just check if not "Ended"
+      return camp.status !== 'Ended';
+    });
+
+    // Map campaigns to ad format
+    const mappedCampaigns = activeCampaigns.map((camp: any) => {
+      const isVideo = camp.media_url && (camp.media_url.match(/\.(mp4|mov|webm)/i));
+      
+      return {
+        id: `camp-${camp.id}`,
+        business_id: 'system',
+        business_name: 'MYVIBES Official',
+        platform: 'instagram', // Default to instagram style for now
+        video_url: camp.media_url || '',
+        title: camp.name,
+        description: camp.message || '',
+        thumbnail_url: !isVideo ? camp.media_url : '',
+        status: 'approved',
+        approved_at: camp.created_at,
+        views: camp.reach || 0,
+        clicks: camp.clicks || 0,
+        is_campaign: true
+      };
+    });
+
+    // Combine
+    const allItems = [...approvedAds, ...mappedCampaigns];
+
     // Sign URLs
     const bucketName = 'make-175b2872-ads';
-    const signedAds = await Promise.all(approvedAds.map(async (ad: any) => {
+    const signedAds = await Promise.all(allItems.map(async (ad: any) => {
       let video_url = ad.video_url;
       let thumbnail_url = ad.thumbnail_url;
       
@@ -1619,9 +1967,44 @@ app.get("/make-server-175b2872/ads/approved", async (c) => {
       return { ...ad, video_url, thumbnail_url };
     }));
 
-    return c.json({ ads: signedAds.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()) });
+    return c.json({ ads: signedAds.sort((a: any, b: any) => new Date(b.created_at || b.approved_at).getTime() - new Date(a.created_at || a.approved_at).getTime()) });
   } catch (error) {
     console.error('Error fetching approved ads:', error);
+    return c.json({ error: 'Failed to fetch ads' }, 500);
+  }
+});
+
+// Get ads for a specific business
+app.get("/make-server-175b2872/ads/business/:id", async (c) => {
+  try {
+    const businessId = c.req.param('id');
+    const ads = await kv.getByPrefix('ad:');
+    const businessAds = ads.filter((ad: any) => ad.business_id === businessId);
+
+    // Sign URLs
+    const bucketName = 'make-175b2872-ads';
+    const signedAds = await Promise.all(businessAds.map(async (ad: any) => {
+      let video_url = ad.video_url;
+      let thumbnail_url = ad.thumbnail_url;
+
+      if (video_url && video_url.startsWith(`storage:${bucketName}:`)) {
+         const path = video_url.split(`storage:${bucketName}:`)[1];
+         const { data } = await supabase.storage.from(bucketName).createSignedUrl(path, 3600);
+         if (data?.signedUrl) video_url = data.signedUrl;
+      }
+
+      if (thumbnail_url && thumbnail_url.startsWith(`storage:${bucketName}:`)) {
+         const path = thumbnail_url.split(`storage:${bucketName}:`)[1];
+         const { data } = await supabase.storage.from(bucketName).createSignedUrl(path, 3600);
+         if (data?.signedUrl) thumbnail_url = data.signedUrl;
+      }
+
+      return { ...ad, video_url, thumbnail_url };
+    }));
+
+    return c.json({ ads: signedAds.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()) });
+  } catch (error) {
+    console.error('Error fetching business ads:', error);
     return c.json({ error: 'Failed to fetch ads' }, 500);
   }
 });
@@ -2146,7 +2529,7 @@ app.post("/make-server-175b2872/auth/customer/continue-with-email", async (c) =>
 // Register Customer
 app.post("/make-server-175b2872/auth/customer/register", async (c) => {
   try {
-    const { username, name } = await c.req.json();
+    const { username, name, referral_code } = await c.req.json();
     
     if (!username || !name) {
       return c.json({ error: 'Username and Name are required' }, 400);
@@ -2159,6 +2542,18 @@ app.post("/make-server-175b2872/auth/customer/register", async (c) => {
     const existingId = await kv.get(lookupKey);
     if (existingId) {
       return c.json({ error: 'Username is already taken' }, 400);
+    }
+    
+    // Handle Referral / Influencer Code
+    let referredBy = null;
+    let validAffiliate = null;
+    if (referral_code) {
+       const affiliates = await kv.getByPrefix('affiliate:');
+       validAffiliate = affiliates.find((a: any) => a.code === referral_code.toUpperCase().trim());
+       if (validAffiliate) {
+           referredBy = validAffiliate.id;
+           console.log(`📢 Customer ${name} referred by Influencer: ${validAffiliate.name}`);
+       }
     }
 
     const customerId = `customer:${Date.now()}`;
@@ -2177,12 +2572,39 @@ app.post("/make-server-175b2872/auth/customer/register", async (c) => {
       status: 'active',
       total_orders: 0,
       total_spend: 0,
-      loyalty_points: 0
+      loyalty_points: 0,
+      referred_by: referredBy,
+      referral_code: referral_code || null
     };
 
     // Store customer and lookup
     await kv.set(customerId, customer);
     await kv.set(lookupKey, { id: customerId });
+    
+    // Increment Influencer Stats
+    if (validAffiliate) {
+        const DOWNLOAD_BOUNTY = 20; // R20 per download
+        validAffiliate.app_downloads = (validAffiliate.app_downloads || 0) + 1;
+        validAffiliate.total_referrals = (validAffiliate.total_referrals || 0) + 1;
+        validAffiliate.pending_balance = (validAffiliate.pending_balance || 0) + DOWNLOAD_BOUNTY;
+        validAffiliate.total_earnings = (validAffiliate.total_earnings || 0) + DOWNLOAD_BOUNTY;
+        
+        await kv.set(validAffiliate.id, validAffiliate);
+        console.log(`📈 Influencer ${validAffiliate.name} download count incremented. +R${DOWNLOAD_BOUNTY}`);
+        
+        // Record Commission Transaction
+        const commissionId = `comm:${Date.now()}`;
+        const commission = {
+            id: commissionId,
+            affiliate_id: validAffiliate.id,
+            business_name: 'App Download',
+            amount: DOWNLOAD_BOUNTY,
+            status: 'pending',
+            date: now,
+            type: 'Download Bounty'
+        };
+        await kv.set(commissionId, commission);
+    }
 
     // Generate Session
     const token = `sess_${Date.now()}_${Math.random().toString(36).substring(2)}`;
@@ -2314,7 +2736,7 @@ app.put("/make-server-175b2872/auth/customer/update", async (c) => {
 app.post("/make-server-175b2872/auth/customer/profile", async (c) => {
   try {
     const body = await c.req.json();
-    const { name, email, mobile, city, notificationPreference } = body;
+    const { name, email, mobile, city, notificationPreference, birthday, preferences } = body;
 
     if (!email || !name) {
       return c.json({ error: 'Email and Name are required' }, 400);
@@ -2334,6 +2756,8 @@ app.post("/make-server-175b2872/auth/customer/profile", async (c) => {
         mobile,
         city: city || customer.city || 'Unknown',
         notificationPreference: notificationPreference || customer.notificationPreference || 'email',
+        birthday: birthday || customer.birthday,
+        preferences: preferences || customer.preferences,
         last_active: now,
         updated_at: now
       };
@@ -2349,6 +2773,8 @@ app.post("/make-server-175b2872/auth/customer/profile", async (c) => {
         mobile,
         city: city || 'Johannesburg', // Default if not provided
         notificationPreference: notificationPreference || 'email',
+        birthday: birthday || null,
+        preferences: preferences || [],
         joined_at: now,
         last_active: now,
         status: 'active',
@@ -2483,6 +2909,121 @@ app.put("/make-server-175b2872/admin/customers/:id/status", async (c) => {
   } catch (error) {
     console.error('Error updating customer status:', error);
     return c.json({ error: 'Failed to update status' }, 500);
+  }
+});
+
+// ============================================
+// ANALYTICS ROUTES
+// ============================================
+
+// Track ad/carousel click
+app.post("/make-server-175b2872/analytics/track-click", async (c) => {
+  try {
+    const body = await c.req.json();
+    // Support both camelCase and snake_case for robustness
+    const businessId = body.businessId || body.business_id;
+    const clickType = body.clickType || body.click_type;
+    const userEmail = body.userEmail || body.user_email || 'anonymous';
+    const sourcePage = body.sourcePage || body.source_page || 'unknown';
+
+    if (!businessId || !clickType) {
+      console.error('❌ Track click missing fields. Received:', body);
+      return c.json({ error: 'Missing required fields' }, 400);
+    }
+
+    // 1. Store individual click event
+    const eventId = `click:${Date.now()}:${Math.random().toString(36).substr(2, 5)}`;
+    const event = {
+      id: eventId,
+      businessId,
+      type: clickType, // 'carousel', 'ad', 'profile'
+      userEmail,
+      sourcePage,
+      timestamp: new Date().toISOString()
+    };
+    await kv.set(eventId, event);
+
+    // 2. Update Business Stats
+    const business = await kv.get(businessId);
+    if (business) {
+      business.total_views = (business.total_views || 0) + 1;
+      
+      // Weekly stats tracking (simplified)
+      const today = new Date().toISOString().split('T')[0];
+      if (!business.daily_stats) business.daily_stats = {};
+      business.daily_stats[today] = (business.daily_stats[today] || 0) + 1;
+
+      await kv.set(businessId, business);
+    }
+
+    return c.json({ success: true, eventId });
+  } catch (error) {
+    console.error('Analytics error:', error);
+    return c.json({ error: 'Failed to track click' }, 500);
+  }
+});
+
+// Track reservation request
+app.post("/make-server-175b2872/analytics/track-reservation", async (c) => {
+  try {
+    const body = await c.req.json();
+    
+    // Extract fields matching api.ts structure
+    const businessId = body.business_id || body.businessId;
+    const customerName = body.customer_name || body.customerName;
+    const customerEmail = body.customer_email || body.customerEmail;
+    const partySize = body.party_size || body.partySize || body.pax;
+    const reservationDate = body.reservation_date || body.reservationDate || body.date;
+    const reservationTime = body.reservation_time || body.reservationTime;
+    
+    if (!businessId || !customerName) {
+         return c.json({ error: 'Missing required fields' }, 400);
+    }
+
+    const eventId = `rsv:${Date.now()}`;
+    const event = {
+      id: eventId,
+      businessId,
+      customerName,
+      customerEmail,
+      partySize,
+      reservationDate,
+      reservationTime,
+      timestamp: new Date().toISOString(),
+      status: 'pending' // pending, confirmed, cancelled
+    };
+    await kv.set(eventId, event);
+    
+    // Also add to business specific reservation list if needed in future
+    // For now, just tracking the event
+
+    return c.json({ success: true, reservationId: eventId });
+  } catch (error) {
+    console.error('Reservation track error:', error);
+    return c.json({ error: 'Failed to track reservation' }, 500);
+  }
+});
+
+// Get Business Analytics
+app.get("/make-server-175b2872/analytics/business/:id", async (c) => {
+  try {
+    const id = c.req.param('id');
+    const clicks = await kv.getByPrefix('click:');
+    const businessClicks = clicks.filter((clk: any) => clk.businessId === id);
+    
+    // Aggregate by type
+    const byType = businessClicks.reduce((acc: any, curr: any) => {
+      acc[curr.type] = (acc[curr.type] || 0) + 1;
+      return acc;
+    }, {});
+
+    return c.json({ 
+      total_clicks: businessClicks.length,
+      breakdown: byType,
+      recent_events: businessClicks.slice(-20) 
+    });
+  } catch (error) {
+    return c.json({ error: 'Failed to fetch analytics' }, 500);
   }
 });
 
@@ -2649,6 +3190,40 @@ app.get("/make-server-175b2872/admin/campaigns", async (c) => {
   } catch (error) {
     console.error('Error fetching campaigns:', error);
     return c.json({ error: 'Failed to fetch campaigns' }, 500);
+  }
+});
+
+// Create Campaign (Admin)
+app.post("/make-server-175b2872/admin/campaigns", async (c) => {
+  try {
+    const body = await c.req.json();
+    const { name, type, message, start_date, budget, media_url } = body;
+
+    if (!name || !type) {
+      return c.json({ error: 'Name and Type are required' }, 400);
+    }
+
+    const campaignId = Date.now();
+    const campaign = {
+      id: campaignId,
+      name,
+      type,
+      message,
+      start_date,
+      budget: Number(budget) || 0,
+      media_url,
+      status: 'Scheduled',
+      reach: 0,
+      clicks: 0,
+      spend: 0,
+      created_at: new Date().toISOString()
+    };
+
+    await kv.set(`campaign:${campaignId}`, campaign);
+    return c.json({ success: true, campaign });
+  } catch (error) {
+    console.error('Error creating campaign:', error);
+    return c.json({ error: 'Failed to create campaign' }, 500);
   }
 });
 

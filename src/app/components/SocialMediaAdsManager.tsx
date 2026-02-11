@@ -94,6 +94,12 @@ export function SocialMediaAdsManager({ businessId, businessName }: SocialMediaA
         return;
     }
 
+    // Size limit check (10MB)
+    if (file.size > 10 * 1024 * 1024) {
+        toast.error('File size must be less than 10MB');
+        return;
+    }
+
     try {
         setUploadingVideo(true);
         const formData = new FormData();
@@ -140,7 +146,7 @@ export function SocialMediaAdsManager({ businessId, businessName }: SocialMediaA
       setSubmitting(true);
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-175b2872/ads/submit`,
+        `https://${projectId}.supabase.co/functions/v1/make-server-175b2872/ads`,
         {
           method: 'POST',
           headers: {
