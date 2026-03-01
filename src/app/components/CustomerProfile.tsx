@@ -20,17 +20,20 @@ interface CustomerProfileProps {
   onBack: () => void;
   onUpdate: (data: Partial<UserProfile>) => Promise<void>;
   onLogout: () => void;
+  onOpenAffiliate: () => void;
 }
 
-export function CustomerProfile({ user, onBack, onUpdate, onLogout }: CustomerProfileProps) {
+export function CustomerProfile({ user, onBack, onUpdate, onLogout, onOpenAffiliate }: CustomerProfileProps) {
   const [formData, setFormData] = useState<Partial<UserProfile>>(user);
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
-  // Sync formData when user prop changes
+  // Sync formData when user prop changes, but ONLY if not editing to avoid overwriting user input
   useEffect(() => {
-    setFormData(user);
+    if (!isEditing) {
+      setFormData(user);
+    }
   }, [user]);
 
   const handleChange = (field: keyof UserProfile, value: any) => {
@@ -281,6 +284,24 @@ export function CustomerProfile({ user, onBack, onUpdate, onLogout }: CustomerPr
             <li>• Add your birthday for special treats</li>
             <li>• Add mobile number for reservations</li>
           </ul>
+        </div>
+
+        {/* Affiliate Portal Button */}
+        <div className="mt-6">
+          <Button 
+            onClick={onOpenAffiliate}
+            className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-lg hover:from-purple-700 hover:to-indigo-700 py-6 h-auto"
+          >
+            <div className="flex items-center gap-3">
+              <div className="bg-white/20 p-2 rounded-full">
+                <Hash className="w-5 h-5 text-white" />
+              </div>
+              <div className="text-left">
+                <div className="font-bold text-lg">Partner / Influencer Portal</div>
+                <div className="text-xs text-purple-100 opacity-90">Earn cash by referring friends & businesses</div>
+              </div>
+            </div>
+          </Button>
         </div>
       </div>
     </div>

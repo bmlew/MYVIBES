@@ -50,12 +50,15 @@ async function apiCall(endpoint: string, options: RequestInit = {}) {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 30000); // Increased to 30 second timeout
       
+      const sessionToken = localStorage.getItem('vibespot_session_token');
+      
       const response = await fetch(`${BASE_URL}${endpoint}`, {
         ...options,
         signal: controller.signal,
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${publicAnonKey}`,
+          ...(sessionToken ? { 'X-Session-Token': sessionToken } : {}),
           ...options.headers,
         },
       });
@@ -108,10 +111,20 @@ export async function seedDatabase() {
 }
 
 // Get all businesses with offline support
-export async function getBusinesses(lat?: number, lng?: number, forceRefresh: boolean = false) {
+export async function getBusinesses(
+  lat?: number, 
+  lng?: number, 
+  forceRefresh: boolean = false,
+  radius?: number,
+  limit: number = 50,
+  page: number = 1
+) {
   const params = new URLSearchParams();
   if (lat) params.append('lat', lat.toString());
   if (lng) params.append('lng', lng.toString());
+  if (radius) params.append('radius', radius.toString());
+  if (limit) params.append('limit', limit.toString());
+  if (page) params.append('page', page.toString());
   if (forceRefresh) params.append('_t', Date.now().toString());
   
   const queryString = params.toString();
@@ -671,6 +684,19 @@ export async function cancelReservation(reservationId: string, userEmail: string
 // CUSTOMER AUTH API
 // ============================================
 
+export async function continueWithEmail(name: string, email: string) {
+  try {
+    const response = await apiCall('/auth/customer/continue-with-email', {
+      method: 'POST',
+      body: JSON.stringify({ name, email })
+    });
+    return response;
+  } catch (error) {
+    console.error('Continue with email failed:', error);
+    throw error;
+  }
+}
+
 export async function checkUsername(username: string) {
   try {
     const data = await apiCall('/auth/customer/check-username', {
@@ -789,5 +815,45 @@ export async function fixAllBusinesses() {
   } catch (error) {
     console.error('Failed to fix all businesses:', error);
     return null;
+  }
+}
+
+// ============================================
+// CHECK-IN API
+// ============================================
+
+export async function checkIn(businessId: string, location?: { latitude: number; longitude: number }) {
+  try {
+    const response = await apiCall('/check-in', {
+      method: 'POST',
+      body: JSON.stringify({ 
+        businessId, 
+        location 
+      })
+    });
+    return response;
+  } catch (error) {
+    console.error('Check-in failed:', error);
+    throw error;
+  }
+}
+
+export async function getLeaderboard(businessId: string) {
+  try {
+    const data = await apiCall(`/check-in/leaderboard/${businessId}`);
+    return data.leaderboard || [];
+  } catch (error) {
+    console.error('Failed to fetch leaderboard:', error);
+    return [];
+  }
+}
+
+export async function getRecentCheckIns(businessId: string) {
+  try {
+    const data = await apiCall(`/check-in/recent/${businessId}`);
+    return data.checkins || [];
+  } catch (error) {
+    console.error('Failed to fetch recent check-ins:', error);
+    return [];
   }
 }

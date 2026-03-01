@@ -1,6 +1,8 @@
 import { RatingReview } from './RatingReview';
 import { PhoneModal } from './PhoneModal';
+import { Leaderboard } from './Leaderboard';
 import { useState, useEffect, useCallback } from 'react';
+import { toast } from 'sonner';
 import * as api from '@/utils/api';
 import { 
   ArrowLeft, 
@@ -13,7 +15,8 @@ import {
   Clock, 
   Navigation, 
   Phone,
-  Calendar
+  Calendar,
+  CheckCircle
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
@@ -96,6 +99,70 @@ export function VenueDetail({ venueId, onBack, onReserve, onGetDirections, dista
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showPhoneModal, setShowPhoneModal] = useState(false);
   const [eventInterests, setEventInterests] = useState<Record<string, 'interested' | 'going' | null>>({});
+
+  const handleCheckIn = async () => {
+    try {
+      const token = localStorage.getItem('vibespot_session_token');
+      const profileStr = localStorage.getItem('vibespot_customer_profile');
+      
+      // Guest Check: No token or profile ID starts with guest-
+      if (!token) {
+        toast.error("Please log in to check in", {
+          description: "Guest users cannot check in. Please sign in or create an account."
+        });
+        return;
+      }
+      
+      let profile;
+      try {
+        profile = profileStr ? JSON.parse(profileStr) : null;
+      } catch (e) {
+        profile = null;
+      }
+
+      if (profile && (profile.id?.startsWith('guest-'))) {
+        toast.error("Guest Check-in Restricted", {
+          description: "Please complete your profile setup to enable check-ins."
+        });
+        return;
+      }
+
+      if (!profile || !profile.name || !profile.email || !profile.mobile) {
+        toast.error("Profile Incomplete", {
+          description: "Please update your profile with Name, Email, and Mobile number to check in."
+        });
+        return;
+      }
+
+      // Call API
+      const location = await new Promise<{latitude: number; longitude: number} | undefined>((resolve) => {
+        if (navigator.geolocation) {
+          navigator.geolocation.getCurrentPosition(
+            (pos) => resolve({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }),
+            () => resolve(undefined),
+            { timeout: 5000 }
+          );
+        } else {
+          resolve(undefined);
+        }
+      });
+
+      await api.checkIn(venueId, location);
+      toast.success("Checked In!", {
+        description: `Welcome to ${business?.name || 'the venue'}!`
+      });
+
+    } catch (error: any) {
+      console.error("Check-in failed:", error);
+      // Extract error message from API response if possible
+      let msg = "Failed to check in";
+      if (error.message) msg = error.message;
+      if (msg.includes("Guest")) msg = "Guests cannot check in. Please complete your profile.";
+      if (msg.includes("Incomplete")) msg = "Please complete your profile to check in.";
+      
+      toast.error(msg);
+    }
+  };
 
   // Memoize fetchVenueData to prevent recreation on every render
   const fetchVenueData = useCallback(async (forceRefresh = false) => {
@@ -394,7 +461,14 @@ export function VenueDetail({ venueId, onBack, onReserve, onGetDirections, dista
       </div>
 
       {/* Action Buttons */}
-      <div className="px-6 py-3 border-b border-gray-100 flex gap-2">
+      <div className="px-6 py-3 border-b border-gray-100 flex flex-wrap gap-2">
+        <Button 
+          onClick={handleCheckIn}
+          className="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white"
+        >
+          <CheckCircle className="w-4 h-4 mr-2" />
+          Check In
+        </Button>
         <Button 
           onClick={() => onReserve()}
           className="flex-1 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white"
@@ -434,6 +508,9 @@ export function VenueDetail({ venueId, onBack, onReserve, onGetDirections, dista
           </TabsTrigger>
           <TabsTrigger value="reviews" className="data-[state=active]:border-purple-600 data-[state=active]:text-purple-600">
             Reviews
+          </TabsTrigger>
+          <TabsTrigger value="leaderboard" className="data-[state=active]:border-purple-600 data-[state=active]:text-purple-600">
+            Leaderboard
           </TabsTrigger>
           <TabsTrigger value="about" className="data-[state=active]:border-purple-600 data-[state=active]:text-purple-600">
             About
@@ -595,6 +672,10 @@ export function VenueDetail({ venueId, onBack, onReserve, onGetDirections, dista
               })}
             </div>
           )}
+        </TabsContent>
+
+        <TabsContent value="leaderboard" className="p-6 mt-0">
+          <Leaderboard businessId={venueId} />
         </TabsContent>
 
         <TabsContent value="reviews" className="p-6 mt-0 h-full overflow-y-auto">

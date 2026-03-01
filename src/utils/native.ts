@@ -225,7 +225,12 @@ export const shareContent = async (options: {
       }
     }
   } catch (error) {
-    console.error('Error sharing:', error);
+    // Permission errors are common in non-secure contexts or if user cancels
+    if (error instanceof Error && error.name === 'NotAllowedError') {
+      console.warn('Share permission denied:', error.message);
+    } else {
+      console.error('Error sharing:', error);
+    }
   }
 };
 

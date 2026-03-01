@@ -38,6 +38,7 @@ import {
   Database
 } from 'lucide-react';
 import { PerformanceOverview } from '@/app/components/PerformanceOverview';
+import { RecentCheckIns } from '@/app/components/RecentCheckIns';
 import { DataSeeder } from '@/app/components/debug/DataSeeder';
 import { AIInsights } from '@/app/components/AIInsights';
 import { AnalyticsCharts } from '@/app/components/AnalyticsCharts';
@@ -3935,6 +3936,11 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
             <div className="bg-white rounded-lg p-6 shadow-sm">
               <h3 className="font-bold mb-4">Performance Overview</h3>
               <PerformanceOverview />
+            </div>
+
+            <div className="bg-white rounded-lg p-6 shadow-sm mt-6">
+              <h3 className="font-bold mb-4">Recent Check-Ins</h3>
+              <RecentCheckIns businessId={businessId || ''} />
             </div>
 
             <div className="bg-white rounded-lg p-6 shadow-sm">

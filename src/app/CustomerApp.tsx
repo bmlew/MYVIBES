@@ -39,10 +39,12 @@ import { PremiumCarousel } from './components/PremiumCarousel';
 import { NotificationCenter } from './components/NotificationCenter';
 import { MyReservations } from './components/MyReservations';
 
+import { AffiliatePortal } from './components/AffiliatePortal';
+
 // Constants
 const PLACEHOLDER_IMAGE = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="150" height="150"%3E%3Crect width="150" height="150" fill="%23e5e7eb"/%3E%3C/svg%3E';
 
-type View = 'home' | 'search' | 'events' | 'favorites' | 'profile' | 'venue-detail' | 'notifications' | 'reservations';
+type View = 'home' | 'search' | 'events' | 'favorites' | 'profile' | 'venue-detail' | 'notifications' | 'reservations' | 'affiliate';
 
 interface UserLocation {
   latitude: number;
@@ -113,6 +115,18 @@ export function CustomerApp() {
   const [showDirectionsModal, setShowDirectionsModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [userLocation, setUserLocation] = useState<UserLocation | null>(null);
+
+  // Check for referral code in URL
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const refCode = params.get('ref');
+    if (refCode) {
+      console.log('🔗 Referral code detected:', refCode);
+      localStorage.setItem('myvibes_referral_code', refCode);
+      // Optional: Track app open with referral
+      // api.trackReferralOpen(refCode);
+    }
+  }, []);
   const [locationError, setLocationError] = useState<string | null>(null);
   const [locationName, setLocationName] = useState<string>('Detecting location...');
   const [selectedVenueId, setSelectedVenueId] = useState<string>('palms');
@@ -783,7 +797,8 @@ export function CustomerApp() {
         setHasInitialized(true);
         
         // Fetch businesses (non-blocking) - Force refresh to ensure suspended businesses are removed
-        const businessesData = await api.getBusinesses(userLocation?.latitude, userLocation?.longitude, true);
+        // Fetch with 50km radius and limit 100 to improve performance (pagination support)
+        const businessesData = await api.getBusinesses(userLocation?.latitude, userLocation?.longitude, true, 50, 100);
         
         // Ensure we have an array
         const businessesArray = Array.isArray(businessesData) ? businessesData : [];
@@ -880,7 +895,7 @@ export function CustomerApp() {
       setLoading(true);
       try {
         const [businessesData, specialsData, eventsData] = await Promise.allSettled([
-          api.getBusinesses(userLocation.latitude, userLocation.longitude, true),
+          api.getBusinesses(userLocation.latitude, userLocation.longitude, true, 50, 100),
           api.getSpecials(),
           api.getEvents(),
         ]).then(results => [
@@ -1146,29 +1161,99 @@ export function CustomerApp() {
   }, [userProfile?.email]);
 
   const handleUpdateProfile = async (updatedData: Partial<UserProfile>) => {
+    // 1. Optimistic Update (Local) - Ensure UI updates immediately
+    let currentProfile = userProfile;
+    if (currentProfile) {
+      currentProfile = { ...currentProfile, ...updatedData };
+      setUserProfile(currentProfile);
+      localStorage.setItem('vibespot_customer_profile', JSON.stringify(currentProfile));
+    }
+
     try {
-      const token = localStorage.getItem('vibespot_session_token');
-      if (!token) return;
+      let token = localStorage.getItem('vibespot_session_token');
+      
+      // 2. Auto-recover session if missing (Silent Auth)
+      if (!token && currentProfile?.username) {
+         try {
+             console.log('🔄 Attempting session recovery...');
+             const authUrl = `https://${projectId}.supabase.co/functions/v1/make-server-175b2872/auth/customer`;
+             
+             const headers = {
+                 'Content-Type': 'application/json',
+                 'Authorization': `Bearer ${publicAnonKey}`
+             };
+
+             // Try Login first
+             let authResp = await fetch(`${authUrl}/login`, {
+                 method: 'POST',
+                 headers,
+                 body: JSON.stringify({ username: currentProfile.username })
+             });
+
+             // If not found, try Register (auto-create shadow account)
+             if (authResp.status === 404 && currentProfile.name) {
+                 console.log('👤 User not found, registering shadow account...');
+                 authResp = await fetch(`${authUrl}/register`, {
+                     method: 'POST',
+                     headers,
+                     body: JSON.stringify({ 
+                         username: currentProfile.username,
+                         name: currentProfile.name
+                     })
+                 });
+             }
+
+             if (authResp.ok) {
+                 const authData = await authResp.json();
+                 if (authData.token) {
+                     token = authData.token;
+                     localStorage.setItem('vibespot_session_token', token);
+                     console.log('✅ Session established');
+                 }
+             }
+         } catch (e) {
+             console.warn('Session recovery failed:', e);
+         }
+      }
+
+      // If still no token, we really can't sync.
+      if (!token) {
+        console.warn('⚠️ Offline mode: Profile saved locally.');
+        return;
+      }
 
       const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-175b2872/auth/customer/update`, {
         method: 'PUT',
         headers: {
-          'Authorization': `Bearer ${token}`,
+          'Authorization': `Bearer ${publicAnonKey}`,
+          'X-Session-Token': token,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify(updatedData)
       });
 
-      if (response.ok) {
-        const { customer } = await response.json();
-        setUserProfile(customer);
-        // Sync legacy (email based) for admin
-        if (customer.email) {
-          api.saveCustomerProfile(customer).catch(console.error);
+      if (!response.ok) {
+        // If 401, maybe token expired? 
+        if (response.status === 401) {
+             console.error('Session expired during update');
+             // Don't log out immediately to preserve user data input
         }
+        throw new Error(`Update failed: ${response.statusText}`);
+      }
+
+      const { customer } = await response.json();
+      
+      // Confirm server update
+      setUserProfile(customer);
+      localStorage.setItem('vibespot_customer_profile', JSON.stringify(customer));
+      
+      // Sync legacy (email based) for admin
+      if (customer.email) {
+        api.saveCustomerProfile(customer).catch(console.error);
       }
     } catch (err) {
-      console.error('Update failed:', err);
+      console.error('Remote update failed:', err);
+      // Suppress error to user since local update succeeded
     }
   };
 
@@ -1929,6 +2014,7 @@ export function CustomerApp() {
                       onBack={() => setCurrentView('home')}
                       onUpdate={handleUpdateProfile}
                       onLogout={handleLogout}
+                      onOpenAffiliate={() => setCurrentView('affiliate')}
                     />
                   ) : (
                         <div className="p-4">
@@ -1982,6 +2068,20 @@ export function CustomerApp() {
                           </div>
                         </div>
                       )}
+                </div>
+              )}
+
+              {/* Affiliate View */}
+              {currentView === 'affiliate' && (
+                <div className="min-h-screen bg-white">
+                  <AffiliatePortal 
+                    onBack={() => setCurrentView('profile')} 
+                    user={userProfile ? {
+                      name: userProfile.name || userProfile.username || 'Valued User',
+                      email: userProfile.email,
+                      phone: userProfile.mobile
+                    } : undefined}
+                  />
                 </div>
               )}
 

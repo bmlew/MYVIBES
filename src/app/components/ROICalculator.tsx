@@ -1,156 +1,233 @@
 import React, { useState } from 'react';
-import { Calculator, DollarSign, TrendingUp, Users, ArrowRight, X } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { Slider } from '@/app/components/ui/slider';
+import { Button } from '@/app/components/ui/button';
+import { Card } from '@/app/components/ui/card';
+import { Building, Users, Wallet, ArrowRight } from 'lucide-react';
 
-export function ROICalculator({ onBack }: { onBack?: () => void }) {
-  const [seats, setSeats] = useState(40);
-  const [avgSpend, setAvgSpend] = useState(250);
-  const [occupancy, setOccupancy] = useState(40); // %
-  const [turnover, setTurnover] = useState(1.5); // turns per table
+export function ROICalculator({ onStart }: { onStart: () => void }) {
+  const [activeTab, setActiveTab] = useState<'affiliate' | 'influencer'>('affiliate');
+
+  // Affiliate State
+  const [businessesReferred, setBusinessesReferred] = useState(5);
+  const [avgPlan, setAvgPlan] = useState<'standard' | 'premium'>('standard');
+
+  // Influencer State
+  const [monthlyDownloads, setMonthlyDownloads] = useState(50);
+  const [monthlyBookings, setMonthlyBookings] = useState(10);
+
+  // Constants
+  const COMMISSION_RATE = 0.10;
+  const PLAN_PRICES = { standard: 499, premium: 999 };
+  const CPA_DOWNLOAD = 10; // R10 per verified download
+  const CPA_BOOKING = 50;  // R50 per booking
 
   // Calculations
-  const dailyRevenue = seats * (occupancy / 100) * turnover * avgSpend;
-  const monthlyRevenue = dailyRevenue * 26; // 26 days open
-  
-  // MYVIBES Impact (Conservative estimates)
-  // +15% occupancy (better visibility)
-  // +10% turnover (pre-ordering/reservations)
-  const newOccupancy = Math.min(100, occupancy * 1.15); 
-  const newTurnover = turnover * 1.10;
-  
-  const newDailyRevenue = seats * (newOccupancy / 100) * newTurnover * avgSpend;
-  const newMonthlyRevenue = newDailyRevenue * 26;
-  
-  const increase = newMonthlyRevenue - monthlyRevenue;
+  const affiliateMonthlyEarnings = businessesReferred * PLAN_PRICES[avgPlan] * COMMISSION_RATE;
+  const affiliateYearlyEarnings = affiliateMonthlyEarnings * 12;
+
+  const influencerMonthlyEarnings = (monthlyDownloads * CPA_DOWNLOAD) + (monthlyBookings * CPA_BOOKING);
+  const influencerYearlyEarnings = influencerMonthlyEarnings * 12;
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4 md:p-8">
-      <div className="max-w-4xl mx-auto">
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-2">
-              <Calculator className="w-8 h-8 text-cyan-600" />
-              ROI Calculator
-            </h1>
-            <p className="text-gray-500">See how much more you could earn with MYVIBES</p>
+    <section className="py-20 bg-white" id="calculator">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="text-center max-w-3xl mx-auto mb-16">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-green-50 text-green-700 text-xs font-bold uppercase tracking-wider mb-4 border border-green-100">
+            Partner Program
           </div>
-          {onBack && (
-            <button 
-              onClick={onBack}
-              className="p-2 hover:bg-gray-200 rounded-full transition-colors"
-            >
-              <X className="w-6 h-6 text-gray-500" />
-            </button>
-          )}
+          <h2 className="text-3xl md:text-5xl font-bold mb-4 text-slate-900">
+            Turn your network into net worth.
+          </h2>
+          <p className="text-lg text-slate-600">
+            Whether you refer businesses or drive users, MYVIBES rewards you. Calculate your potential earnings below.
+          </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          {/* Inputs */}
-          <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 space-y-6">
-            <h2 className="text-xl font-semibold mb-4">Your Current Numbers</h2>
-            
-            <div>
-              <label className="flex justify-between text-sm font-medium text-gray-700 mb-2">
-                <span>Total Seats</span>
-                <span className="text-cyan-600 font-bold">{seats}</span>
-              </label>
-              <input 
-                type="range" min="10" max="500" step="5"
-                value={seats} onChange={(e) => setSeats(Number(e.target.value))}
-                className="w-full accent-cyan-600 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-              />
+        <div className="grid lg:grid-cols-2 gap-12 items-start">
+          {/* Controls */}
+          <div className="bg-slate-50 rounded-3xl p-8 border border-slate-100">
+            {/* Tabs */}
+            <div className="flex p-1 bg-white rounded-xl mb-8 shadow-sm border border-slate-100">
+              <button
+                onClick={() => setActiveTab('affiliate')}
+                className={`flex-1 py-3 px-4 rounded-lg text-sm font-bold transition-all flex items-center justify-center gap-2 ${
+                  activeTab === 'affiliate'
+                    ? 'bg-slate-900 text-white shadow-md'
+                    : 'text-slate-500 hover:text-slate-900'
+                }`}
+              >
+                <Building className="w-4 h-4" /> B2B Affiliate
+              </button>
+              <button
+                onClick={() => setActiveTab('influencer')}
+                className={`flex-1 py-3 px-4 rounded-lg text-sm font-bold transition-all flex items-center justify-center gap-2 ${
+                  activeTab === 'influencer'
+                    ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-md'
+                    : 'text-slate-500 hover:text-slate-900'
+                }`}
+              >
+                <Users className="w-4 h-4" /> Influencer
+              </button>
             </div>
 
-            <div>
-              <label className="flex justify-between text-sm font-medium text-gray-700 mb-2">
-                <span>Average Spend (R)</span>
-                <span className="text-cyan-600 font-bold">R{avgSpend}</span>
-              </label>
-              <input 
-                type="range" min="50" max="2000" step="50"
-                value={avgSpend} onChange={(e) => setAvgSpend(Number(e.target.value))}
-                className="w-full accent-cyan-600 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-              />
-            </div>
+            {/* Affiliate Controls */}
+            {activeTab === 'affiliate' && (
+              <div className="space-y-8 animate-in fade-in slide-in-from-left-4 duration-300">
+                <div>
+                  <div className="flex justify-between mb-4">
+                    <label className="font-bold text-slate-700">Businesses Referred</label>
+                    <span className="text-cyan-600 font-bold bg-cyan-50 px-3 py-1 rounded-full">{businessesReferred}</span>
+                  </div>
+                  <Slider
+                    defaultValue={[5]}
+                    max={100}
+                    step={1}
+                    value={[businessesReferred]}
+                    onValueChange={(val) => setBusinessesReferred(val[0])}
+                    className="py-4"
+                  />
+                  <p className="text-xs text-slate-400 mt-2">Active venues paying monthly subscription</p>
+                </div>
 
-            <div>
-              <label className="flex justify-between text-sm font-medium text-gray-700 mb-2">
-                <span>Occupancy Rate (%)</span>
-                <span className="text-cyan-600 font-bold">{occupancy}%</span>
-              </label>
-              <input 
-                type="range" min="10" max="100" step="5"
-                value={occupancy} onChange={(e) => setOccupancy(Number(e.target.value))}
-                className="w-full accent-cyan-600 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-              />
-            </div>
-            
-            <div>
-              <label className="flex justify-between text-sm font-medium text-gray-700 mb-2">
-                <span>Table Turns (Daily)</span>
-                <span className="text-cyan-600 font-bold">{turnover}x</span>
-              </label>
-              <input 
-                type="range" min="0.5" max="5" step="0.5"
-                value={turnover} onChange={(e) => setTurnover(Number(e.target.value))}
-                className="w-full accent-cyan-600 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-              />
-            </div>
+                <div>
+                  <label className="font-bold text-slate-700 block mb-4">Average Plan Type</label>
+                  <div className="grid grid-cols-2 gap-4">
+                    <button
+                      onClick={() => setAvgPlan('standard')}
+                      className={`p-4 rounded-xl border-2 text-left transition-all ${
+                        avgPlan === 'standard'
+                          ? 'border-cyan-500 bg-cyan-50'
+                          : 'border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      <div className="font-bold text-slate-900">Standard</div>
+                      <div className="text-sm text-slate-500">R499/mo</div>
+                    </button>
+                    <button
+                      onClick={() => setAvgPlan('premium')}
+                      className={`p-4 rounded-xl border-2 text-left transition-all ${
+                        avgPlan === 'premium'
+                          ? 'border-cyan-500 bg-cyan-50'
+                          : 'border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      <div className="font-bold text-slate-900">Premium</div>
+                      <div className="text-sm text-slate-500">R999/mo</div>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="bg-blue-50 p-4 rounded-xl border border-blue-100">
+                  <div className="text-sm text-blue-800 font-medium flex items-start gap-2">
+                    <div className="bg-blue-200 p-1 rounded-full mt-0.5"><div className="w-1.5 h-1.5 bg-blue-600 rounded-full" /></div>
+                    You earn 10% recurring commission for the lifetime of every business you refer.
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Influencer Controls */}
+            {activeTab === 'influencer' && (
+              <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-300">
+                <div>
+                  <div className="flex justify-between mb-4">
+                    <label className="font-bold text-slate-700">Monthly App Downloads</label>
+                    <span className="text-purple-600 font-bold bg-purple-50 px-3 py-1 rounded-full">{monthlyDownloads}</span>
+                  </div>
+                  <Slider
+                    defaultValue={[50]}
+                    max={1000}
+                    step={10}
+                    value={[monthlyDownloads]}
+                    onValueChange={(val) => setMonthlyDownloads(val[0])}
+                    className="py-4"
+                  />
+                  <p className="text-xs text-slate-400 mt-2">New users who download via your link (Est. R{CPA_DOWNLOAD}/user)</p>
+                </div>
+
+                <div>
+                  <div className="flex justify-between mb-4">
+                    <label className="font-bold text-slate-700">Monthly Bookings</label>
+                    <span className="text-purple-600 font-bold bg-purple-50 px-3 py-1 rounded-full">{monthlyBookings}</span>
+                  </div>
+                  <Slider
+                    defaultValue={[10]}
+                    max={200}
+                    step={5}
+                    value={[monthlyBookings]}
+                    onValueChange={(val) => setMonthlyBookings(val[0])}
+                    className="py-4"
+                  />
+                  <p className="text-xs text-slate-400 mt-2">Table reservations driven by your content (Est. R{CPA_BOOKING}/booking)</p>
+                </div>
+
+                <div className="bg-purple-50 p-4 rounded-xl border border-purple-100">
+                  <div className="text-sm text-purple-800 font-medium flex items-start gap-2">
+                     <div className="bg-purple-200 p-1 rounded-full mt-0.5"><div className="w-1.5 h-1.5 bg-purple-600 rounded-full" /></div>
+                    Campaign rates may vary. Join the Partner Portal to see active campaigns.
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* Results */}
-          <div className="space-y-6">
-            <div className="bg-gradient-to-br from-slate-900 to-slate-800 text-white p-6 rounded-2xl shadow-xl">
-              <div className="flex items-center gap-2 text-cyan-400 mb-2 font-medium">
-                <TrendingUp className="w-5 h-5" /> Potential Monthly Increase
-              </div>
-              <div className="text-5xl font-bold mb-2">
-                +R{increase.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-              </div>
-              <p className="text-gray-400 text-sm">
-                Based on a conservative 15% increase in occupancy and optimized table turnover.
-              </p>
-            </div>
-
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-              <h3 className="text-lg font-semibold mb-4">Projected Annual Revenue</h3>
+          {/* Results Card */}
+          <div className="relative">
+            <div className={`absolute inset-0 bg-gradient-to-br rounded-3xl blur-2xl opacity-20 transform translate-y-4 ${
+              activeTab === 'affiliate' ? 'from-cyan-500 to-blue-600' : 'from-purple-500 to-pink-600'
+            }`} />
+            
+            <Card className="relative bg-white border-none shadow-2xl rounded-3xl overflow-hidden">
+              <div className={`h-2 w-full bg-gradient-to-r ${
+                activeTab === 'affiliate' ? 'from-cyan-500 to-blue-600' : 'from-purple-500 to-pink-600'
+              }`} />
               
-              <div className="space-y-4">
-                <div>
-                  <div className="flex justify-between text-sm mb-1">
-                    <span className="text-gray-500">Current</span>
-                    <span className="font-medium">R{(monthlyRevenue * 12).toLocaleString()}</span>
-                  </div>
-                  <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                    <div className="h-full bg-gray-400 rounded-full" style={{ width: '100%' }} />
-                  </div>
+              <div className="p-8 md:p-12 text-center">
+                <div className="mb-2 text-slate-500 font-semibold uppercase tracking-wider text-sm">
+                  Estimated Monthly Earnings
+                </div>
+                <div className="text-6xl md:text-7xl font-extrabold text-slate-900 mb-4 tracking-tight">
+                  R{(activeTab === 'affiliate' ? affiliateMonthlyEarnings : influencerMonthlyEarnings).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                 </div>
                 
-                <div>
-                  <div className="flex justify-between text-sm mb-1">
-                    <span className="text-cyan-600 font-bold">With MYVIBES</span>
-                    <span className="font-bold text-cyan-600">R{(newMonthlyRevenue * 12).toLocaleString()}</span>
+                <div className="inline-block bg-green-100 text-green-700 px-4 py-2 rounded-full font-bold mb-8">
+                  + R{(activeTab === 'affiliate' ? affiliateYearlyEarnings : influencerYearlyEarnings).toLocaleString(undefined, { maximumFractionDigits: 0 })} / year
+                </div>
+
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between py-3 border-b border-slate-100">
+                    <span className="text-slate-600">Payout Frequency</span>
+                    <span className="font-bold text-slate-900">Monthly</span>
                   </div>
-                  <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                    <motion.div 
-                      initial={{ width: '100%' }}
-                      animate={{ width: `${(newMonthlyRevenue / monthlyRevenue) * 100}%` }}
-                      className="h-full bg-cyan-500 rounded-full" 
-                    />
+                  <div className="flex items-center justify-between py-3 border-b border-slate-100">
+                    <span className="text-slate-600">Min. Payout Threshold</span>
+                    <span className="font-bold text-slate-900">R 500</span>
+                  </div>
+                  <div className="flex items-center justify-between py-3 mb-8">
+                    <span className="text-slate-600">Support</span>
+                    <span className="font-bold text-slate-900">Dedicated Manager</span>
                   </div>
                 </div>
+
+                <Button 
+                  onClick={onStart}
+                  className={`w-full py-6 text-lg font-bold rounded-xl shadow-lg transition-all hover:scale-[1.02] ${
+                    activeTab === 'affiliate' 
+                      ? 'bg-slate-900 hover:bg-slate-800 text-white' 
+                      : 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white'
+                  }`}
+                >
+                  Start Earning Now <ArrowRight className="ml-2 w-5 h-5" />
+                </Button>
+                
+                <p className="mt-4 text-xs text-slate-400">
+                  *Earnings are estimates based on active performance. Terms & conditions apply.
+                </p>
               </div>
-            </div>
-            
-            <button 
-              onClick={() => window.location.href = '/?mode=business-auth'}
-              className="w-full bg-cyan-600 hover:bg-cyan-700 text-white p-4 rounded-xl font-bold shadow-lg shadow-cyan-500/20 transition-all flex items-center justify-center gap-2"
-            >
-              Start Your Free Trial <ArrowRight className="w-5 h-5" />
-            </button>
+            </Card>
           </div>
         </div>
       </div>
-    </div>
+    </section>
   );
 }

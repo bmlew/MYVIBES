@@ -122,6 +122,76 @@ async function verifyBusinessAccess(c: any, businessId: string) {
   return { user, business };
 }
 
+// Security Helper: Verify the authenticated user owns the affiliate account (by email)
+async function verifyAffiliateAccess(c: any, affiliateEmail: string) {
+  // 1. Check Custom Session Header (Preferred for Partner Portal)
+  const customToken = c.req.header('X-Session-Token');
+  if (customToken && customToken.startsWith('sess_')) {
+      const session = await kv.get(`session:${customToken}`);
+      if (session && session.type === 'customer') {
+          const customer = await kv.get(session.userId) || await kv.get(`customer:${session.userId}`);
+          if (customer) {
+               const emailMatch = (customer.email || '').toLowerCase().trim() === (affiliateEmail || '').toLowerCase().trim();
+               if (emailMatch) {
+                   console.log(`✅ verifyAffiliateAccess: Access granted for ${affiliateEmail} via X-Session-Token`);
+                   return true;
+               } else {
+                   console.log(`⛔ verifyAffiliateAccess: Email mismatch in X-Session-Token. User: ${customer.email}, Affiliate: ${affiliateEmail}`);
+               }
+          }
+      }
+  }
+
+  // 2. Fallback to Authorization Header (Supabase Auth or Legacy Custom Token in Auth Header)
+  const authHeader = c.req.header('Authorization');
+  if (!authHeader) {
+      console.log('⛔ verifyAffiliateAccess: No Authorization header');
+      return false;
+  }
+  const token = authHeader.replace('Bearer ', '');
+  
+  // 2a. Check Custom Session (sess_...) in Auth Header (Legacy/Direct Call)
+  if (token.startsWith('sess_')) {
+      const session = await kv.get(`session:${token}`);
+      if (!session || session.type !== 'customer') {
+          console.log(`⛔ verifyAffiliateAccess: Invalid or non-customer session for token ${token.substring(0, 10)}...`);
+          return false;
+      }
+      
+      // Fetch customer profile to verify email matches
+      const customer = await kv.get(session.userId) || await kv.get(`customer:${session.userId}`);
+      if (!customer) {
+          console.log(`⛔ verifyAffiliateAccess: Customer profile not found for ID ${session.userId}`);
+          return false;
+      }
+      
+      const emailMatch = (customer.email || '').toLowerCase().trim() === (affiliateEmail || '').toLowerCase().trim();
+      if (!emailMatch) {
+          console.log(`⛔ verifyAffiliateAccess: Email mismatch. Session User: ${customer.email}, Affiliate: ${affiliateEmail}`);
+      } else {
+          console.log(`✅ verifyAffiliateAccess: Access granted for ${affiliateEmail} via Auth Header session`);
+      }
+      
+      return emailMatch;
+  }
+
+  // 2b. Check Supabase Auth (Standard JWT)
+  const { data: { user }, error } = await supabase.auth.getUser(token);
+  if (error || !user) {
+      console.log(`⛔ verifyAffiliateAccess: Supabase Auth failed or invalid token`);
+      return false;
+  }
+  
+  // STRICT: Email must match
+  const emailMatch = (user.email || '').toLowerCase().trim() === (affiliateEmail || '').toLowerCase().trim();
+  if (!emailMatch) {
+      console.log(`⛔ verifyAffiliateAccess: Supabase User Email mismatch. User: ${user.email}, Affiliate: ${affiliateEmail}`);
+  } else {
+      console.log(`✅ verifyAffiliateAccess: Access granted for ${affiliateEmail} via Supabase Auth`);
+  }
+  return emailMatch;
+}
+
 // Helper: Get business for a user (Optimized with Link Key)
 async function getBusinessForUser(userId: string) {
   // 1. Try fast path: Look up the link key
@@ -322,27 +392,337 @@ app.post("/make-server-175b2872/auth/business/register", async (c) => {
 });
 
 // ============================================
-// AFFILIATE ROUTES
+// CUSTOMER AUTH ROUTES
 // ============================================
 
-// Affiliate Registration
-app.post("/make-server-175b2872/affiliates/register", async (c) => {
+// Customer Sign In (Supports Supabase Auth & Custom Session)
+app.get("/make-server-175b2872/auth/customer/me", async (c) => {
+  try {
+    const authHeader = c.req.header('Authorization');
+    if (!authHeader) {
+      return c.json({ error: 'No token provided' }, 401);
+    }
+
+    const token = authHeader.replace('Bearer ', '');
+    let customerId;
+    let customer;
+
+    // 1. Check Custom Session (sess_...)
+    if (token.startsWith('sess_')) {
+      const session = await kv.get(`session:${token}`);
+      if (!session || session.type !== 'customer') {
+        return c.json({ error: 'Invalid session' }, 401);
+      }
+      customerId = session.userId;
+      customer = await kv.get(customerId);
+      
+      // Fallback: Try prefixed if not found
+      if (!customer && !customerId.startsWith('customer:')) {
+          customer = await kv.get(`customer:${customerId}`);
+      }
+    } 
+    // 2. Check Supabase Auth
+    else {
+      const { data: { user }, error } = await supabase.auth.getUser(token);
+      if (error || !user) {
+        return c.json({ error: 'Invalid token' }, 401);
+      }
+      customerId = user.id;
+      // Fetch extended profile
+      // Try prefixed first (standard for Supabase users)
+      customer = await kv.get(`customer:${customerId}`);
+      
+      // Fallback: Try raw ID
+      if (!customer) {
+          customer = await kv.get(customerId);
+      }
+      
+      // If first time via Supabase Auth, create a basic record
+      if (!customer) {
+        customer = {
+          id: customerId,
+          email: user.email,
+          name: user.user_metadata?.name || '',
+          mobile: user.user_metadata?.phone || '',
+          username: user.email?.split('@')[0] || 'user'
+        };
+      }
+    }
+
+    if (!customer) return c.json({ error: 'User not found' }, 404);
+
+    return c.json({ customer });
+  } catch (error) {
+    console.error('Customer auth check failed:', error);
+    return c.json({ error: 'Auth check failed' }, 500);
+  }
+});
+
+// Update Customer Profile (Supports Supabase Auth & Custom Session)
+app.put("/make-server-175b2872/auth/customer/update", async (c) => {
+  try {
+    let token = c.req.header('X-Session-Token');
+    let isCustomSession = false;
+
+    // Fallback to Auth Header if no custom token
+    if (!token) {
+        const authHeader = c.req.header('Authorization');
+        if (authHeader) token = authHeader.replace('Bearer ', '');
+    }
+
+    if (!token) return c.json({ error: 'Unauthorized' }, 401);
+    
+    // Ignore Anon Key if passed as token (it's just for gateway)
+    const anonKey = Deno.env.get('SUPABASE_ANON_KEY') || '';
+    if (token === anonKey) {
+        return c.json({ error: 'Unauthorized: Missing User Token' }, 401);
+    }
+
+    let customerId;
+
+    console.log(`🔄 Update Profile Request - Token: ${token.substring(0, 10)}...`);
+
+    // 1. Check Custom Session (sess_...)
+    if (token.startsWith('sess_')) {
+      const session = await kv.get(`session:${token}`);
+      if (!session || session.type !== 'customer') {
+        console.error('❌ Invalid session');
+        return c.json({ error: 'Invalid session' }, 401);
+      }
+      customerId = session.userId;
+      isCustomSession = true;
+      console.log(`✅ Session Valid. Customer ID: ${customerId}`);
+    }
+    // 2. Check Supabase Auth
+    else {
+      const { data: { user }, error } = await supabase.auth.getUser(token);
+      if (error || !user) {
+         console.error('❌ Supabase Auth failed');
+         return c.json({ error: 'Unauthorized' }, 401);
+      }
+      customerId = user.id;
+      console.log(`✅ Supabase Auth Valid. Customer ID: ${customerId}`);
+    }
+
+    const body = await c.req.json();
+    console.log(`📦 Update Body:`, JSON.stringify(body));
+
+    // Fetch existing
+    // Try raw ID first (works if ID is the Key, e.g. custom session users)
+    let customer = await kv.get(customerId);
+    console.log(`🔍 Lookup by raw ID '${customerId}': ${customer ? 'Found' : 'Not Found'}`);
+    
+    // If not found, try prepending 'customer:' (works if ID is UUID but Key has prefix, e.g. Supabase users)
+    if (!customer) {
+        console.log(`🔍 Trying prefix lookup 'customer:${customerId}'...`);
+        customer = await kv.get(`customer:${customerId}`);
+        console.log(`🔍 Lookup by prefix: ${customer ? 'Found' : 'Not Found'}`);
+    }
+    
+    // Create if missing (should not happen usually but robust)
+    if (!customer) {
+      console.log('⚠️ Customer record missing, attempting recovery...');
+      // If creating from scratch here, we might miss username if it wasn't provided
+      // But for updates, we expect an existing user.
+      // If Supabase Auth user, we can recover basics.
+      if (!token.startsWith('sess_')) {
+        const { data: { user } } = await supabase.auth.getUser(token);
+        customer = {
+            id: customerId,
+            email: user?.email,
+            username: user?.email?.split('@')[0] || 'user'
+        };
+        console.log('✅ Recovered Supabase user structure');
+      } else {
+         console.error('❌ Cannot recover guest user without record');
+         return c.json({ error: 'Customer record missing' }, 404);
+      }
+    }
+
+    // Update fields
+    const updatedCustomer = {
+      ...customer,
+      name: body.name !== undefined ? body.name : customer.name,
+      email: body.email !== undefined ? body.email : customer.email,
+      mobile: body.mobile !== undefined ? body.mobile : customer.mobile,
+      city: body.city !== undefined ? body.city : customer.city,
+      birthday: body.birthday !== undefined ? body.birthday : customer.birthday,
+      preferences: body.preferences !== undefined ? body.preferences : customer.preferences,
+      notificationPreference: body.notificationPreference !== undefined ? body.notificationPreference : customer.notificationPreference,
+      updated_at: new Date().toISOString()
+    };
+    
+    // Determine storage key
+    // If the ID itself starts with 'customer:', use it as key.
+    // Otherwise, assume we need to prefix it.
+    const storageKey = customerId.startsWith('customer:') ? customerId : `customer:${customerId}`;
+    
+    console.log(`💾 Saving to key: ${storageKey}`);
+
+    // Ensure the ID inside the object matches the logic we want (optional but good)
+    if (!updatedCustomer.id) {
+        updatedCustomer.id = customerId;
+    }
+
+    await kv.set(storageKey, updatedCustomer);
+    console.log('✅ Profile saved successfully');
+    
+    // Only update Supabase Auth metadata if it IS a Supabase Auth user
+    if (!token.startsWith('sess_') && supabase.auth.admin) {
+        try {
+            await supabase.auth.admin.updateUserById(customerId, {
+                user_metadata: { 
+                    name: updatedCustomer.name,
+                    phone: updatedCustomer.mobile,
+                    city: updatedCustomer.city 
+                }
+            });
+        } catch (e) {
+            console.warn('⚠️ Failed to sync with Supabase Auth metadata', e);
+        }
+    }
+
+    return c.json({ success: true, customer: updatedCustomer });
+  } catch (error) {
+    console.error('Profile update error:', error);
+    return c.json({ error: 'Update failed' }, 500);
+  }
+});
+
+// ============================================
+// PARTNER ROUTES (Renamed from Affiliate to avoid ad-blockers)
+// ============================================
+
+// Partner Registration
+app.post("/make-server-175b2872/partners/register", async (c) => {
   try {
     const body = await c.req.json();
     const { name, email, phone, bank_name, account_number, branch_code } = body;
+
+    // Security & Profile Sync: Check for existing session to link
+    const customToken = c.req.header('X-Session-Token');
+    let sessionTokenToCheck = customToken;
+    
+    // Fallback: Check Auth header if no custom token
+    if (!sessionTokenToCheck) {
+        const authHeader = c.req.header('Authorization');
+        if (authHeader) sessionTokenToCheck = authHeader.replace('Bearer ', '');
+    }
+
+    if (sessionTokenToCheck && sessionTokenToCheck.startsWith('sess_')) {
+        const session = await kv.get(`session:${sessionTokenToCheck}`);
+        if (session && session.type === 'customer') {
+             // Fetch and update customer profile if email is missing
+             let customer = await kv.get(session.userId) || await kv.get(`customer:${session.userId}`);
+             if (customer && !customer.email) {
+                 console.log(`🔗 Linking Partner Email ${email} to Guest Customer ${customer.username}`);
+                 customer.email = email;
+                 if (phone && !customer.mobile) customer.mobile = phone;
+                 
+                 // Save updated customer
+                 const storageKey = session.userId.startsWith('customer:') ? session.userId : `customer:${session.userId}`;
+                 await kv.set(storageKey, customer);
+             }
+        }
+    }
 
     if (!name || !email) {
       return c.json({ error: 'Name and Email are required' }, 400);
     }
 
     // Check if email exists
+    const normalizedEmail = email.toLowerCase().trim();
     const existingAffiliates = await kv.getByPrefix('affiliate:');
-    if (existingAffiliates.find((a: any) => a.email === email)) {
-        return c.json({ error: 'Affiliate with this email already exists' }, 400);
+    const existing = existingAffiliates.find((a: any) => (a.email || '').toLowerCase().trim() === normalizedEmail);
+
+    const anonKey = Deno.env.get('SUPABASE_ANON_KEY') || '';
+
+    if (existing) {
+        // If email already exists, just return it as success instead of error
+        // This makes auto-join idempotent and robust against race conditions
+        console.log(`♻️ Auto-join recovered existing partner: ${normalizedEmail}`);
+        
+        // Ensure we still generate/check session for existing user
+        let authToken = c.req.header('Authorization')?.replace('Bearer ', '');
+        let isNewSession = false;
+        let sessionToken = '';
+        
+        if (!authToken || authToken === anonKey || authToken === 'undefined' || authToken === 'null') {
+             const customers = await kv.getByPrefix('customer:');
+             let customer = customers.find((c: any) => (c.email || '').toLowerCase().trim() === normalizedEmail);
+             let customerId;
+             
+             if (!customer) {
+                 customerId = `customer:${Date.now()}`;
+                 customer = {
+                     id: customerId,
+                     username: normalizedEmail.split('@')[0].replace(/[^a-z0-9]/g, ''),
+                     name: existing.name,
+                     email: normalizedEmail,
+                     type: 'partner',
+                     joined_at: new Date().toISOString()
+                 };
+                 await kv.set(customerId, customer);
+             } else {
+                 customerId = customer.id;
+             }
+             
+             sessionToken = `sess_${Date.now()}_${Math.random().toString(36).substring(2)}`;
+             await kv.set(`session:${sessionToken}`, { userId: customerId, type: 'customer', created_at: new Date().toISOString() });
+             isNewSession = true;
+        }
+
+        return c.json({ success: true, affiliate: existing, token: isNewSession ? sessionToken : undefined });
     }
 
     const affiliateId = `affiliate:${Date.now()}`;
     const code = name.substring(0, 3).toUpperCase() + Math.floor(1000 + Math.random() * 9000); // Simple code generation
+
+    // Generate Session for New Partner if needed (Auto-Login)
+    const now = new Date().toISOString();
+    
+    // Check if we already have a session
+    let existingToken = c.req.header('X-Session-Token');
+    if (!existingToken) {
+        const authH = c.req.header('Authorization');
+        if (authH) existingToken = authH.replace('Bearer ', '');
+    }
+    
+    let isNewSession = false;
+    let authToken = existingToken;
+    // const anonKey is already defined above
+
+    // Only generate new session if no token is provided OR token is invalid anon key/undefined
+    if (!authToken || authToken === anonKey || authToken === 'undefined' || authToken === 'null') {
+        // Find or Create Customer Account for Partner
+        const customers = await kv.getByPrefix('customer:');
+        let customer = customers.find((c: any) => c.email === email);
+        let customerId;
+
+        if (!customer) {
+            customerId = `customer:${Date.now()}`;
+            customer = {
+                id: customerId,
+                username: email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, ''),
+                name,
+                email,
+                mobile: phone || '',
+                joined_at: now,
+                last_active: now,
+                type: 'partner'
+            };
+            await kv.set(customerId, customer);
+        } else {
+            customerId = customer.id;
+        }
+        
+        // Generate Token
+        const sessionToken = `sess_${Date.now()}_${Math.random().toString(36).substring(2)}`;
+        await kv.set(`session:${sessionToken}`, { userId: customerId, type: 'customer', created_at: now });
+        authToken = sessionToken;
+        isNewSession = true;
+        console.log(`🔑 Created session for new partner: ${email} -> Token: ${authToken}`);
+    }
 
     const newAffiliate = {
       id: affiliateId,
@@ -365,37 +745,97 @@ app.post("/make-server-175b2872/affiliates/register", async (c) => {
     };
 
     await kv.set(affiliateId, newAffiliate);
-    return c.json({ success: true, affiliate: newAffiliate });
-  } catch (error) {
-    console.error('Affiliate registration error:', error);
-    return c.json({ error: 'Failed to register affiliate' }, 500);
+    return c.json({ success: true, affiliate: newAffiliate, token: isNewSession ? authToken : undefined });
+  } catch (error: any) {
+    console.error('Partner registration error:', error);
+    return c.json({ error: `Failed to register partner: ${error.message || error}` }, 500);
   }
 });
 
-// Get Affiliate by Email (Simple Login)
-app.post("/make-server-175b2872/affiliates/login", async (c) => {
+// Get Partner by Email (Simple Login)
+app.post("/make-server-175b2872/partners/login", async (c) => {
     try {
         const { email } = await c.req.json();
+        
+        let authToken = c.req.header('X-Session-Token');
+        if (!authToken) {
+             const h = c.req.header('Authorization');
+             if (h) authToken = h.replace('Bearer ', '');
+        }
+
+        let isNewSession = false;
+        let sessionToken = '';
+        const anonKey = Deno.env.get('SUPABASE_ANON_KEY') || '';
+        
+        // Handle Guest/Unauthenticated Login
+        if (!authToken || authToken === anonKey || authToken === 'undefined' || authToken === 'null') {
+             const customers = await kv.getByPrefix('customer:');
+             let customer = customers.find((c: any) => c.email === email);
+             let customerId;
+             
+             if (!customer) {
+                 // Create Basic Customer Record for Partner Login
+                 customerId = `customer:${Date.now()}`;
+                 customer = {
+                     id: customerId,
+                     username: email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, ''),
+                     name: email.split('@')[0],
+                     email,
+                     type: 'partner',
+                     joined_at: new Date().toISOString()
+                 };
+                 await kv.set(customerId, customer);
+             } else {
+                 customerId = customer.id;
+             }
+             
+             // Generate Session
+             sessionToken = `sess_${Date.now()}_${Math.random().toString(36).substring(2)}`;
+             await kv.set(`session:${sessionToken}`, { userId: customerId, type: 'customer', created_at: new Date().toISOString() });
+             isNewSession = true;
+             console.log(`🔑 Generated login session for partner: ${email} -> ${sessionToken}`);
+        } else if (authToken.startsWith('sess_')) {
+            const session = await kv.get(`session:${authToken}`);
+            if (session && session.type === 'customer') {
+                 // Fetch customer profile
+                 let customer = await kv.get(session.userId) || await kv.get(`customer:${session.userId}`);
+                 if (customer && !customer.email) {
+                     console.log(`🔗 Linking Partner Email ${email} to Guest Customer ${customer.username}`);
+                     customer.email = email;
+                     // Save updated customer
+                     const storageKey = session.userId.startsWith('customer:') ? session.userId : `customer:${session.userId}`;
+                     await kv.set(storageKey, customer);
+                 }
+            }
+        }
+
         const affiliates = await kv.getByPrefix('affiliate:');
         const affiliate = affiliates.find((a: any) => a.email === email);
         
-        if (!affiliate) return c.json({ error: 'Affiliate not found' }, 404);
+        if (!affiliate) return c.json({ error: 'Partner not found' }, 404);
         
-        return c.json({ success: true, affiliate });
-    } catch (error) {
-        return c.json({ error: 'Login failed' }, 500);
+        return c.json({ success: true, affiliate, token: isNewSession ? sessionToken : undefined });
+    } catch (error: any) {
+        console.error('Partner login error:', error);
+        return c.json({ error: `Login failed: ${error.message || error}` }, 500);
     }
 });
 
-// Update Affiliate Bank Details
-app.put("/make-server-175b2872/affiliates/:id/bank-details", async (c) => {
+// Update Partner Bank Details
+app.put("/make-server-175b2872/partners/:id/bank-details", async (c) => {
     try {
         const id = c.req.param('id');
         const { bank_name, account_number, branch_code } = await c.req.json();
         
         const affiliate = await kv.get(id);
-        if (!affiliate) return c.json({ error: 'Affiliate not found' }, 404);
+        if (!affiliate) return c.json({ error: 'Partner not found' }, 404);
         
+        // STRICT SECURITY: Must be logged in as the partner email owner
+        if (!await verifyAffiliateAccess(c, affiliate.email)) {
+             console.error(`⛔ Access Denied: Unauthorized bank details update for ${affiliate.email}`);
+             return c.json({ error: 'Unauthorized: You must be logged in to update bank details' }, 401);
+        }
+
         affiliate.bank_details = { bank_name, account_number, branch_code };
         await kv.set(id, affiliate);
         
@@ -405,10 +845,21 @@ app.put("/make-server-175b2872/affiliates/:id/bank-details", async (c) => {
     }
 });
 
-// Get Affiliate Commissions
-app.get("/make-server-175b2872/affiliates/:id/commissions", async (c) => {
+// Get Partner Commissions
+app.get("/make-server-175b2872/partners/:id/commissions", async (c) => {
     try {
         const id = c.req.param('id');
+        
+        // Security Check: Verify ownership
+        const affiliate = await kv.get(id);
+        if (!affiliate) return c.json({ error: 'Partner not found' }, 404);
+        
+        if (!await verifyAffiliateAccess(c, affiliate.email)) {
+            console.error(`⛔ Unauthorized commissions access for ${id}`);
+            // Return empty list or error? Return error for security.
+            return c.json({ error: 'Unauthorized', commissions: [] }, 401);
+        }
+
         const commissions = await kv.getByPrefix('comm:');
         const myCommissions = commissions.filter((comm: any) => comm.affiliate_id === id);
         return c.json({ commissions: myCommissions.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime()) });
@@ -417,22 +868,22 @@ app.get("/make-server-175b2872/affiliates/:id/commissions", async (c) => {
     }
 });
 
-// Admin: Get All Affiliates (Reconciliation)
-app.get("/make-server-175b2872/admin/affiliates", async (c) => {
+// Admin: Get All Partners (Reconciliation)
+app.get("/make-server-175b2872/admin/partners", async (c) => {
     try {
         const affiliates = await kv.getByPrefix('affiliate:');
         return c.json({ affiliates });
     } catch (error) {
-        return c.json({ error: 'Failed to fetch affiliates' }, 500);
+        return c.json({ error: 'Failed to fetch partners' }, 500);
     }
 });
 
-// Admin: Mark Affiliate Paid
-app.post("/make-server-175b2872/admin/affiliates/:id/pay", async (c) => {
+// Admin: Mark Partner Paid
+app.post("/make-server-175b2872/admin/partners/:id/pay", async (c) => {
     try {
         const id = c.req.param('id');
         const affiliate = await kv.get(id);
-        if (!affiliate) return c.json({ error: 'Affiliate not found' }, 404);
+        if (!affiliate) return c.json({ error: 'Partner not found' }, 404);
         
         const amountToPay = affiliate.pending_balance;
         if (amountToPay <= 0) return c.json({ error: 'No pending balance' }, 400);
@@ -468,8 +919,8 @@ app.post("/make-server-175b2872/admin/affiliates/:id/pay", async (c) => {
     }
 });
 
-// Admin: Batch Pay All Affiliates
-app.post("/make-server-175b2872/admin/affiliates/pay-all", async (c) => {
+// Admin: Batch Pay All Partners
+app.post("/make-server-175b2872/admin/partners/pay-all", async (c) => {
     try {
         const affiliates = await kv.getByPrefix('affiliate:');
         const pendingAffiliates = affiliates.filter((a: any) => (a.pending_balance || 0) > 0 && a.bank_details?.bank_name);
@@ -495,7 +946,7 @@ app.post("/make-server-175b2872/admin/affiliates/pay-all", async (c) => {
             const payoutId = `payout:${Date.now()}_${count}`;
             const payout = {
                 id: payoutId,
-                business: 'Affiliate Payout Batch',
+                business: 'Partner Payout Batch',
                 affiliate_id: affiliate.id,
                 amount: amount,
                 type: 'Payout',
@@ -517,7 +968,7 @@ app.post("/make-server-175b2872/admin/affiliates/pay-all", async (c) => {
             count++;
         }
 
-        return c.json({ success: true, count, totalPaid, message: `Successfully paid R${totalPaid} to ${count} affiliates` });
+        return c.json({ success: true, count, totalPaid, message: `Successfully paid R${totalPaid} to ${count} partners` });
     } catch (error) {
         console.error('Batch payout error:', error);
         return c.json({ error: 'Batch payout failed' }, 500);
@@ -775,6 +1226,7 @@ app.get("/make-server-175b2872/kv/businesses", async (c) => {
     
     const lat = c.req.query('lat');
     const lng = c.req.query('lng');
+    const radius = parseFloat(c.req.query('radius') || '0');
     
     const businessesWithDistance = businessesToReturn.map((b: any) => {
       if (lat && lng && b.latitude && b.longitude) {
@@ -789,12 +1241,18 @@ app.get("/make-server-175b2872/kv/businesses", async (c) => {
       return b;
     });
     
+    // Filter by radius if provided
+    let filteredByDistance = businessesWithDistance;
+    if (lat && lng && radius > 0) {
+        filteredByDistance = businessesWithDistance.filter((b: any) => (b.distance || 0) <= radius);
+    }
+
     if (lat && lng) {
-      businessesWithDistance.sort((a: any, b: any) => (a.distance || 999) - (b.distance || 999));
+      filteredByDistance.sort((a: any, b: any) => (a.distance || 999) - (b.distance || 999));
     }
     
-    const total = businessesWithDistance.length;
-    const paginatedData = businessesWithDistance.slice(offset, offset + limit);
+    const total = filteredByDistance.length;
+    const paginatedData = filteredByDistance.slice(offset, offset + limit);
     
     // Sign URLs for the paginated subset
     const signedData = await Promise.all(paginatedData.map(async (b: any) => await signBusinessUrls(b)));
@@ -1487,9 +1945,9 @@ app.get("/make-server-175b2872/kv/notifications/:userId/unread-count", async (c)
     const userId = c.req.param('userId');
     const notifications = await kv.getByPrefix(`notification:${userId}:`);
     const unreadCount = notifications.filter((n: any) => !n.read).length;
-    return c.json({ count: unreadCount });
+    return c.json({ unread_count: unreadCount, count: unreadCount });
   } catch (error) {
-    return c.json({ count: 0 });
+    return c.json({ unread_count: 0, count: 0 });
   }
 });
 
@@ -2669,69 +3127,6 @@ app.post("/make-server-175b2872/auth/customer/login", async (c) => {
   }
 });
 
-// Verify Session / Get Me
-app.get("/make-server-175b2872/auth/customer/me", async (c) => {
-  try {
-    const authHeader = c.req.header('Authorization');
-    if (!authHeader) return c.json({ error: 'No token' }, 401);
-
-    const token = authHeader.replace('Bearer ', '');
-    const session = await kv.get(`session:${token}`);
-
-    if (!session || session.type !== 'customer') {
-      return c.json({ error: 'Invalid session' }, 401);
-    }
-
-    const customer = await kv.get(session.userId);
-    if (!customer) return c.json({ error: 'User not found' }, 404);
-
-    return c.json({ customer });
-  } catch (error) {
-    return c.json({ error: 'Verification failed' }, 500);
-  }
-});
-
-// Update Customer Profile (Authenticated)
-app.put("/make-server-175b2872/auth/customer/update", async (c) => {
-  try {
-    const authHeader = c.req.header('Authorization');
-    if (!authHeader) return c.json({ error: 'No token' }, 401);
-
-    const token = authHeader.replace('Bearer ', '');
-    const session = await kv.get(`session:${token}`);
-
-    if (!session || session.type !== 'customer') {
-      return c.json({ error: 'Invalid session' }, 401);
-    }
-
-    const body = await c.req.json();
-    const customer = await kv.get(session.userId);
-
-    if (!customer) return c.json({ error: 'User not found' }, 404);
-
-    // Update allowed fields
-    const updatedCustomer = {
-      ...customer,
-      name: body.name || customer.name,
-      email: body.email || customer.email,
-      mobile: body.mobile || customer.mobile,
-      city: body.city || customer.city,
-      birthday: body.birthday || customer.birthday,
-      preferences: body.preferences || customer.preferences,
-      notificationPreference: body.notificationPreference || customer.notificationPreference,
-      updated_at: new Date().toISOString()
-    };
-
-    await kv.set(customer.id, updatedCustomer);
-
-    return c.json({ success: true, customer: updatedCustomer });
-
-  } catch (error) {
-    console.error('Update error:', error);
-    return c.json({ error: 'Update failed' }, 500);
-  }
-});
-
 // Create or Update Customer Profile (Sync with KV)
 app.post("/make-server-175b2872/auth/customer/profile", async (c) => {
   try {
@@ -3454,4 +3849,208 @@ app.get("/make-server-175b2872/admin/cleanup-digital-user", async (c) => {
   }
 });
 
-export default app;
+// ============================================
+// CHECK-IN & GAMIFICATION ROUTES
+// ============================================
+
+app.post("/make-server-175b2872/check-in", async (c) => {
+  try {
+    const authHeader = c.req.header('Authorization');
+    const customToken = c.req.header('X-Session-Token');
+    
+    // Prioritize custom token, fallback to Auth header
+    const token = customToken || (authHeader ? authHeader.replace('Bearer ', '') : null);
+    
+    if (!token) {
+      return c.json({ error: 'Unauthorized: Please log in to check in' }, 401);
+    }
+
+    // Ignore Anon Key if passed as token
+    const anonKey = Deno.env.get('SUPABASE_ANON_KEY') || '';
+    if (token === anonKey) {
+        return c.json({ error: 'Unauthorized: Please log in to check in' }, 401);
+    }
+
+    let customerId;
+    let customer;
+
+    // 1. Validate Session/User
+    if (token.startsWith('sess_')) {
+      const session = await kv.get(`session:${token}`);
+      if (!session || session.type !== 'customer') {
+        return c.json({ error: 'Invalid session' }, 401);
+      }
+      customerId = session.userId;
+      customer = await kv.get(customerId) || await kv.get(`customer:${customerId}`);
+    } else {
+      const { data: { user }, error } = await supabase.auth.getUser(token);
+      if (error || !user) {
+        return c.json({ error: 'Invalid token' }, 401);
+      }
+      customerId = user.id;
+      customer = await kv.get(`customer:${customerId}`) || await kv.get(customerId);
+      
+      // Construct basic customer if missing (Supabase Auth fallback)
+      if (!customer) {
+         customer = {
+             id: customerId,
+             email: user.email,
+             name: user.user_metadata?.name || '',
+             mobile: user.user_metadata?.phone || '',
+             username: user.email?.split('@')[0] || 'user',
+             loyalty_points: 0
+         };
+      }
+    }
+
+    // 2. Guest Check
+    // If ID starts with 'guest-', they are definitely a guest
+    if (customerId.startsWith('guest-') || (customer.username && customer.username.startsWith('guest_'))) {
+        return c.json({ error: 'Guest accounts cannot check in. Please complete your profile.' }, 403);
+    }
+
+    // 3. Profile Completion Check
+    if (!customer) {
+        return c.json({ error: 'Profile not found. Please complete your profile.' }, 404);
+    }
+
+    const { name, email, mobile } = customer;
+    const isProfileComplete = name && email && mobile;
+
+    if (!isProfileComplete) {
+        return c.json({ 
+            error: 'Incomplete profile', 
+            message: 'Please complete your profile (Name, Email, Mobile) to check in.',
+            missing_fields: {
+                name: !name,
+                email: !email,
+                mobile: !mobile
+            }
+        }, 403);
+    }
+
+    // 4. Parse Request
+    const body = await c.req.json();
+    const { businessId, location } = body;
+
+    if (!businessId) {
+        return c.json({ error: 'Business ID is required' }, 400);
+    }
+
+    // 5. Verify Business Exists
+    const business = await kv.get(`business:${businessId}`);
+    if (!business) {
+        return c.json({ error: 'Business not found' }, 404);
+    }
+
+    // Check Cooldown (prevent spamming points)
+    const lastCheckInKey = `last_checkin:${customerId}:${businessId}`;
+    const lastCheckIn = await kv.get(lastCheckInKey);
+    const nowTimestamp = Date.now();
+    const COOLDOWN = 3600 * 1000; // 1 hour
+    
+    if (lastCheckIn && (nowTimestamp - lastCheckIn < COOLDOWN)) {
+       const remainingMinutes = Math.ceil((COOLDOWN - (nowTimestamp - lastCheckIn)) / 60000);
+       return c.json({ error: `Already checked in. Try again in ${remainingMinutes} minutes.` }, 429);
+    }
+
+    // 6. Record Check-in
+    const checkInId = `checkin:${businessId}:${nowTimestamp}`;
+    // Also include customerId in key to allow fetching user's checkins easily if needed
+    // checkin:BUSINESS_ID:TIMESTAMP_RANDOM
+    
+    const POINTS_PER_CHECKIN = 10;
+    
+    // Update Customer Points
+    customer.loyalty_points = (customer.loyalty_points || 0) + POINTS_PER_CHECKIN;
+    // Save customer
+    const storageKey = customerId.startsWith('customer:') ? customerId : `customer:${customerId}`;
+    await kv.set(storageKey, customer);
+
+    const checkInData = {
+        id: checkInId,
+        business_id: businessId,
+        user_id: customerId,
+        user_name: name,
+        user_avatar: customer.avatar || null,
+        timestamp: new Date().toISOString(),
+        location: location || null,
+        points_earned: POINTS_PER_CHECKIN
+    };
+
+    await kv.set(checkInId, checkInData);
+    await kv.set(lastCheckInKey, nowTimestamp);
+    
+    // Update analytics (simple counter)
+    const statsKey = `stats:checkins:${businessId}`;
+    const currentStats = await kv.get(statsKey) || { total: 0, last_checkin: null };
+    await kv.set(statsKey, {
+        total: (currentStats.total || 0) + 1,
+        last_checkin: new Date().toISOString()
+    });
+
+    // Update Leaderboard Stats (User-Business Aggregate)
+    const leaderboardKey = `leaderboard:${businessId}:${customerId}`;
+    const stats = await kv.get(leaderboardKey) || { 
+      user_id: customerId, 
+      user_name: name, 
+      checkin_count: 0, 
+      total_points: 0 
+    };
+    
+    stats.checkin_count += 1;
+    stats.total_points += POINTS_PER_CHECKIN;
+    stats.last_checkin = new Date().toISOString();
+    await kv.set(leaderboardKey, stats);
+
+    console.log(`📍 User ${name} (${customerId}) checked in at ${business.name}. +${POINTS_PER_CHECKIN} points.`);
+
+    return c.json({ 
+        success: true, 
+        message: `Checked in at ${business.name}!`,
+        points_earned: POINTS_PER_CHECKIN,
+        total_points: customer.loyalty_points,
+        check_in: checkInData
+    });
+
+  } catch (error: any) {
+    console.error('Check-in error:', error);
+    return c.json({ error: `Check-in failed: ${error.message}` }, 500);
+  }
+});
+
+// Get Recent Check-Ins for Business
+app.get("/make-server-175b2872/check-in/recent/:businessId", async (c) => {
+  try {
+    const businessId = c.req.param('businessId');
+    // Scan for check-ins
+    const allCheckIns = await kv.getByPrefix(`checkin:${businessId}:`);
+    
+    // Sort by timestamp descending
+    const recent = allCheckIns
+      .sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+      .slice(0, 20);
+
+    return c.json({ checkins: recent });
+  } catch (error) {
+     return c.json({ error: 'Failed to fetch check-ins' }, 500);
+  }
+});
+
+// Get Leaderboard for Business
+app.get("/make-server-175b2872/check-in/leaderboard/:businessId", async (c) => {
+  try {
+    const businessId = c.req.param('businessId');
+    const stats = await kv.getByPrefix(`leaderboard:${businessId}:`);
+    
+    const leaderboard = stats
+      .sort((a: any, b: any) => b.checkin_count - a.checkin_count)
+      .slice(0, 10);
+
+    return c.json({ leaderboard });
+  } catch (error) {
+     return c.json({ error: 'Failed to fetch leaderboard' }, 500);
+  }
+});
+
+Deno.serve(app.fetch);

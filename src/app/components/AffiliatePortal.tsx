@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Share2, DollarSign, Users, ChevronLeft, Building, CreditCard, Wallet, Copy, Check } from 'lucide-react';
+import { Share2, DollarSign, Users, ChevronLeft, Building, CreditCard, Wallet, Copy, Check, Bell, MapPin, LogOut } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Card } from './ui/card';
@@ -8,6 +8,11 @@ import { projectId, publicAnonKey } from '/utils/supabase/info';
 
 interface AffiliatePortalProps {
   onBack?: () => void;
+  user?: {
+    name: string;
+    email: string;
+    phone?: string;
+  };
 }
 
 interface Affiliate {
@@ -36,10 +41,11 @@ interface Commission {
   type: string;
 }
 
-export function AffiliatePortal({ onBack }: AffiliatePortalProps) {
+export function AffiliatePortal({ onBack, user }: AffiliatePortalProps) {
   const [view, setView] = useState<'login' | 'register' | 'dashboard'>('login');
   const [affiliate, setAffiliate] = useState<Affiliate | null>(null);
   const [loading, setLoading] = useState(false);
+  const [sessionToken, setSessionToken] = useState<string | null>(null);
   
   // Login State
   const [loginEmail, setLoginEmail] = useState('');
@@ -56,13 +62,134 @@ export function AffiliatePortal({ onBack }: AffiliatePortalProps) {
 
   const API_URL = `https://${projectId}.supabase.co/functions/v1/make-server-175b2872`;
 
+  const getAuthHeaders = () => {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    
+    // Authorization: Always Supabase JWT (User or Anon)
+    let authBearer = `Bearer ${publicAnonKey}`;
+    try {
+      const stored = localStorage.getItem(`sb-${projectId}-auth-token`);
+      if (stored) {
+        const session = JSON.parse(stored);
+        if (session.access_token) authBearer = `Bearer ${session.access_token}`;
+      }
+    } catch (e) {}
+    headers['Authorization'] = authBearer;
+
+    // Custom Partner Token
+    const localToken = localStorage.getItem('vibespot_session_token');
+    if (localToken) {
+        headers['X-Session-Token'] = localToken;
+    }
+    
+    return headers;
+  };
+
+  const handleAutoJoin = async () => {
+    console.log("👆 'Enter Partner Portal' clicked", user);
+
+    if (!user?.email) {
+      toast.error("Email address missing. Please complete your details.");
+      setRegData({
+          ...regData,
+          name: user?.name || '',
+          phone: user?.phone || ''
+      });
+      setView('register');
+      return;
+    }
+    
+    setLoading(true);
+
+    try {
+      // 1. Try to login first (check if affiliate exists)
+      console.log("🔍 Checking for existing affiliate account...");
+      const headers = getAuthHeaders();
+      const loginResponse = await fetch(`${API_URL}/partners/login`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ email: user.email })
+      });
+
+      if (loginResponse.ok) {
+        const data = await loginResponse.json();
+        console.log("✅ Partner found:", data.affiliate);
+        setAffiliate(data.affiliate);
+        
+        // Save token if new session
+        if (data.token) {
+             localStorage.setItem('vibespot_session_token', data.token);
+             setSessionToken(data.token);
+             console.log('🔑 Saved new session token:', data.token);
+        }
+        
+        setView('dashboard');
+        toast.success('Welcome back to your partner dashboard!');
+        return;
+      }
+
+      // 2. If not found, register automatically
+      console.log("📝 Creating new partner account...");
+      
+      const partnerName = user.name || user.email.split('@')[0];
+      
+      const registerResponse = await fetch(`${API_URL}/partners/register`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          name: partnerName,
+          email: user.email,
+          phone: user.phone || '',
+          bank_name: '', // User can add later
+          account_number: '',
+          branch_code: ''
+        })
+      });
+
+      if (registerResponse.ok) {
+        const data = await registerResponse.json();
+        console.log("🎉 Partner created:", data.affiliate);
+        setAffiliate(data.affiliate);
+        
+        // Save token if new session
+        if (data.token) {
+             localStorage.setItem('vibespot_session_token', data.token);
+             setSessionToken(data.token);
+             console.log('🔑 Saved new session token:', data.token);
+        }
+        
+        setView('dashboard');
+        toast.success('Partner account created successfully!');
+      } else {
+        const errorData = await registerResponse.json();
+        console.warn("⚠️ Automatic registration failed:", errorData);
+        throw new Error(errorData.error || 'Automatic registration failed');
+      }
+
+    } catch (error) {
+      console.error('❌ Auto-join error:', error);
+      toast.info("Please verify your details to continue.");
+      // Pre-fill manual form on error
+       setRegData({
+            ...regData,
+            name: user.name,
+            email: user.email,
+            phone: user.phone || ''
+        });
+        setView('register');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     try {
-      const response = await fetch(`${API_URL}/affiliates/login`, {
+      const headers = getAuthHeaders();
+      const response = await fetch(`${API_URL}/partners/login`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${publicAnonKey}` },
+        headers,
         body: JSON.stringify({ email: loginEmail })
       });
 
@@ -70,6 +197,14 @@ export function AffiliatePortal({ onBack }: AffiliatePortalProps) {
 
       const data = await response.json();
       setAffiliate(data.affiliate);
+      
+      // Save token if new session
+      if (data.token) {
+           localStorage.setItem('vibespot_session_token', data.token);
+           setSessionToken(data.token);
+           console.log('🔑 Saved new session token:', data.token);
+      }
+        
       setView('dashboard');
       toast.success('Welcome back!');
     } catch (error) {
@@ -83,9 +218,10 @@ export function AffiliatePortal({ onBack }: AffiliatePortalProps) {
     e.preventDefault();
     setLoading(true);
     try {
-      const response = await fetch(`${API_URL}/affiliates/register`, {
+      const headers = getAuthHeaders();
+      const response = await fetch(`${API_URL}/partners/register`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${publicAnonKey}` },
+        headers,
         body: JSON.stringify(regData)
       });
 
@@ -93,6 +229,14 @@ export function AffiliatePortal({ onBack }: AffiliatePortalProps) {
 
       const data = await response.json();
       setAffiliate(data.affiliate);
+      
+      // Save token if new session
+      if (data.token) {
+           localStorage.setItem('vibespot_session_token', data.token);
+           setSessionToken(data.token);
+           console.log('🔑 Saved new session token:', data.token);
+      }
+      
       setView('dashboard');
       toast.success('Registration successful!');
     } catch (error) {
@@ -103,7 +247,7 @@ export function AffiliatePortal({ onBack }: AffiliatePortalProps) {
   };
 
   if (view === 'dashboard' && affiliate) {
-    return <AffiliateDashboard affiliate={affiliate} onLogout={() => setView('login')} API_URL={API_URL} />;
+    return <AffiliateDashboard affiliate={affiliate} onLogout={() => setView('login')} API_URL={API_URL} sessionToken={sessionToken} />;
   }
 
   return (
@@ -123,109 +267,158 @@ export function AffiliatePortal({ onBack }: AffiliatePortalProps) {
           <p className="text-slate-500">Earn revenue by referring businesses or promoting the app to your followers.</p>
         </div>
 
-        <div className="flex bg-slate-100 p-1 rounded-lg mb-6">
-          <button 
-            className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${view === 'login' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500'}`}
-            onClick={() => setView('login')}
-          >
-            Sign In
-          </button>
-          <button 
-            className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${view === 'register' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500'}`}
-            onClick={() => setView('register')}
-          >
-            Join Now
-          </button>
-        </div>
-
-        {view === 'login' ? (
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Email Address</label>
-              <Input 
-                type="email"
-                value={loginEmail}
-                onChange={(e) => setLoginEmail(e.target.value)}
-                placeholder="you@example.com"
-                required
-              />
-            </div>
-            <Button className="w-full bg-cyan-600 hover:bg-cyan-700 text-white" disabled={loading}>
-              {loading ? 'Signing in...' : 'Sign In'}
-            </Button>
-          </form>
-        ) : (
-          <form onSubmit={handleRegister} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Full Name</label>
-              <Input 
-                value={regData.name}
-                onChange={(e) => setRegData({...regData, name: e.target.value})}
-                placeholder="John Doe"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Email Address</label>
-              <Input 
-                type="email"
-                value={regData.email}
-                onChange={(e) => setRegData({...regData, email: e.target.value})}
-                placeholder="you@example.com"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Phone Number</label>
-              <Input 
-                value={regData.phone}
-                onChange={(e) => setRegData({...regData, phone: e.target.value})}
-                placeholder="+27..."
-              />
-            </div>
-            
-            <div className="pt-4 border-t border-slate-100">
-              <h3 className="text-sm font-semibold text-slate-900 mb-3 flex items-center gap-2">
-                <CreditCard className="w-4 h-4" /> Bank Details (For Payouts)
-              </h3>
-              <div className="space-y-3">
-                <Input 
-                  placeholder="Bank Name" 
-                  value={regData.bank_name}
-                  onChange={(e) => setRegData({...regData, bank_name: e.target.value})}
-                  required
-                />
-                <Input 
-                  placeholder="Account Number" 
-                  value={regData.account_number}
-                  onChange={(e) => setRegData({...regData, account_number: e.target.value})}
-                  required
-                />
-                <Input 
-                  placeholder="Branch Code" 
-                  value={regData.branch_code}
-                  onChange={(e) => setRegData({...regData, branch_code: e.target.value})}
-                  required
-                />
+        {user ? (
+          <div className="text-center space-y-6">
+            <div className="bg-slate-50 p-6 rounded-xl border border-slate-100">
+              <div className="w-16 h-16 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-full mx-auto mb-4 flex items-center justify-center text-2xl font-bold text-white shadow-md">
+                {user.name ? user.name.charAt(0).toUpperCase() : 'U'}
               </div>
+              <h3 className="text-lg font-bold text-slate-900">Continue as {user.name}</h3>
+              <p className="text-slate-500 text-sm mb-6">{user.email}</p>
+              
+              <Button 
+                onClick={handleAutoJoin}
+                disabled={loading}
+                className="w-full bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white font-bold py-6 text-lg shadow-lg shadow-cyan-500/20"
+              >
+                {loading ? 'Accessing Portal...' : 'Enter Partner Portal'}
+              </Button>
+              <p className="text-xs text-slate-400 mt-4">
+                By entering, you agree to our affiliate terms and conditions.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="flex bg-slate-100 p-1 rounded-lg mb-6">
+              <button 
+                className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${view === 'login' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500'}`}
+                onClick={() => setView('login')}
+              >
+                Sign In
+              </button>
+              <button 
+                className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${view === 'register' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500'}`}
+                onClick={() => setView('register')}
+              >
+                Join Now
+              </button>
             </div>
 
-            <Button className="w-full bg-cyan-600 hover:bg-cyan-700 text-white" disabled={loading}>
-              {loading ? 'Creating Account...' : 'Create Affiliate Account'}
-            </Button>
-          </form>
+            {view === 'login' ? (
+              <form onSubmit={handleLogin} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Email Address</label>
+                  <Input 
+                    type="email"
+                    value={loginEmail}
+                    onChange={(e) => setLoginEmail(e.target.value)}
+                    placeholder="you@example.com"
+                    required
+                  />
+                </div>
+                <Button className="w-full bg-cyan-600 hover:bg-cyan-700 text-white" disabled={loading}>
+                  {loading ? 'Signing in...' : 'Sign In'}
+                </Button>
+              </form>
+            ) : (
+              <form onSubmit={handleRegister} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Full Name</label>
+                  <Input 
+                    value={regData.name}
+                    onChange={(e) => setRegData({...regData, name: e.target.value})}
+                    placeholder="John Doe"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Email Address</label>
+                  <Input 
+                    type="email"
+                    value={regData.email}
+                    onChange={(e) => setRegData({...regData, email: e.target.value})}
+                    placeholder="you@example.com"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Phone Number</label>
+                  <Input 
+                    value={regData.phone}
+                    onChange={(e) => setRegData({...regData, phone: e.target.value})}
+                    placeholder="+27..."
+                  />
+                </div>
+                
+                <div className="pt-4 border-t border-slate-100">
+                  <h3 className="text-sm font-semibold text-slate-900 mb-3 flex items-center gap-2">
+                    <CreditCard className="w-4 h-4" /> Bank Details (For Payouts)
+                  </h3>
+                  <div className="space-y-3">
+                    <Input 
+                      placeholder="Bank Name" 
+                      value={regData.bank_name}
+                      onChange={(e) => setRegData({...regData, bank_name: e.target.value})}
+                      required
+                    />
+                    <Input 
+                      placeholder="Account Number" 
+                      value={regData.account_number}
+                      onChange={(e) => setRegData({...regData, account_number: e.target.value})}
+                      required
+                    />
+                    <Input 
+                      placeholder="Branch Code" 
+                      value={regData.branch_code}
+                      onChange={(e) => setRegData({...regData, branch_code: e.target.value})}
+                      required
+                    />
+                  </div>
+                </div>
+
+                <Button className="w-full bg-cyan-600 hover:bg-cyan-700 text-white" disabled={loading}>
+                  {loading ? 'Creating Account...' : 'Create Affiliate Account'}
+                </Button>
+              </form>
+            )}
+          </>
         )}
       </div>
     </div>
   );
 }
 
-function AffiliateDashboard({ affiliate, onLogout, API_URL }: { affiliate: Affiliate, onLogout: () => void, API_URL: string }) {
+function AffiliateDashboard({ affiliate, onLogout, API_URL, sessionToken }: { affiliate: Affiliate, onLogout: () => void, API_URL: string, sessionToken: string | null }) {
   const [commissions, setCommissions] = useState<Commission[]>([]);
   const [copied, setCopied] = useState(false);
   const [bankDetails, setBankDetails] = useState(affiliate.bank_details);
   const [isEditingBank, setIsEditingBank] = useState(false);
   const [savingBank, setSavingBank] = useState(false);
+
+  const getAuthHeaders = () => {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    
+    // Authorization: Always Supabase JWT (User or Anon)
+    let authBearer = `Bearer ${publicAnonKey}`;
+    try {
+      const stored = localStorage.getItem(`sb-${projectId}-auth-token`);
+      if (stored) {
+        const session = JSON.parse(stored);
+        if (session.access_token) authBearer = `Bearer ${session.access_token}`;
+      }
+    } catch (e) {}
+    headers['Authorization'] = authBearer;
+
+    // Custom Partner Token
+    // Prioritize the prop passed from parent (sessionToken), then local storage
+    const customToken = sessionToken || localStorage.getItem('vibespot_session_token');
+    if (customToken) {
+        headers['X-Session-Token'] = customToken;
+    }
+    
+    return headers;
+  };
 
   useEffect(() => {
     fetchCommissions();
@@ -233,8 +426,9 @@ function AffiliateDashboard({ affiliate, onLogout, API_URL }: { affiliate: Affil
 
   const fetchCommissions = async () => {
     try {
-      const response = await fetch(`${API_URL}/affiliates/${affiliate.id}/commissions`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+      const headers = getAuthHeaders();
+      const response = await fetch(`${API_URL}/partners/${affiliate.id}/commissions`, {
+        headers
       });
       const data = await response.json();
       setCommissions(data.commissions || []);
@@ -243,19 +437,44 @@ function AffiliateDashboard({ affiliate, onLogout, API_URL }: { affiliate: Affil
     }
   };
 
-  const copyCode = () => {
-    navigator.clipboard.writeText(affiliate.code);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-    toast.success('Affiliate code copied!');
+  const copyToClipboard = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (err) {
+      try {
+        const textArea = document.createElement("textarea");
+        textArea.value = text;
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+        return true;
+      } catch (fallbackErr) {
+        console.error('Failed to copy:', err);
+        return false;
+      }
+    }
+  };
+
+  const copyCode = async () => {
+    const success = await copyToClipboard(affiliate.code);
+    if (success) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+      toast.success('Affiliate code copied!');
+    } else {
+      toast.error('Failed to copy code');
+    }
   };
 
   const saveBankDetails = async () => {
     setSavingBank(true);
     try {
-      const response = await fetch(`${API_URL}/affiliates/${affiliate.id}/bank-details`, {
+      const headers = getAuthHeaders();
+      const response = await fetch(`${API_URL}/partners/${affiliate.id}/bank-details`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${publicAnonKey}` },
+        headers,
         body: JSON.stringify(bankDetails)
       });
       if (!response.ok) throw new Error('Failed to update');
@@ -269,173 +488,232 @@ function AffiliateDashboard({ affiliate, onLogout, API_URL }: { affiliate: Affil
   };
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <div className="bg-white shadow-sm border-b border-slate-200">
-        <div className="max-w-6xl mx-auto px-4 py-4 flex justify-between items-center">
-          <div className="flex items-center gap-2">
-            <Share2 className="w-6 h-6 text-cyan-600" />
-            <span className="font-bold text-lg text-slate-900">Affiliate Portal</span>
-          </div>
-          <div className="flex items-center gap-4">
-            <span className="text-sm text-slate-600">Welcome, {affiliate.name}</span>
-            <Button variant="outline" size="sm" onClick={onLogout}>Sign Out</Button>
-          </div>
+    <div className="min-h-screen bg-slate-50 pb-20">
+      {/* Header */}
+      <div className="bg-white px-4 pt-6 pb-2 border-b border-slate-100 sticky top-0 z-30">
+        <div className="flex justify-between items-center mb-6">
+            <div className="flex items-center gap-2">
+                <Share2 className="w-5 h-5 text-cyan-600" />
+                <h2 className="text-lg font-bold text-slate-900">Affiliate Portal</h2>
+            </div>
+        </div>
+        
+        <div className="flex items-center gap-3 mb-2">
+             <div className="w-10 h-10 rounded-full bg-cyan-100 flex items-center justify-center text-cyan-700 font-bold text-sm">
+                {affiliate.name.charAt(0).toUpperCase()}
+             </div>
+             <div>
+                 <div className="text-xs text-slate-500">Welcome,</div>
+                 <div className="font-semibold text-slate-900 leading-tight">{affiliate.name}</div>
+             </div>
         </div>
       </div>
 
-      <div className="max-w-6xl mx-auto px-4 py-8 space-y-8">
+      <div className="p-4 space-y-6">
         
-        {/* Key Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-          <Card className="p-6 bg-gradient-to-br from-cyan-500 to-blue-600 text-white border-none shadow-lg">
-            <div className="flex justify-between items-start mb-4">
-              <div>
-                <p className="text-cyan-100 text-sm font-medium">Pending Payout</p>
-                <h3 className="text-3xl font-bold mt-1">R {affiliate.pending_balance.toLocaleString()}</h3>
-              </div>
-              <div className="p-2 bg-white/20 rounded-lg">
-                <Wallet className="w-6 h-6 text-white" />
-              </div>
-            </div>
-            <p className="text-cyan-100 text-xs">Payouts are processed monthly</p>
-          </Card>
-
-          <Card className="p-6">
-            <div className="flex justify-between items-start mb-4">
-              <div>
-                <p className="text-slate-500 text-sm font-medium">Total Earnings</p>
-                <h3 className="text-3xl font-bold mt-1 text-slate-900">R {affiliate.total_earnings.toLocaleString()}</h3>
-              </div>
-              <div className="p-2 bg-green-100 rounded-lg">
-                <DollarSign className="w-6 h-6 text-green-600" />
-              </div>
-            </div>
-            <p className="text-slate-500 text-xs">Total paid out: R {affiliate.paid_earnings.toLocaleString()}</p>
-          </Card>
-
-          <Card className="p-6">
-             <div className="flex justify-between items-start mb-4">
-              <div>
-                <p className="text-slate-500 text-sm font-medium">App Downloads</p>
-                <h3 className="text-3xl font-bold mt-1 text-slate-900">{affiliate.app_downloads || 0}</h3>
-              </div>
-              <div className="p-2 bg-purple-100 rounded-lg">
-                <Users className="w-6 h-6 text-purple-600" />
-              </div>
-            </div>
-            <p className="text-slate-500 text-xs">Referral Code: <span className="font-mono font-bold">{affiliate.code}</span></p>
-          </Card>
-
-          <Card className="p-6">
-             <div className="flex justify-between items-start mb-4">
-              <div>
-                <p className="text-slate-500 text-sm font-medium">Biz Referrals</p>
-                <h3 className="text-3xl font-bold mt-1 text-slate-900">{affiliate.total_referrals}</h3>
-              </div>
-              <div className="p-2 bg-orange-100 rounded-lg">
-                <Building className="w-6 h-6 text-orange-600" />
-              </div>
-            </div>
-             <div className="flex items-center gap-2 bg-slate-100 p-2 rounded text-sm text-slate-700">
-                <span className="font-mono font-bold tracking-widest flex-1">{affiliate.code}</span>
-                <button onClick={copyCode} className="hover:text-cyan-600">
-                    {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                </button>
+        {/* Horizontal Scroll Stats */}
+        <div className="overflow-x-auto pb-4 -mx-4 px-4 snap-x snap-mandatory flex gap-4 scrollbar-hide">
+          {/* Card 1: Pending Payout */}
+          <div className="snap-center shrink-0 w-[140px] h-[240px] bg-gradient-to-b from-[#00A3FF] to-[#0066FF] rounded-[32px] p-5 flex flex-col justify-between text-white relative shadow-lg shadow-blue-200">
+             <div className="absolute top-0 right-0 w-24 h-24 bg-white/10 rounded-full blur-2xl -mr-10 -mt-10 pointer-events-none"></div>
+             <div>
+                <p className="text-xs font-medium text-blue-100 leading-tight mb-1">Pending<br/>Payout</p>
+                <h3 className="text-2xl font-bold tracking-tight">R {affiliate.pending_balance.toLocaleString()}</h3>
              </div>
-          </Card>
+             <div className="text-[10px] leading-tight text-blue-100 opacity-80">
+                Payouts are processed monthly
+             </div>
+          </div>
+
+          {/* Card 2: Total Earnings */}
+          <div className="snap-center shrink-0 w-[140px] h-[240px] bg-white rounded-[32px] p-5 flex flex-col justify-between text-slate-900 shadow-sm border border-slate-100">
+             <div>
+                <p className="text-xs font-medium text-slate-500 leading-tight mb-1">Total<br/>Earnings</p>
+                <h3 className="text-2xl font-bold tracking-tight">R {affiliate.total_earnings.toLocaleString()}</h3>
+             </div>
+             <div className="text-[10px] leading-tight text-slate-400">
+                Total paid out:<br/>R {affiliate.paid_earnings.toLocaleString()}
+             </div>
+          </div>
+
+          {/* Card 3: App Downloads */}
+          <div className="snap-center shrink-0 w-[140px] h-[240px] bg-white rounded-[32px] p-5 flex flex-col justify-between text-slate-900 shadow-sm border border-slate-100">
+             <div>
+                <p className="text-xs font-medium text-slate-500 leading-tight mb-1">App<br/>Downloads</p>
+                <h3 className="text-2xl font-bold tracking-tight">{affiliate.app_downloads || 0}</h3>
+             </div>
+             <div>
+                 <div className="text-[10px] text-slate-400 mb-1">Referral Code:</div>
+                 <div className="text-xs font-mono font-bold bg-slate-100 px-2 py-1 rounded inline-block text-slate-600">{affiliate.code}</div>
+             </div>
+          </div>
+
+           {/* Card 4: Biz Referrals */}
+           <div className="snap-center shrink-0 w-[140px] h-[240px] bg-white rounded-[32px] p-5 flex flex-col justify-between text-slate-900 shadow-sm border border-slate-100">
+             <div>
+                <p className="text-xs font-medium text-slate-500 leading-tight mb-1">Biz<br/>Referrals</p>
+                <h3 className="text-2xl font-bold tracking-tight">{affiliate.total_referrals}</h3>
+             </div>
+              <div>
+                 <div className="text-[10px] text-slate-400 mb-1">Partner Code:</div>
+                 <button onClick={copyCode} className="text-xs font-mono font-bold bg-slate-100 px-2 py-1 rounded flex items-center gap-1 text-slate-600 hover:bg-slate-200 w-full justify-between">
+                     {affiliate.code}
+                     <Copy className="w-3 h-3" />
+                 </button>
+             </div>
+          </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            {/* Earnings History */}
-            <div className="lg:col-span-2 space-y-6">
-                <h3 className="text-xl font-bold text-slate-900">Earnings History</h3>
+        {/* Promote & Earn Banner */}
+        <div className="bg-gradient-to-r from-[#D946EF] to-[#EC4899] rounded-[32px] p-6 text-white shadow-lg shadow-pink-200 relative overflow-hidden">
+             <div className="absolute top-0 right-0 w-48 h-48 bg-white/20 rounded-full blur-3xl -mr-12 -mt-12 pointer-events-none"></div>
+             
+             <h3 className="text-xl font-bold mb-2 relative z-10">Promote & Earn</h3>
+             <p className="text-sm text-pink-100 mb-6 relative z-10 max-w-[200px]">
+                Share your unique link with friends and followers.
+             </p>
+
+             <div className="flex flex-col sm:flex-row gap-3 items-stretch relative z-10">
+                 <div className="bg-white/10 backdrop-blur-md rounded-2xl p-3 flex-1 border border-white/20">
+                     <p className="text-[10px] uppercase tracking-wider text-pink-200 mb-1">Your Unique Link</p>
+                     <p className="font-mono font-bold text-sm truncate">myvibes.app/?ref={affiliate.code}</p>
+                 </div>
+                 <Button 
+                    onClick={async () => {
+                        const link = `https://myvibes.app/?ref=${affiliate.code}`;
+                        try {
+                            await navigator.clipboard.writeText(link);
+                            toast.success('Referral link copied!');
+                        } catch (err) {
+                             const textArea = document.createElement("textarea");
+                             textArea.value = link;
+                             document.body.appendChild(textArea);
+                             textArea.select();
+                             document.execCommand('copy');
+                             document.body.removeChild(textArea);
+                             toast.success('Referral link copied!');
+                        }
+                    }}
+                    className="bg-white text-pink-600 hover:bg-pink-50 rounded-xl px-6 font-bold shadow-sm h-auto py-3"
+                >
+                     Copy
+                 </Button>
+             </div>
+        </div>
+
+        {/* Bottom Split Section */}
+        <div className="grid grid-cols-2 gap-4">
+            
+            {/* Left: Earnings Empty State / List */}
+            <div className="bg-white rounded-[32px] p-6 border border-slate-100 flex flex-col items-center text-center justify-center min-h-[300px]">
                 {commissions.length === 0 ? (
-                    <Card className="p-8 text-center text-slate-500 border-dashed">
-                        <DollarSign className="w-12 h-12 mx-auto mb-4 text-slate-300" />
-                        <p>No commissions yet. Start referring businesses!</p>
-                    </Card>
+                    <>
+                        <div className="w-14 h-14 bg-slate-50 rounded-full flex items-center justify-center mb-4">
+                            <DollarSign className="w-6 h-6 text-slate-300" />
+                        </div>
+                        <h4 className="text-lg font-bold text-slate-900 mb-2 leading-tight">No earnings yet</h4>
+                        <p className="text-xs text-slate-500 leading-relaxed px-1">
+                            Start referring businesses to see your commissions appear here.
+                        </p>
+                    </>
                 ) : (
-                    <div className="space-y-4">
-                        {commissions.map((comm) => (
-                            <Card key={comm.id} className="p-4 flex items-center justify-between">
-                                <div className="flex items-center gap-4">
-                                    <div className={`w-10 h-10 rounded-full flex items-center justify-center ${comm.type === 'Subscription' ? 'bg-blue-100 text-blue-600' : 'bg-green-100 text-green-600'}`}>
-                                        <Building className="w-5 h-5" />
-                                    </div>
-                                    <div>
-                                        <h4 className="font-bold text-slate-900">{comm.business_name}</h4>
-                                        <p className="text-xs text-slate-500">{comm.type} • {new Date(comm.date).toLocaleDateString()}</p>
-                                    </div>
-                                </div>
-                                <div className="text-right">
-                                    <p className="font-bold text-green-600">+ R {comm.amount.toLocaleString()}</p>
-                                    <span className={`text-xs px-2 py-0.5 rounded-full ${comm.status === 'pending' ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'}`}>
-                                        {comm.status}
-                                    </span>
-                                </div>
-                            </Card>
-                        ))}
+                    <div className="w-full h-full flex flex-col justify-start">
+                         <h4 className="text-sm font-bold text-slate-900 mb-4 text-left">Recent Activity</h4>
+                         <div className="space-y-3 overflow-y-auto max-h-[250px] -mr-2 pr-2">
+                             {commissions.map((comm) => (
+                                 <div key={comm.id} className="text-left bg-slate-50 p-3 rounded-xl">
+                                     <div className="text-xs font-bold text-slate-900 truncate">{comm.business_name}</div>
+                                     <div className="flex justify-between items-center mt-1">
+                                         <span className="text-[10px] text-slate-500">{new Date(comm.date).toLocaleDateString()}</span>
+                                         <span className="text-xs font-bold text-green-600">+R{comm.amount}</span>
+                                     </div>
+                                 </div>
+                             ))}
+                         </div>
                     </div>
                 )}
             </div>
 
-            {/* Bank Details */}
-            <div className="space-y-6">
-                <h3 className="text-xl font-bold text-slate-900">Payout Details</h3>
-                <Card className="p-6">
-                    <div className="flex justify-between items-center mb-6">
-                        <div className="flex items-center gap-2">
-                            <CreditCard className="w-5 h-5 text-slate-500" />
-                            <span className="font-semibold text-slate-700">Bank Account</span>
+            {/* Right: Bank Account Card */}
+            <div className="bg-[#0F172A] rounded-[32px] p-6 flex flex-col text-white relative overflow-hidden min-h-[300px]">
+                 <div className="absolute top-0 right-0 w-32 h-32 bg-cyan-500/10 rounded-full blur-2xl -mr-16 -mt-16 pointer-events-none"></div>
+                 
+                 <div className="relative z-10 flex-1 flex flex-col">
+                     <div className="flex justify-between items-start mb-6">
+                        <div className="flex flex-col gap-1">
+                             <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center mb-2">
+                                <CreditCard className="w-4 h-4 text-white/70" />
+                             </div>
+                             <span className="text-[10px] font-bold tracking-widest uppercase text-white/40">Linked<br/>Account</span>
                         </div>
-                        <Button 
-                            variant="ghost" 
-                            size="sm" 
-                            className="text-cyan-600"
-                            onClick={() => isEditingBank ? saveBankDetails() : setIsEditingBank(true)}
-                            disabled={savingBank}
-                        >
-                            {isEditingBank ? 'Save' : 'Edit'}
-                        </Button>
-                    </div>
+                        {isEditingBank && (
+                            <button onClick={() => setIsEditingBank(false)} className="text-[10px] text-white/60 underline">Cancel</button>
+                        )}
+                     </div>
 
-                    <div className="space-y-4">
-                        <div>
-                            <label className="text-xs uppercase text-slate-400 font-bold mb-1 block">Bank Name</label>
-                            {isEditingBank ? (
-                                <Input value={bankDetails.bank_name} onChange={(e) => setBankDetails({...bankDetails, bank_name: e.target.value})} />
-                            ) : (
-                                <p className="font-medium text-slate-900">{bankDetails.bank_name}</p>
-                            )}
+                     {isEditingBank ? (
+                        <div className="space-y-3 mt-auto">
+                            <Input 
+                                placeholder="Bank" 
+                                className="bg-white/10 border-transparent text-white text-xs h-8 px-2 placeholder:text-white/30"
+                                value={bankDetails.bank_name}
+                                onChange={(e) => setBankDetails({...bankDetails, bank_name: e.target.value})}
+                            />
+                             <Input 
+                                placeholder="Acc #" 
+                                className="bg-white/10 border-transparent text-white text-xs h-8 px-2 placeholder:text-white/30"
+                                value={bankDetails.account_number}
+                                onChange={(e) => setBankDetails({...bankDetails, account_number: e.target.value})}
+                            />
+                             <Input 
+                                placeholder="Branch" 
+                                className="bg-white/10 border-transparent text-white text-xs h-8 px-2 placeholder:text-white/30"
+                                value={bankDetails.branch_code}
+                                onChange={(e) => setBankDetails({...bankDetails, branch_code: e.target.value})}
+                            />
+                            <Button size="sm" onClick={saveBankDetails} disabled={savingBank} className="w-full bg-cyan-500 hover:bg-cyan-400 h-8 text-xs">
+                                {savingBank ? 'Saving...' : 'Save Details'}
+                            </Button>
                         </div>
-                        <div>
-                            <label className="text-xs uppercase text-slate-400 font-bold mb-1 block">Account Number</label>
-                            {isEditingBank ? (
-                                <Input value={bankDetails.account_number} onChange={(e) => setBankDetails({...bankDetails, account_number: e.target.value})} />
+                     ) : (
+                         <div className="mt-auto flex flex-col gap-4">
+                            {bankDetails.bank_name ? (
+                                <>
+                                    <div>
+                                        <div className="text-[10px] text-white/40 uppercase mb-1">Bank</div>
+                                        <div className="font-bold text-lg leading-none">{bankDetails.bank_name}</div>
+                                    </div>
+                                    <div>
+                                        <div className="text-[10px] text-white/40 uppercase mb-1">Account</div>
+                                        <div className="font-mono text-sm tracking-wider opacity-80">
+                                            •••• {bankDetails.account_number.slice(-4)}
+                                        </div>
+                                    </div>
+                                     <Button 
+                                        variant="outline" 
+                                        onClick={() => setIsEditingBank(true)}
+                                        className="w-full border-white/20 text-white bg-transparent hover:bg-white/10 text-xs h-8"
+                                    >
+                                        Edit Details
+                                    </Button>
+                                </>
                             ) : (
-                                <p className="font-medium text-slate-900">{bankDetails.account_number}</p>
+                                <>
+                                    <h4 className="text-xl font-bold leading-tight">No Bank<br/>Linked</h4>
+                                    <p className="text-[10px] text-white/50 leading-relaxed">
+                                        Link your bank account to receive payouts.
+                                    </p>
+                                    <Button 
+                                        onClick={() => setIsEditingBank(true)}
+                                        className="w-full bg-white text-slate-900 hover:bg-slate-100 font-semibold text-xs h-9 rounded-xl"
+                                    >
+                                        Link Account
+                                    </Button>
+                                </>
                             )}
-                        </div>
-                        <div>
-                            <label className="text-xs uppercase text-slate-400 font-bold mb-1 block">Branch Code</label>
-                            {isEditingBank ? (
-                                <Input value={bankDetails.branch_code} onChange={(e) => setBankDetails({...bankDetails, branch_code: e.target.value})} />
-                            ) : (
-                                <p className="font-medium text-slate-900">{bankDetails.branch_code}</p>
-                            )}
-                        </div>
-                    </div>
-                </Card>
-                
-                <Card className="p-6 bg-slate-800 text-slate-300">
-                    <h4 className="text-white font-bold mb-2">How it works</h4>
-                    <ul className="text-sm space-y-2 list-disc list-inside">
-                        <li>Share your unique code with businesses.</li>
-                        <li>They get a discount (optional) or you get credit.</li>
-                        <li>You earn 10% on every monthly subscription payment they make.</li>
-                        <li>Payouts are processed at the end of each month.</li>
-                    </ul>
-                </Card>
+                         </div>
+                     )}
+                 </div>
             </div>
         </div>
       </div>

@@ -1,94 +1,181 @@
-import { useState } from 'react';
-import { User, Sparkles } from 'lucide-react';
+import React, { useState } from 'react';
+import { User, Sparkles, Mail, Phone, Calendar } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
+import * as api from '@/utils/api';
 
 interface CustomerProfileSetupProps {
   onComplete: (profile: any) => void;
 }
 
 export function CustomerProfileSetup({ onComplete }: CustomerProfileSetupProps) {
-  const [name, setName] = useState('');
+  const [formData, setFormData] = useState({
+    name: '',
+    email: '',
+    mobile: '',
+    birthday: ''
+  });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError(null);
 
-    console.log('🔍 Customer Profile Setup - Form submitted with data:', { name });
-
-    // Validate Name only
-    if (!name.trim()) {
-      alert('Please enter your name');
+    // Basic Validation
+    if (!formData.name.trim()) {
+      setError('Please enter your full name');
+      return;
+    }
+    if (!formData.email.trim() || !formData.email.includes('@')) {
+      setError('Please enter a valid email address');
+      return;
+    }
+    if (!formData.mobile.trim()) {
+      setError('Please enter your mobile number');
       return;
     }
 
-    const profile = {
-      name,
-      id: `guest-${Date.now()}`, // Generate a temporary ID
-      username: name.toLowerCase().replace(/\s+/g, '') + Math.floor(Math.random() * 1000),
-      // Default empty values for compatibility
-      email: '',
-      mobile: '',
-      notificationPreference: 'email'
-    };
+    setLoading(true);
 
-    // Save to localStorage
     try {
-      localStorage.setItem('vibespot_customer_profile', JSON.stringify(profile));
-      localStorage.setItem('vibespot_customer_logged_in', 'true');
-      console.log('💾 Profile saved to localStorage:', profile);
+      console.log('🚀 Starting profile setup...');
+
+      // 1. Get Authentication Token & Base Profile
+      const authResult = await api.continueWithEmail(formData.name, formData.email);
       
-      onComplete(profile);
-    } catch (error) {
-      console.error('❌ Error saving to localStorage:', error);
-      alert('Failed to save profile. Please try again.');
+      if (!authResult.success || !authResult.token) {
+        throw new Error(authResult.error || 'Authentication failed');
+      }
+
+      console.log('✅ Auth successful, token received');
+
+      // 2. Update Profile with Mobile & Birthday (since continueWithEmail only sets name/email)
+      const fullProfile = {
+        ...authResult.customer,
+        mobile: formData.mobile,
+        birthday: formData.birthday || null,
+        // Ensure critical fields are set
+        name: formData.name,
+        email: formData.email,
+        notificationPreference: 'email'
+      };
+
+      // Call API to persist full details
+      await api.saveCustomerProfile(fullProfile);
+      
+      console.log('✅ Full profile saved to backend');
+
+      // 3. Save to LocalStorage for persistence
+      localStorage.setItem('vibespot_session_token', authResult.token);
+      localStorage.setItem('vibespot_customer_profile', JSON.stringify(fullProfile));
+      localStorage.setItem('vibespot_customer_logged_in', 'true');
+
+      // 4. Complete
+      onComplete(fullProfile);
+
+    } catch (err: any) {
+      console.error('❌ Profile setup error:', err);
+      setError(err.message || 'Failed to create profile. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full animate-in fade-in slide-in-from-bottom-4 duration-300 flex flex-col">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full animate-in fade-in slide-in-from-bottom-4 duration-300 flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="bg-gradient-to-r from-cyan-500 to-blue-600 p-5 text-center text-white flex-shrink-0 rounded-t-2xl">
-          <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-full mx-auto flex items-center justify-center mb-2">
+        <div className="bg-gradient-to-r from-cyan-500 to-blue-600 p-6 text-center text-white flex-shrink-0">
+          <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-full mx-auto flex items-center justify-center mb-3">
             <Sparkles className="w-6 h-6" />
           </div>
           <h2 className="text-xl font-bold mb-1">Welcome to MYVIBES!</h2>
-          <p className="text-cyan-100 text-xs">Enter your name to start exploring</p>
+          <p className="text-cyan-100 text-sm">Create your profile to start exploring</p>
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-6">
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          {error && (
+            <div className="bg-red-50 text-red-600 text-sm p-3 rounded-lg">
+              {error}
+            </div>
+          )}
+
           {/* Name */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+            <label className="block text-sm font-medium text-gray-700 mb-1.5 flex items-center gap-2">
               <User className="w-4 h-4 text-cyan-500" />
-              Full Name
+              Full Name <span className="text-red-500">*</span>
             </label>
             <Input
               type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
+              value={formData.name}
+              onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
               placeholder="John Doe"
               className="w-full"
               required
-              autoFocus
             />
           </div>
 
-          {/* Info */}
-          <div className="bg-cyan-50 border border-cyan-200 rounded-lg p-3">
-            <p className="text-xs text-cyan-800">
-              <strong>Quick Access:</strong> You can add more details later in your profile.
-            </p>
+          {/* Email */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5 flex items-center gap-2">
+              <Mail className="w-4 h-4 text-cyan-500" />
+              Email Address <span className="text-red-500">*</span>
+            </label>
+            <Input
+              type="email"
+              value={formData.email}
+              onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
+              placeholder="john@example.com"
+              className="w-full"
+              required
+            />
           </div>
 
-          {/* Submit */}
-          <Button
-            type="submit"
-            className="w-full bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white py-4 text-lg font-semibold"
-          >
-            Start Vibing
-          </Button>
+          {/* Mobile */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5 flex items-center gap-2">
+              <Phone className="w-4 h-4 text-cyan-500" />
+              Mobile Number <span className="text-red-500">*</span>
+            </label>
+            <Input
+              type="tel"
+              value={formData.mobile}
+              onChange={(e) => setFormData(prev => ({ ...prev, mobile: e.target.value }))}
+              placeholder="082 123 4567"
+              className="w-full"
+              required
+            />
+          </div>
+
+          {/* Birthday (Optional) */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5 flex items-center gap-2">
+              <Calendar className="w-4 h-4 text-cyan-500" />
+              Date of Birth <span className="text-gray-400 text-xs font-normal">(Optional)</span>
+            </label>
+            <Input
+              type="date"
+              value={formData.birthday}
+              onChange={(e) => setFormData(prev => ({ ...prev, birthday: e.target.value }))}
+              className="w-full"
+            />
+          </div>
+
+          <div className="pt-2">
+            <Button
+              type="submit"
+              disabled={loading}
+              className="w-full bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white py-6 text-lg font-semibold shadow-lg shadow-blue-500/20"
+            >
+              {loading ? 'Creating Profile...' : 'Start Vibing'}
+            </Button>
+            <p className="text-center text-xs text-gray-400 mt-4">
+              By joining, you agree to our Terms & Privacy Policy
+            </p>
+          </div>
         </form>
       </div>
     </div>

@@ -21,7 +21,19 @@ export function PhoneModal({ onClose, phoneNumber, venueName }: PhoneModalProps)
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {
-      console.error('Failed to copy:', err);
+      // Fallback for environments where clipboard API is blocked
+      try {
+        const textArea = document.createElement("textarea");
+        textArea.value = phoneNumber;
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      } catch (fallbackErr) {
+        console.error('Failed to copy:', err);
+      }
     }
   };
 

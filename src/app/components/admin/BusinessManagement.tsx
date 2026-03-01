@@ -89,6 +89,33 @@ export function BusinessManagement() {
     }
   };
 
+  const handleSimulatePayment = async (biz: Business) => {
+    try {
+      const response = await fetch(`${API_URL}/admin/process-subscription`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${publicAnonKey}`
+        },
+        body: JSON.stringify({
+          business_id: biz.id,
+          amount: biz.subscription_plan === 'premium' ? 999 : 499,
+          is_promo: false
+        })
+      });
+
+      if (!response.ok) throw new Error('Payment simulation failed');
+      
+      const data = await response.json();
+      toast.success(`Payment simulated for ${biz.name}`, {
+        description: data.commission ? `Commission paid: R${data.commission.amount}` : 'No commission triggered'
+      });
+    } catch (err) {
+      console.error('Error simulating payment:', err);
+      toast.error('Failed to simulate payment');
+    }
+  };
+
   const handleAction = (action: string, biz: Business) => {
     if (action === 'Approve Business') {
       updateBusinessStatus(biz.id, { 
@@ -315,6 +342,9 @@ export function BusinessManagement() {
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => handleAction('View Financials', biz)} className="cursor-pointer">
                             View Financials
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleSimulatePayment(biz)} className="cursor-pointer text-blue-600 focus:text-blue-700 focus:bg-blue-50">
+                            Simulate Payment
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
                           {biz.subscription_status === 'pending' && (

@@ -21,6 +21,8 @@ const SocialMediaAdsGallery = lazy(() => import('./components/SocialMediaAdsGall
 
 // Rebuild trigger comment
 
+import { ROICalculator } from './components/ROICalculator';
+
 interface LandingPageProps {
   onTryDemo: () => void;
   onRegisterBusiness: () => void;
@@ -334,7 +336,10 @@ export default function LandingPage({ onTryDemo, onRegisterBusiness, onNavigate 
                   Partner with Us
                 </button>
                 <button 
-                  onClick={() => onNavigate('roi')}
+                  onClick={() => {
+                    const el = document.getElementById('calculator');
+                    if (el) el.scrollIntoView({ behavior: 'smooth' });
+                  }}
                   className="px-8 py-4 bg-transparent border border-gray-600 text-white rounded-2xl font-bold text-lg hover:bg-white/5 transition-all"
                 >
                   Calculate ROI
@@ -374,6 +379,9 @@ export default function LandingPage({ onTryDemo, onRegisterBusiness, onNavigate 
           </div>
         </div>
       </section>
+
+      {/* ROI Calculator Section */}
+      <ROICalculator onStart={() => onNavigate('affiliate-portal')} />
 
       {/* Social Proof */}
       <section className="py-24 bg-white">
