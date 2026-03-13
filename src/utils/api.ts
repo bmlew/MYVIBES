@@ -52,7 +52,16 @@ async function apiCall(endpoint: string, options: RequestInit = {}) {
       
       const sessionToken = localStorage.getItem('vibespot_session_token');
       
-      const response = await fetch(`${BASE_URL}${endpoint}`, {
+      const url = `${BASE_URL}${endpoint}`;
+      
+      // Enhanced logging for Android debugging
+      const isAndroid = /Android/i.test(navigator.userAgent);
+      const isPWA = window.matchMedia('(display-mode: standalone)').matches;
+      
+      console.log(`[API] ${isAndroid ? '🤖 Android' : '🌐 Browser'} ${isPWA ? 'PWA' : 'Web'} - Calling:`, url);
+      console.log(`[API] Method: ${options.method || 'GET'}, Has Token: ${!!sessionToken}`);
+      
+      const response = await fetch(url, {
         ...options,
         signal: controller.signal,
         headers: {
@@ -67,10 +76,17 @@ async function apiCall(endpoint: string, options: RequestInit = {}) {
 
       if (!response.ok) {
         const errorText = await response.text();
+        console.error(`[API] Error ${response.status}:`, errorText);
+        console.error(`[API] Headers sent:`, {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${publicAnonKey.substring(0, 20)}...`,
+          'X-Session-Token': sessionToken ? `${sessionToken.substring(0, 20)}...` : 'none'
+        });
         throw new Error(`API call failed (${response.status}): ${errorText || response.statusText}`);
       }
 
       const data = await response.json();
+      console.log(`[API] Success:`, endpoint);
       
       // Cache GET requests in memory
       if (!options.method || options.method === 'GET') {
@@ -79,9 +95,21 @@ async function apiCall(endpoint: string, options: RequestInit = {}) {
       
       return data;
     } catch (error) {
-      // Don't log AbortError to console - it's expected for timeouts
-      if (error instanceof Error && error.name !== 'AbortError') {
-        console.error('API call failed:', endpoint, error);
+      // Enhanced error logging
+      if (error instanceof Error) {
+        if (error.name === 'AbortError') {
+          console.error(`[API] ⏱️ Timeout after 30s:`, endpoint);
+        } else if (error.message.includes('Failed to fetch')) {
+          console.error(`[API] 🚫 Network Error - Failed to fetch:`, endpoint);
+          console.error(`[API] 💡 Possible causes:`);
+          console.error(`  - No internet connection`);
+          console.error(`  - CORS blocking the request`);
+          console.error(`  - Service worker interfering`);
+          console.error(`  - Android blocking cleartext traffic`);
+          console.error(`  - Supabase function not deployed/running`);
+        } else {
+          console.error(`[API] ❌ Failed:`, endpoint, error.message);
+        }
       }
       throw error;
     } finally {

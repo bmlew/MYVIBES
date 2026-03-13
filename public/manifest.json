@@ -3,11 +3,13 @@
   "short_name": "MYVIBES",
   "description": "Discover dining, events, and entertainment. Connect with restaurants and hotels in real-time with loyalty rewards and gamification.",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#0f172a",
   "theme_color": "#06b6d4",
   "orientation": "portrait-primary",
   "categories": ["food", "entertainment", "lifestyle", "social"],
+  "prefer_related_applications": false,
   "icons": [
     {
       "src": "/icons/icon-72x72.png",

@@ -11,7 +11,6 @@ import {
   Heart, 
   User 
 } from 'lucide-react';
-import { DebugPanel } from './components/DebugPanel';
 import { CustomerAuthScreen } from './components/CustomerAuthScreen';
 import { UserProfileModal } from './components/UserProfileModal';
 import { CustomerProfile } from './components/CustomerProfile';
@@ -176,8 +175,14 @@ export function CustomerApp() {
   // Authentication Effect
   useEffect(() => {
     const checkAuth = async () => {
+      console.log('🔐 Checking authentication state...');
+      
       const token = localStorage.getItem('vibespot_session_token');
       const localProfileStr = localStorage.getItem('vibespot_customer_profile');
+      
+      console.log('📊 Auth Check Results:');
+      console.log('  - Session Token:', token ? `${token.substring(0, 20)}...` : 'NONE');
+      console.log('  - Local Profile:', localProfileStr ? 'EXISTS' : 'NONE');
       
       // If no token...
       if (!token) {
@@ -188,6 +193,7 @@ export function CustomerApp() {
              // Ensure state matches local storage
              const profile = JSON.parse(localProfileStr);
              setUserProfile(profile);
+             console.log('✅ Restored session from localStorage:', profile.username || profile.name);
           } catch (e) {
              // If parse fails, then we must logout
              console.error('❌ Corrupt local profile, logging out.');
@@ -196,6 +202,7 @@ export function CustomerApp() {
           }
         } else {
           // No token and no profile -> Logout
+          console.log('ℹ️ No session found - user needs to log in');
           setUserProfile(null);
         }
         setAuthLoading(false);
@@ -203,6 +210,7 @@ export function CustomerApp() {
       }
 
       try {
+        console.log('🌐 Validating session with server...');
         const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-175b2872/auth/customer/me`, {
           headers: {
             'Authorization': `Bearer ${token}`
@@ -216,21 +224,42 @@ export function CustomerApp() {
           // Update local storage to keep it fresh
           localStorage.setItem('vibespot_customer_profile', JSON.stringify(data.customer));
           console.log('✅ Auto-logged in as:', data.customer.username);
+          console.log('✅ Session validated and refreshed');
         } else {
           // Only log out if specifically unauthorized (401)
           if (response.status === 401) {
-            console.log('ℹ️ Session expired, clearing local session'); // Downgraded from warn/error
+            console.log('ℹ️ Session expired, clearing local session');
             localStorage.removeItem('vibespot_session_token');
             localStorage.removeItem('vibespot_customer_profile'); 
             setUserProfile(null);
           } else {
             // Server error or other issue - keep user logged in (offline mode)
             console.warn('⚠️ Server validation failed but keeping local session:', response.status);
+            // Use local profile if available
+            if (localProfileStr) {
+              try {
+                const profile = JSON.parse(localProfileStr);
+                setUserProfile(profile);
+                console.log('✅ Using cached profile in offline mode:', profile.username || profile.name);
+              } catch (e) {
+                console.error('❌ Failed to parse local profile');
+              }
+            }
           }
         }
       } catch (err) {
         // Network error - keep user logged in (offline mode)
         console.error('⚠️ Auth check failed (network), working offline:', err);
+        // Use local profile if available
+        if (localProfileStr) {
+          try {
+            const profile = JSON.parse(localProfileStr);
+            setUserProfile(profile);
+            console.log('✅ Using cached profile due to network error:', profile.username || profile.name);
+          } catch (e) {
+            console.error('❌ Failed to parse local profile');
+          }
+        }
       } finally {
         setAuthLoading(false);
       }
@@ -240,10 +269,22 @@ export function CustomerApp() {
   }, []);
 
   const handleLoginSuccess = (user: UserProfile, token: string) => {
+    console.log('🔓 Login successful, saving session...');
+    console.log('  - User:', user.username || user.name);
+    console.log('  - Token:', token.substring(0, 20) + '...');
+    
     setUserProfile(user);
     // CRITICAL: Save both token and profile to localStorage for persistence
     localStorage.setItem('vibespot_session_token', token);
     localStorage.setItem('vibespot_customer_profile', JSON.stringify(user));
+    
+    // Verify it was saved
+    const savedToken = localStorage.getItem('vibespot_session_token');
+    const savedProfile = localStorage.getItem('vibespot_customer_profile');
+    console.log('✅ Session saved to localStorage:');
+    console.log('  - Token saved:', !!savedToken);
+    console.log('  - Profile saved:', !!savedProfile);
+    
     setAuthLoading(false);
     
     // Background sync to ensure admin visibility (legacy support)
@@ -785,10 +826,14 @@ export function CustomerApp() {
     }
   }, []);
 
-  // Debug: Track locationName changes
+  // Debug: Track location state changes
   useEffect(() => {
-    console.log('🏷️ locationName changed to:', locationName);
-  }, [locationName]);
+    console.log('📍 Location State Update:');
+    console.log('  - locationName:', locationName);
+    console.log('  - userLocation:', userLocation);
+    console.log('  - locationError:', locationError);
+    console.log('  - locationNameSetRef:', locationNameSetRef.current);
+  }, [locationName, userLocation, locationError]);
 
   // Seed database and fetch data on mount - OPTIMIZED FOR FAST LOADING
   useEffect(() => {
@@ -1302,9 +1347,9 @@ export function CustomerApp() {
   // }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-0 sm:p-4">
       {/* Mobile App Container */}
-      <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl overflow-hidden flex flex-col" style={{ height: '812px' }}>
+      <div className="w-full max-w-md bg-white sm:rounded-3xl shadow-2xl overflow-hidden flex flex-col h-screen sm:h-[812px]">
         
         {/* Venue Detail View - Full Screen */}
         {currentView === 'venue-detail' ? (
@@ -1345,11 +1390,18 @@ export function CustomerApp() {
             {/* App Header - Hide on profile view */}
             {currentView !== 'profile' && (
               <div className="bg-gradient-to-r from-cyan-500 to-blue-600 text-white px-6 pb-4 flex-shrink-0">
-              <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center justify-between mb-3">
                 <div>
                   <div className="flex items-center gap-2 mb-1">
                     <MyVibesLogo className="h-10" />
                   </div>
+                  {/* Customer Name */}
+                  {userProfile && (
+                    <div className="text-sm font-medium mt-1 flex items-center gap-2">
+                      <User className="w-4 h-4 opacity-80" />
+                      <span>{userProfile.name || userProfile.username || 'Guest'}</span>
+                    </div>
+                  )}
                 </div>
                 <div className="flex flex-col items-end gap-2">
                   <div className="text-right">
@@ -1377,61 +1429,39 @@ export function CustomerApp() {
                 </div>
               </div>
 
-              {/* Location */}
-              <button 
-                onClick={(e) => {
-                  console.log('🔵 HEADER BUTTON CLICKED - onClick handler fired');
-                  console.log('📊 Event details:', {
-                    isTrusted: e.isTrusted,
-                    type: e.type,
-                    eventPhase: e.eventPhase,
-                    timeStamp: e.timeStamp,
-                    detail: e.detail,
-                    pointerType: (e as any).pointerType,
-                    clientX: (e as any).clientX,
-                    clientY: (e as any).clientY
-                  });
-                  console.log('🎯 Active element:', document.activeElement?.tagName);
-                  console.log('⌨️ Keys pressed:', {
-                    ctrlKey: e.ctrlKey,
-                    shiftKey: e.shiftKey,
-                    altKey: e.altKey,
-                    metaKey: e.metaKey
-                  });
-                  
-                  // BLOCK if not a trusted user event
-                  if (!e.isTrusted) {
-                    console.log('⛔ BLOCKED: Not a trusted user event!');
-                    return;
-                  }
-                  
-                  requestLocation('header-button', e);
-                }}
-                onFocus={() => console.log('🎯 HEADER BUTTON FOCUSED')}
-                onBlur={() => console.log('🎯 HEADER BUTTON BLURRED')}
-                onKeyDown={(e) => console.log('⌨️ HEADER BUTTON KEY DOWN:', e.key)}
-                tabIndex={-1}
-                className={`flex items-center gap-2 text-sm mb-4 px-3 py-1.5 rounded-full transition-colors ${
-                  locationError === 'PERMISSION_DENIED' 
-                    ? 'bg-red-100 text-red-700 hover:bg-red-200' 
-                    : 'bg-white/20 hover:bg-white/30 text-white'
-                }`}
-              >
-                <MapPin className="w-4 h-4" />
-                <span>{locationName || 'Detecting location...'}</span>
-                {locationError === 'PERMISSION_DENIED' && (
-                  <span className="text-xs ml-1">(tap to enable)</span>
+              {/* Location Display */}
+              <div className="flex items-center justify-between gap-2 text-sm px-3 py-2 rounded-full bg-white/20">
+                <div className="flex items-center gap-2 min-w-0">
+                  <MapPin className="w-4 h-4 flex-shrink-0" />
+                  <span className="font-medium truncate">
+                    {locationName}
+                  </span>
+                </div>
+                {(!userLocation || locationError === 'PERMISSION_DENIED') && (
+                  <button
+                    onClick={(e) => {
+                      console.log('🔵 Location button clicked');
+                      if (!e.isTrusted) {
+                        console.log('⛔ BLOCKED: Not a trusted user event!');
+                        return;
+                      }
+                      requestLocation('header-button', e);
+                    }}
+                    className="text-xs bg-white/30 hover:bg-white/40 px-2 py-1 rounded-full transition-colors flex-shrink-0"
+                  >
+                    {locationError === 'PERMISSION_DENIED' ? 'Enable' : 'Get Location'}
+                  </button>
                 )}
-              </button>
+              </div>
             </div>
             )}
 
             {/* Main Content */}
-            <div className="flex-1 overflow-y-auto">
+            <div className="flex-1 overflow-y-auto pb-2">
               
               {/* Home View */}
               {currentView === 'home' && (
-                <div className="p-4">
+                <div className="p-4 pb-20">
                   {/* Location Permission Banner */}
                   {locationError === 'PERMISSION_DENIED' && (
                     <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4 flex items-start gap-3">
@@ -1598,7 +1628,7 @@ export function CustomerApp() {
 
               {/* Search View */}
               {currentView === 'search' && (
-                <div className="p-4">
+                <div className="p-4 pb-20">
                   <div className="flex gap-2 mb-4">
                     <div className="flex-1 relative">
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -1836,7 +1866,7 @@ export function CustomerApp() {
 
               {/* Events View */}
               {currentView === 'events' && (
-                <div className="p-4">
+                <div className="p-4 pb-20">
                   <div className="flex items-center justify-between mb-3">
                     <h2 className="font-bold">Upcoming Events</h2>
                     <button
@@ -1968,7 +1998,7 @@ export function CustomerApp() {
 
               {/* Favorites View */}
               {currentView === 'favorites' && (
-                <div className="p-4">
+                <div className="p-4 pb-20">
                   <h2 className="font-bold mb-3">Your Favorites</h2>
                   
                   <div className="bg-white rounded-lg p-4 mb-4">
@@ -2009,7 +2039,7 @@ export function CustomerApp() {
 
               {/* Profile View */}
               {currentView === 'profile' && (
-                <div className="p-4">
+                <div className="p-4 pb-20">
                   {userProfile ? (
                     <CustomerProfile 
                       user={userProfile}
@@ -2118,7 +2148,7 @@ export function CustomerApp() {
             </div>
 
             {/* Bottom Navigation */}
-            <div className="bg-white border-t border-gray-200 px-2 py-2 flex items-center justify-around flex-shrink-0">
+            <div className="bg-white border-t border-gray-200 px-2 py-2 pb-safe flex items-center justify-around flex-shrink-0" style={{ paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))' }}>
               <button 
                 onClick={() => {
                   setSearchQuery('');
@@ -2227,14 +2257,6 @@ export function CustomerApp() {
           }}
         />
       )}
-
-
-      
-      {/* Debug Panel */}
-      <DebugPanel 
-        businessCount={businesses.length} 
-        onRefresh={handleRefresh} 
-      />
     </div>
   );
 }

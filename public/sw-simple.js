@@ -46,13 +46,16 @@ self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // Skip non-GET requests
+  // CRITICAL: Skip ALL non-GET requests (POST, PUT, DELETE, etc.)
+  // This ensures API calls like check-in and reservations work in Android APK
   if (request.method !== 'GET') {
+    console.log('[Service Worker] Bypassing non-GET request:', request.method, url.pathname);
     return;
   }
 
   // Skip Supabase API calls - always fetch fresh
   if (url.hostname.includes('supabase.co')) {
+    console.log('[Service Worker] Bypassing Supabase API call:', url.pathname);
     return;
   }
 
