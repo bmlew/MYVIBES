@@ -13,8 +13,11 @@ const IMAGE_CACHE = `${CACHE_VERSION}-images`;
 // Assets to cache immediately on install
 const STATIC_ASSETS = [
   '/',
+  '/app',
   '/index.html',
+  '/app.html',
   '/manifest.json',
+  '/manifest-customer.json',
   '/icons/icon-192x192.png',
   '/icons/icon-512x512.png',
 ];
