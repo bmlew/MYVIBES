@@ -14,9 +14,9 @@ export default function CustomerAppPWA() {
     
     // Register service worker for PWA functionality
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/service-worker.js')
+      navigator.serviceWorker.register('/sw-simple.js')
         .then(registration => {
-          console.log('✅ Service Worker registered:', registration);
+          console.log('✅ Service Worker registered successfully!');
         })
         .catch(error => {
           console.error('❌ Service Worker registration failed:', error);
