@@ -1,10 +1,10 @@
-// MYVIBES Service Worker - v2.1.2
-const CACHE_VERSION = 'myvibes-v2.1.2';
-const CACHE_NAME = `${CACHE_VERSION}-${Date.now()}`; // Add timestamp for instant updates
+// MYVIBES Service Worker - v2.1.3
+const CACHE_VERSION = 'myvibes-v2.1.3';
+const CACHE_NAME = CACHE_VERSION; // Stable cache name to prevent loops
 
 console.log('🔄 [Service Worker] Loading version:', CACHE_VERSION);
 
-// Install event - activate immediately
+// Install event - wait for message before activating
 self.addEventListener('install', (event) => {
   console.log('📦 [Service Worker] Installing:', CACHE_VERSION);
   
@@ -12,8 +12,7 @@ self.addEventListener('install', (event) => {
     caches.open(CACHE_NAME)
       .then(() => {
         console.log('✅ [Service Worker] Cache opened:', CACHE_NAME);
-        // Skip waiting to activate immediately
-        return self.skipWaiting();
+        // Don't skip waiting automatically - wait for user action
       })
       .catch((error) => {
         console.error('❌ [Service Worker] Install failed:', error);
@@ -21,17 +20,25 @@ self.addEventListener('install', (event) => {
   );
 });
 
-// Activate event - clean ALL old caches immediately
+// Listen for skip waiting message
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    console.log('⏭️ [Service Worker] Skip waiting requested');
+    self.skipWaiting();
+  }
+});
+
+// Activate event - clean old caches
 self.addEventListener('activate', (event) => {
   console.log('🔄 [Service Worker] Activating:', CACHE_VERSION);
   
   event.waitUntil(
     caches.keys()
       .then((cacheNames) => {
-        // Delete ALL old caches
+        // Delete old caches (keep current version)
         return Promise.all(
           cacheNames
-            .filter((name) => name !== CACHE_NAME)
+            .filter((name) => name.startsWith('myvibes-') && name !== CACHE_NAME)
             .map((name) => {
               console.log('🗑️ [Service Worker] Deleting old cache:', name);
               return caches.delete(name);
