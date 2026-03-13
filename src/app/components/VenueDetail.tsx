@@ -565,7 +565,7 @@ export function VenueDetail({ venueId, onBack, onReserve, onGetDirections, dista
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="menu" className="flex-1 overflow-y-auto p-6 mt-0">
+        <TabsContent value="menu" className="flex-1 overflow-y-auto p-6 mt-0 pb-24">
           {Object.keys(menuByCategory).length === 0 ? (
             <div className="text-center py-8 text-gray-500">
               <p>Menu not available</p>
@@ -617,7 +617,7 @@ export function VenueDetail({ venueId, onBack, onReserve, onGetDirections, dista
           )}
         </TabsContent>
 
-        <TabsContent value="specials" className="p-6 mt-0">
+        <TabsContent value="specials" className="p-6 mt-0 pb-24">
           <h3 className="font-bold text-lg mb-4">Today's Specials</h3>
           {business.specials.length === 0 ? (
             <div className="text-center py-8 text-gray-500">
@@ -639,7 +639,7 @@ export function VenueDetail({ venueId, onBack, onReserve, onGetDirections, dista
           )}
         </TabsContent>
 
-        <TabsContent value="events" className="p-6 mt-0">
+        <TabsContent value="events" className="p-6 mt-0 pb-24">
           <h3 className="font-bold text-lg mb-4">Upcoming Events</h3>
           {business.events.length === 0 ? (
             <div className="text-center py-8 text-gray-500">
@@ -722,15 +722,15 @@ export function VenueDetail({ venueId, onBack, onReserve, onGetDirections, dista
           )}
         </TabsContent>
 
-        <TabsContent value="leaderboard" className="p-6 mt-0">
+        <TabsContent value="leaderboard" className="p-6 mt-0 pb-24">
           <Leaderboard businessId={venueId} />
         </TabsContent>
 
-        <TabsContent value="reviews" className="p-6 mt-0 h-full overflow-y-auto">
+        <TabsContent value="reviews" className="p-6 mt-0 pb-24 h-full overflow-y-auto">
           <RatingReview businessId={venueId} />
         </TabsContent>
 
-        <TabsContent value="about" className="p-6 mt-0">
+        <TabsContent value="about" className="p-6 mt-0 pb-24">
           <h3 className="font-bold text-lg mb-4">About {business.name}</h3>
           <p className="text-sm text-gray-600 mb-6">
             {business.description}

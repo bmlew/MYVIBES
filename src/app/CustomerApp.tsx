@@ -2149,58 +2149,61 @@ export function CustomerApp() {
               )}
             </div>
 
-            {/* Bottom Navigation */}
-            <div className="bg-white border-t border-gray-200 px-2 py-2 pb-safe flex items-center justify-around flex-shrink-0" style={{ paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))' }}>
-              <button 
-                onClick={() => {
-                  setSearchQuery('');
-                  setCurrentView('home');
-                }}
-                className={`flex flex-col items-center gap-1 py-2 px-3 rounded-lg transition-colors ${currentView === 'home' ? 'text-blue-600 font-semibold' : 'text-gray-400 hover:text-gray-600'}`}
-              >
-                <Home className="w-5 h-5" />
-                <span className="text-xs font-medium">Home</span>
-              </button>
-              <button 
-                onClick={() => setCurrentView('search')}
-                className={`flex flex-col items-center gap-1 py-2 px-3 rounded-lg transition-colors ${currentView === 'search' ? 'text-blue-600 font-semibold' : 'text-gray-400 hover:text-gray-600'}`}
-              >
-                <Search className="w-5 h-5" />
-                <span className="text-xs font-medium">Search</span>
-              </button>
-              <button 
-                onClick={() => {
-                  setSearchQuery('');
-                  setCurrentView('events');
-                }}
-                className={`flex flex-col items-center gap-1 py-2 px-3 rounded-lg transition-colors ${currentView === 'events' ? 'text-blue-600 font-semibold' : 'text-gray-400 hover:text-gray-600'}`}
-              >
-                <Calendar className="w-5 h-5" />
-                <span className="text-xs font-medium">Events</span>
-              </button>
-              <button 
-                onClick={() => {
-                  setSearchQuery('');
-                  setCurrentView('favorites');
-                }}
-                className={`flex flex-col items-center gap-1 py-2 px-3 rounded-lg transition-colors ${currentView === 'favorites' ? 'text-blue-600 font-semibold' : 'text-gray-400 hover:text-gray-600'}`}
-              >
-                <Heart className="w-5 h-5" />
-                <span className="text-xs font-medium">Favorites</span>
-              </button>
-              <button 
-                onClick={() => {
-                  setSearchQuery('');
-                  setCurrentView('profile');
-                }}
-                className={`flex flex-col items-center gap-1 py-2 px-3 rounded-lg transition-colors ${currentView === 'profile' ? 'text-purple-600 font-semibold' : 'text-gray-400 hover:text-gray-600'}`}
-              >
-                <User className="w-5 h-5" />
-                <span className="text-xs font-medium">Profile</span>
-              </button>
-            </div>
+
+
           </>
         )}
+
+        {/* Bottom Navigation - Always visible */}
+        <div className="bg-white border-t border-gray-200 px-2 py-2 pb-safe flex items-center justify-around flex-shrink-0" style={{ paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))' }}>
+          <button 
+            onClick={() => {
+              setSearchQuery('');
+              setCurrentView('home');
+            }}
+            className={`flex flex-col items-center gap-1 py-2 px-3 rounded-lg transition-colors ${currentView === 'home' ? 'text-blue-600 font-semibold' : 'text-gray-400 hover:text-gray-600'}`}
+          >
+            <Home className="w-5 h-5" />
+            <span className="text-xs font-medium">Home</span>
+          </button>
+          <button 
+            onClick={() => setCurrentView('search')}
+            className={`flex flex-col items-center gap-1 py-2 px-3 rounded-lg transition-colors ${currentView === 'search' ? 'text-blue-600 font-semibold' : 'text-gray-400 hover:text-gray-600'}`}
+          >
+            <Search className="w-5 h-5" />
+            <span className="text-xs font-medium">Search</span>
+          </button>
+          <button 
+            onClick={() => {
+              setSearchQuery('');
+              setCurrentView('events');
+            }}
+            className={`flex flex-col items-center gap-1 py-2 px-3 rounded-lg transition-colors ${currentView === 'events' ? 'text-blue-600 font-semibold' : 'text-gray-400 hover:text-gray-600'}`}
+          >
+            <Calendar className="w-5 h-5" />
+            <span className="text-xs font-medium">Events</span>
+          </button>
+          <button 
+            onClick={() => {
+              setSearchQuery('');
+              setCurrentView('favorites');
+            }}
+            className={`flex flex-col items-center gap-1 py-2 px-3 rounded-lg transition-colors ${currentView === 'favorites' ? 'text-blue-600 font-semibold' : 'text-gray-400 hover:text-gray-600'}`}
+          >
+            <Heart className="w-5 h-5" />
+            <span className="text-xs font-medium">Favorites</span>
+          </button>
+          <button 
+            onClick={() => {
+              setSearchQuery('');
+              setCurrentView('profile');
+            }}
+            className={`flex flex-col items-center gap-1 py-2 px-3 rounded-lg transition-colors ${currentView === 'profile' ? 'text-purple-600 font-semibold' : 'text-gray-400 hover:text-gray-600'}`}
+          >
+            <User className="w-5 h-5" />
+            <span className="text-xs font-medium">Profile</span>
+          </button>
+        </div>
       </div>
 
       {/* Modals */}

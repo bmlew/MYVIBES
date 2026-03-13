@@ -175,62 +175,6 @@ export default function App() {
       <OfflineBanner />
       <Toaster />
 
-      {/* Mode Switcher - Disabled for Production */}
-      {false && currentView !== 'landing' && (
-        <div className="fixed top-4 right-4 z-50 bg-white rounded-lg shadow-lg p-2 flex gap-2 flex-wrap max-w-xs sm:max-w-none">
-          <button
-            onClick={() => setCurrentView('landing')}
-            className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors ${
-              currentView === 'landing' 
-                ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white' 
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
-          >
-            🏠 Landing
-          </button>
-          <button
-            onClick={() => setCurrentView('customer-app')}
-            className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors ${
-              currentView === 'customer-app' 
-                ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white' 
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
-          >
-            📱 Customer
-          </button>
-          <button
-            onClick={() => setCurrentView('business-auth')}
-            className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors ${
-              currentView === 'business-auth' 
-                ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white' 
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
-          >
-            💼 Business
-          </button>
-          <button
-            onClick={() => setCurrentView('roi')}
-            className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors ${
-              currentView === 'roi' 
-                ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white' 
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
-          >
-            📈 ROI
-          </button>
-          <button
-            onClick={() => setCurrentView('platform-admin')}
-            className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors ${
-              currentView === 'platform-admin' 
-                ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white' 
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
-          >
-            🛡️ Admin
-          </button>
-        </div>
-      )}
-
       {/* Render the appropriate view */}
       {currentView === 'landing' ? (
         <Suspense fallback={<LoadingFallback />}>
