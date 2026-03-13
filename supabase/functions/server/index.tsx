@@ -4053,4 +4053,134 @@ app.get("/make-server-175b2872/check-in/leaderboard/:businessId", async (c) => {
   }
 });
 
+// ============================================
+// REWARDS & REDEMPTION ROUTES
+// ============================================
+
+// Redeem a reward
+app.post("/make-server-175b2872/rewards/redeem", async (c) => {
+  try {
+    const authHeader = c.req.header('Authorization');
+    const customToken = c.req.header('X-Session-Token');
+    
+    // Get the user session
+    let customerId: string | null = null;
+    let customer: any = null;
+    
+    if (customToken && customToken.startsWith('sess_')) {
+      const session = await kv.get(`session:${customToken}`);
+      if (session && session.type === 'customer') {
+        customerId = session.userId;
+        customer = await kv.get(customerId) || await kv.get(`customer:${customerId}`);
+      }
+    }
+    
+    if (!customer && authHeader) {
+      const token = authHeader.replace('Bearer ', '');
+      const { data: { user }, error } = await supabase.auth.getUser(token);
+      if (user) {
+        customerId = user.id;
+        customer = await kv.get(`customer:${customerId}`);
+      }
+    }
+    
+    if (!customer) {
+      return c.json({ error: 'Unauthorized. Please log in.' }, 401);
+    }
+    
+    const body = await c.req.json();
+    const { rewardId, pointsCost } = body;
+    
+    if (!rewardId || !pointsCost) {
+      return c.json({ error: 'Missing rewardId or pointsCost' }, 400);
+    }
+    
+    // Check if user has enough points
+    const currentPoints = customer.loyalty_points || 0;
+    if (currentPoints < pointsCost) {
+      return c.json({ 
+        error: 'Insufficient points',
+        current: currentPoints,
+        required: pointsCost
+      }, 400);
+    }
+    
+    // Deduct points
+    customer.loyalty_points = currentPoints - pointsCost;
+    
+    // Save customer
+    const storageKey = customerId.startsWith('customer:') ? customerId : `customer:${customerId}`;
+    await kv.set(storageKey, customer);
+    
+    // Record redemption
+    const redemptionId = `redemption:${customerId}:${Date.now()}`;
+    const redemption = {
+      id: redemptionId,
+      user_id: customerId,
+      reward_id: rewardId,
+      points_cost: pointsCost,
+      redeemed_at: new Date().toISOString(),
+      status: 'active', // can be 'active', 'used', 'expired'
+      expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() // 30 days
+    };
+    
+    await kv.set(redemptionId, redemption);
+    
+    console.log(`🎁 User ${customer.name} redeemed ${rewardId} for ${pointsCost} points`);
+    
+    return c.json({
+      success: true,
+      redemption,
+      remaining_points: customer.loyalty_points
+    });
+    
+  } catch (error: any) {
+    console.error('Reward redemption error:', error);
+    return c.json({ error: `Redemption failed: ${error.message}` }, 500);
+  }
+});
+
+// Get user's active rewards
+app.get("/make-server-175b2872/rewards/my-rewards", async (c) => {
+  try {
+    const authHeader = c.req.header('Authorization');
+    const customToken = c.req.header('X-Session-Token');
+    
+    let customerId: string | null = null;
+    
+    if (customToken && customToken.startsWith('sess_')) {
+      const session = await kv.get(`session:${customToken}`);
+      if (session && session.type === 'customer') {
+        customerId = session.userId;
+      }
+    }
+    
+    if (!customerId && authHeader) {
+      const token = authHeader.replace('Bearer ', '');
+      const { data: { user }, error } = await supabase.auth.getUser(token);
+      if (user) {
+        customerId = user.id;
+      }
+    }
+    
+    if (!customerId) {
+      return c.json({ error: 'Unauthorized' }, 401);
+    }
+    
+    // Get all redemptions for this user
+    const allRedemptions = await kv.getByPrefix(`redemption:${customerId}:`);
+    
+    // Filter active (non-expired, non-used)
+    const now = new Date().toISOString();
+    const activeRewards = allRedemptions.filter((r: any) => 
+      r.status === 'active' && r.expires_at > now
+    );
+    
+    return c.json({ rewards: activeRewards });
+    
+  } catch (error) {
+    return c.json({ error: 'Failed to fetch rewards' }, 500);
+  }
+});
+
 Deno.serve(app.fetch);

@@ -857,3 +857,30 @@ export async function getRecentCheckIns(businessId: string) {
     return [];
   }
 }
+
+// ============================================
+// REWARDS API
+// ============================================
+
+export async function redeemReward(rewardId: string, pointsCost: number) {
+  try {
+    const response = await apiCall('/rewards/redeem', {
+      method: 'POST',
+      body: JSON.stringify({ rewardId, pointsCost })
+    });
+    return response;
+  } catch (error) {
+    console.error('Reward redemption failed:', error);
+    throw error;
+  }
+}
+
+export async function getMyRewards() {
+  try {
+    const data = await apiCall('/rewards/my-rewards');
+    return data.rewards || [];
+  } catch (error) {
+    console.error('Failed to fetch my rewards:', error);
+    return [];
+  }
+}

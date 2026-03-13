@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { User, ArrowRight, Loader2, AlertCircle, Check } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { checkUsername, loginCustomer, registerCustomer, recoverUsername } from '@/utils/api';
 
 interface CustomerAuthScreenProps {

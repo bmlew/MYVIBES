@@ -40,6 +40,7 @@ const FAQPage = lazy(() => import('./components/FAQPage').then(m => ({ default: 
 const POPIAPage = lazy(() => import('./components/POPIAPage').then(m => ({ default: m.POPIAPage })));
 const DisclaimersPage = lazy(() => import('./components/DisclaimersPage').then(m => ({ default: m.DisclaimersPage })));
 const AffiliatePortal = lazy(() => import('./components/AffiliatePortal').then(m => ({ default: m.AffiliatePortal })));
+const InvestorDeck = lazy(() => import('./components/InvestorDeck').then(m => ({ default: m.InvestorDeck })));
 
 // Loading fallback component
 const LoadingFallback = () => {
@@ -71,8 +72,9 @@ type AppMode = 'landing' | 'customer' | 'business' | 'roi' | 'admin';
 
 export default function App() {
   console.log('🟦 Main App component rendered');
+  console.log('🔍 Current view will be: landing');
   
-  const [currentView, setCurrentView] = useState<'landing' | 'customer-app' | 'business-dashboard' | 'business-auth' | 'platform-admin' | 'whatsapp-review' | 'faq' | 'popia' | 'disclaimers' | 'affiliate-portal'>('landing');
+  const [currentView, setCurrentView] = useState<'landing' | 'customer-app' | 'business-dashboard' | 'business-auth' | 'platform-admin' | 'whatsapp-review' | 'faq' | 'popia' | 'disclaimers' | 'affiliate-portal' | 'investor-deck'>('landing');
   const [reviewData, setReviewData] = useState<{ businessId?: string; customerName?: string; customerPhone?: string }>({});
   
   // Check if URL is for WhatsApp review
@@ -277,6 +279,10 @@ export default function App() {
       ) : currentView === 'affiliate-portal' ? (
         <Suspense fallback={<LoadingFallback />}>
           <AffiliatePortal onBack={() => setCurrentView('landing')} />
+        </Suspense>
+      ) : currentView === 'investor-deck' ? (
+        <Suspense fallback={<LoadingFallback />}>
+          <InvestorDeck onBack={() => setCurrentView('landing')} />
         </Suspense>
       ) : currentView === 'platform-admin' ? (
         <Suspense fallback={<LoadingFallback />}>

@@ -73,6 +73,12 @@ const PremiumCarouselComponent: React.FC<PremiumCarouselProps> = ({
 
   const currentItem = items[currentIndex];
 
+  // Debug logging
+  useEffect(() => {
+    console.log('🎨 PremiumCarousel currentItem:', currentItem);
+    console.log('🖼️ Image URL:', currentItem?.image_url);
+  }, [currentItem]);
+
   const formatEventDate = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleDateString('en-ZA', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -103,7 +109,7 @@ const PremiumCarouselComponent: React.FC<PremiumCarouselProps> = ({
               alt={currentItem.title}
               className="w-full h-full object-cover"
             />
-            <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/90 via-blue-500/90 to-blue-600/90" />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/40 to-black/20" />
           </div>
         )}
 

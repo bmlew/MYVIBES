@@ -1,17 +1,27 @@
 import React, { useState } from 'react';
 import { 
-  ShieldCheck, 
-  LayoutDashboard, 
+  TrendingUp, 
+  DollarSign, 
   Users, 
-  Building2, 
-  CreditCard, 
-  Repeat, 
-  Share2, 
-  Bell, 
+  Star, 
+  ArrowRight, 
+  ChevronDown,
+  Menu,
+  X,
+  MapPin,
+  Calendar,
+  Activity,
+  Award,
+  LayoutDashboard,
+  Building2,
+  CreditCard,
+  Repeat,
+  Share2,
   Settings,
-  LogOut
+  LogOut,
+  Bell
 } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 
 // Import New Detailed Components
 import { AdminOverview } from './components/admin/AdminOverview';
@@ -20,6 +30,8 @@ import { FinancialHub } from './components/admin/FinancialHub';
 import { GlobalSubscriptions } from './components/admin/GlobalSubscriptions';
 import { SocialMediaManager } from './components/admin/SocialMediaManager';
 import { UserManagement } from './components/admin/UserManagement';
+import logoImage from 'figma:asset/4703bef6581c776921a3e305e39de2390a36cac5.png';
+import { MyVibesLogo } from '@/app/components/MyVibesLogo';
 
 interface AdminDashboardProps {
   onNavigate: (view: 'landing' | 'customer-app' | 'business-dashboard' | 'roi' | 'platform-admin') => void;
@@ -40,11 +52,8 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
         className="w-64 bg-slate-900 text-white flex-shrink-0 flex flex-col fixed h-full z-20"
       >
         {/* Logo */}
-        <div className="h-16 flex items-center gap-3 px-6 border-b border-slate-800">
-          <div className="w-8 h-8 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-lg flex items-center justify-center text-white font-bold">
-            <ShieldCheck className="w-5 h-5" />
-          </div>
-          <span className="text-lg font-bold tracking-tight">Admin Portal</span>
+        <div className="h-20 flex items-center px-6 border-b border-slate-800">
+          <MyVibesLogo variant="white" />
         </div>
 
         {/* Nav Links */}

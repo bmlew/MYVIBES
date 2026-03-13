@@ -22,6 +22,9 @@ import { useOnlineStatus } from '@/hooks/useOnlineStatus';
 import { useDebounce } from '@/hooks/useDebounce';
 import * as api from '@/utils/api';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
+import logoImage from 'figma:asset/4703bef6581c776921a3e305e39de2390a36cac5.png';
+import { ImageWithFallback } from './components/figma/ImageWithFallback';
+import { MyVibesLogo } from './components/MyVibesLogo';
 
 // Import customer app components
 import { FilterChip } from './components/FilterChip';
@@ -1016,7 +1019,7 @@ export function CustomerApp() {
         business_id: special.business_id,
         title: special.title,
         description: special.description,
-        image_url: special.image_url,
+        image_url: special.image_url || 'https://images.unsplash.com/photo-1759239938567-3f300909c963?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080',
         type: 'special' as const,
         business: special.business,
         discount_percentage: special.discount_percentage,
@@ -1044,7 +1047,7 @@ export function CustomerApp() {
         business_id: event.business_id,
         title: event.title,
         description: event.description,
-        image_url: undefined, // Events don't have images in current schema, but could be added
+        image_url: 'https://images.unsplash.com/photo-1761959165302-f75021053512?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080',
         type: 'event' as const,
         business: event.business,
         event_date: event.event_date,
@@ -1054,6 +1057,8 @@ export function CustomerApp() {
     // Combine specials and events (don't shuffle to prevent infinite loops)
     items.push(...topSpecials, ...topEvents);
 
+    console.log('🎪 Premium Carousel Items:', items);
+    
     return items;
   }, [specials, events, todayString]);
 
@@ -1344,10 +1349,8 @@ export function CustomerApp() {
               <div className="flex items-center justify-between mb-4">
                 <div>
                   <div className="flex items-center gap-2 mb-1">
-                    <Utensils className="w-5 h-5" />
-                    <h1 className="text-xl font-bold">MYVIBES</h1>
+                    <MyVibesLogo className="h-10" />
                   </div>
-                  <p className="text-xs opacity-90">{greeting}</p>
                 </div>
                 <div className="flex flex-col items-end gap-2">
                   <div className="text-right">

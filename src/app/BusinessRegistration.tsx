@@ -3,6 +3,8 @@ import { ArrowLeft, Building2, Mail, Phone, MapPin, Lock, Globe, Check, User } f
 import { Button } from './components/ui/button';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { toast } from "sonner";
+import logoImage from 'figma:asset/4703bef6581c776921a3e305e39de2390a36cac5.png';
+import { MyVibesLogo } from '@/app/components/MyVibesLogo';
 
 interface BusinessRegistrationProps {
   onBack: () => void;
@@ -212,11 +214,12 @@ export function BusinessRegistration({ onBack, onRegistrationComplete }: Busines
     <div className="min-h-screen bg-gradient-to-br from-orange-50 via-purple-50 to-pink-50">
       {/* Header */}
       <div className="bg-white shadow-sm">
-        <div className="max-w-4xl mx-auto px-4 py-4">
+        <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
           <button onClick={onBack} className="flex items-center gap-2 text-gray-600 hover:text-gray-900">
             <ArrowLeft className="w-5 h-5" />
             <span>Back to Home</span>
           </button>
+          <MyVibesLogo />
         </div>
       </div>
 

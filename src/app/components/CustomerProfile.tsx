@@ -1,7 +1,11 @@
 import { useState, useEffect } from 'react';
-import { User, Mail, Phone, ArrowLeft, Check, Calendar, Heart, MapPin, Hash, LogOut } from 'lucide-react';
+import { User, Mail, Phone, ArrowLeft, Check, Calendar, Heart, MapPin, Hash, LogOut, Trophy, Gift } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
+import { Achievements } from './Achievements';
+import { RewardsRedemption } from './RewardsRedemption';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
+import * as api from '@/utils/api';
 
 interface UserProfile {
   id: string;
@@ -13,6 +17,7 @@ interface UserProfile {
   birthday?: string;
   preferences?: string[];
   notificationPreference?: 'email' | 'whatsapp';
+  loyalty_points?: number;
 }
 
 interface CustomerProfileProps {
@@ -96,6 +101,20 @@ export function CustomerProfile({ user, onBack, onUpdate, onLogout, onOpenAffili
             <span>Profile updated successfully!</span>
           </div>
         )}
+
+        {/* Loyalty Points Card */}
+        <div className="bg-gradient-to-br from-amber-400 via-yellow-500 to-orange-500 rounded-2xl shadow-xl p-6 mb-6 text-white">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-amber-100 text-sm font-medium mb-1">Your Points</p>
+              <h3 className="text-4xl font-bold">{user.loyalty_points || 0}</h3>
+              <p className="text-amber-100 text-xs mt-1">Check in to earn more!</p>
+            </div>
+            <div className="w-20 h-20 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
+              <span className="text-5xl">🏆</span>
+            </div>
+          </div>
+        </div>
 
         <div className="bg-white rounded-2xl shadow-xl overflow-hidden mb-6">
           {/* Profile Header */}
@@ -269,6 +288,44 @@ export function CustomerProfile({ user, onBack, onUpdate, onLogout, onOpenAffili
               )}
             </div>
           </div>
+        </div>
+
+        {/* Gamification Tabs */}
+        <div className="bg-white rounded-2xl shadow-xl overflow-hidden mb-6">
+          <Tabs defaultValue="achievements" className="w-full">
+            <TabsList className="w-full grid grid-cols-2 rounded-none bg-gray-100 p-1">
+              <TabsTrigger value="achievements" className="flex items-center gap-2">
+                <Trophy className="w-4 h-4" />
+                Achievements
+              </TabsTrigger>
+              <TabsTrigger value="rewards" className="flex items-center gap-2">
+                <Gift className="w-4 h-4" />
+                Rewards
+              </TabsTrigger>
+            </TabsList>
+            <TabsContent value="achievements" className="p-6">
+              <Achievements 
+                userId={user.id} 
+                totalPoints={user.loyalty_points || 0}
+                totalCheckIns={Math.floor((user.loyalty_points || 0) / 10)}
+              />
+            </TabsContent>
+            <TabsContent value="rewards" className="p-6">
+              <RewardsRedemption 
+                userPoints={user.loyalty_points || 0}
+                onRedeem={async (rewardId, pointsCost) => {
+                  // Call API to redeem reward
+                  console.log(`Redeeming ${rewardId} for ${pointsCost} points`);
+                  // TODO: Implement actual redemption API call
+                  // For now, just update the local points
+                  await onUpdate({
+                    ...user,
+                    loyalty_points: (user.loyalty_points || 0) - pointsCost
+                  });
+                }}
+              />
+            </TabsContent>
+          </Tabs>
         </div>
 
         {/* Info Card */}

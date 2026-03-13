@@ -39,6 +39,7 @@ import {
 } from 'lucide-react';
 import { PerformanceOverview } from '@/app/components/PerformanceOverview';
 import { RecentCheckIns } from '@/app/components/RecentCheckIns';
+import { Leaderboard } from '@/app/components/Leaderboard';
 import { DataSeeder } from '@/app/components/debug/DataSeeder';
 import { AIInsights } from '@/app/components/AIInsights';
 import { AnalyticsCharts } from '@/app/components/AnalyticsCharts';
@@ -47,6 +48,8 @@ import { SocialMediaAdsManager } from '@/app/components/SocialMediaAdsManager';
 import { ReservationsManager } from '@/app/components/ReservationsManager';
 import { BusinessProfileSettings } from '@/app/components/BusinessProfileSettings';
 import { Toast, useToast } from '@/app/components/Toast';
+import logoImage from 'figma:asset/4703bef6581c776921a3e305e39de2390a36cac5.png';
+import { MyVibesLogo } from '@/app/components/MyVibesLogo';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 
 type DashboardView = 'overview' | 'menu' | 'specials' | 'events' | 'analytics' | 'reviews' | 'settings' | 'ml-insights' | 'ads' | 'reservations' | 'debug';
@@ -2199,9 +2202,8 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
 
       {/* Mobile Header */}
       <div className="lg:hidden fixed top-0 left-0 right-0 bg-gradient-to-r from-cyan-500 to-blue-600 text-white p-4 z-50 flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-bold">MYVIBES</h1>
-          <p className="text-xs opacity-75">Business Portal</p>
+        <div className="flex items-center gap-2">
+          <MyVibesLogo variant="white" />
         </div>
         <button
           onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
@@ -2233,10 +2235,9 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
               </div>
             </div>
           ) : (
-            <>
-              <h1 className="text-2xl font-bold mb-1">MYVIBES</h1>
-              <p className="text-xs opacity-75">Business Portal</p>
-            </>
+            <div className="mb-4">
+              <MyVibesLogo variant="white" />
+            </div>
           )}
         </div>
 
@@ -3941,6 +3942,13 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
             <div className="bg-white rounded-lg p-6 shadow-sm mt-6">
               <h3 className="font-bold mb-4">Recent Check-Ins</h3>
               <RecentCheckIns businessId={businessId || ''} />
+            </div>
+
+            <div className="bg-white rounded-lg p-6 shadow-sm mt-6">
+              <h3 className="font-bold mb-4 flex items-center gap-2">
+                <span>🏆</span> Top Visitors Leaderboard
+              </h3>
+              <Leaderboard businessId={businessId || ''} />
             </div>
 
             <div className="bg-white rounded-lg p-6 shadow-sm">

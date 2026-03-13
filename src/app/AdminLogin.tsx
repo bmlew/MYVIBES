@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router'; // Changed from 'react-router-dom'
 import { Lock, Shield } from 'lucide-react';
+import logoImage from 'figma:asset/4703bef6581c776921a3e305e39de2390a36cac5.png';
+import { MyVibesLogo } from '@/app/components/MyVibesLogo';
 
 export default function AdminLogin() {
   const navigate = useNavigate();
@@ -29,8 +31,8 @@ export default function AdminLogin() {
       <div className="max-w-md w-full">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-20 h-20 bg-white/10 backdrop-blur-md rounded-2xl border border-white/20 mb-4">
-            <Shield className="w-10 h-10 text-white" />
+          <div className="inline-flex items-center justify-center mb-4">
+            <MyVibesLogo variant="white" className="scale-125" />
           </div>
           <h1 className="text-3xl font-bold text-white mb-2">Admin Portal</h1>
           <p className="text-white/70">MYVIBES Platform Administration</p>
