@@ -61,6 +61,7 @@ export function ReservationModal({ business, onClose, userProfile, initialData }
       
       await api.trackReservation({
         business_id: business.id,
+        user_id: userProfile?.id,
         ...formData,
         preferred_channel: preferredChannel
       });

@@ -106,8 +106,8 @@
     </div>
 
     <script>
-        const EXPECTED_VERSION = '2.1.0';
-        const EXPECTED_VERSION_CODE = 210;
+        const EXPECTED_VERSION = '2.1.1';
+        const EXPECTED_VERSION_CODE = 211;
         
         async function runChecks() {
             const results = document.getElementById('results');
@@ -122,7 +122,7 @@
                 const versionRes = await fetch('/VERSION.txt?' + Date.now());
                 const versionText = await versionRes.text();
                 
-                if (versionText.includes('v2.1.0') && versionText.includes('210')) {
+                if (versionText.includes('v2.1.2') && versionText.includes('212')) {
                     addResult('success', 'VERSION.txt Check', 
                         `✅ Version file is up to date!<div class="detail">${versionText.split('\\n')[0]}</div>`);
                 } else {

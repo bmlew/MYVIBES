@@ -354,7 +354,7 @@ export function VenueDetail({ venueId, onBack, onReserve, onGetDirections, dista
   };
 
   return (
-    <div className="h-full flex flex-col bg-white">
+    <div className="h-full flex flex-col bg-white overflow-y-auto">
       {/* Status Bar with User Name */}
       {userProfile && (
         <div className="bg-gradient-to-r from-cyan-500 to-blue-600 text-white px-6 py-3 flex-shrink-0">
@@ -418,11 +418,17 @@ export function VenueDetail({ venueId, onBack, onReserve, onGetDirections, dista
           </button>
           <button 
             onClick={async () => {
+              // Ensure we share the customer app URL with proper cache busting
+              const baseUrl = window.location.origin;
+              const shareUrl = `${baseUrl}/app?v=2.1.1&ts=${Date.now()}&venue=${business.id}`;
+              
               const shareData = {
                 title: business.name,
                 text: `Check out ${business.name} on MYVIBES!`,
-                url: window.location.href
+                url: shareUrl
               };
+              
+              console.log('📤 Sharing URL:', shareUrl);
               
               if (navigator.share) {
                 try {
@@ -435,7 +441,7 @@ export function VenueDetail({ venueId, onBack, onReserve, onGetDirections, dista
                 }
               } else {
                 // Fallback: copy to clipboard
-                navigator.clipboard.writeText(window.location.href);
+                navigator.clipboard.writeText(shareUrl);
                 alert('Link copied to clipboard!');
               }
             }}

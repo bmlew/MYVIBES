@@ -3365,6 +3365,7 @@ app.post("/make-server-175b2872/analytics/track-reservation", async (c) => {
     
     // Extract fields matching api.ts structure
     const businessId = body.business_id || body.businessId;
+    const userId = body.user_id || body.userId;
     const customerName = body.customer_name || body.customerName;
     const customerEmail = body.customer_email || body.customerEmail;
     const partySize = body.party_size || body.partySize || body.pax;
@@ -3379,6 +3380,7 @@ app.post("/make-server-175b2872/analytics/track-reservation", async (c) => {
     const event = {
       id: eventId,
       businessId,
+      userId,
       customerName,
       customerEmail,
       partySize,
@@ -3396,6 +3398,50 @@ app.post("/make-server-175b2872/analytics/track-reservation", async (c) => {
   } catch (error) {
     console.error('Reservation track error:', error);
     return c.json({ error: 'Failed to track reservation' }, 500);
+  }
+});
+
+// Get User Reservations
+app.get("/make-server-175b2872/reservations/user/:userId", async (c) => {
+  try {
+    const userId = c.req.param('userId');
+    
+    if (!userId) {
+      return c.json({ error: 'User ID is required' }, 400);
+    }
+
+    // Get all reservations
+    const allReservations = await kv.getByPrefix('rsv:');
+    
+    // Filter by userId - we need to match userId from customerName or a dedicated user_id field
+    // For now, let's add user_id to the reservation tracking
+    const userReservations = allReservations.filter((rsv: any) => rsv.userId === userId);
+    
+    // Transform to match frontend interface
+    const formattedReservations = await Promise.all(
+      userReservations.map(async (rsv: any) => {
+        // Get business details
+        const business = await kv.get(`business:${rsv.businessId}`);
+        const signedBusiness = await signBusinessUrls(business);
+        
+        return {
+          id: rsv.id,
+          venue_id: rsv.businessId,
+          venue_name: signedBusiness?.name || rsv.businessId,
+          venue_location: signedBusiness?.address || '',
+          guest_count: rsv.partySize || 1,
+          date: rsv.reservationDate,
+          time: rsv.reservationTime,
+          status: rsv.status || 'pending',
+          created_at: rsv.timestamp
+        };
+      })
+    );
+
+    return c.json(formattedReservations);
+  } catch (error) {
+    console.error('Failed to fetch user reservations:', error);
+    return c.json({ error: 'Failed to fetch reservations' }, 500);
   }
 });
 

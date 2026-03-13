@@ -1,5 +1,5 @@
-// MYVIBES Service Worker - v2.1
-const CACHE_VERSION = 'myvibes-v2.1.0';
+// MYVIBES Service Worker - v2.1.2
+const CACHE_VERSION = 'myvibes-v2.1.2';
 const CACHE_NAME = `${CACHE_VERSION}-${Date.now()}`; // Add timestamp for instant updates
 
 console.log('🔄 [Service Worker] Loading version:', CACHE_VERSION);

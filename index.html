@@ -10,9 +10,9 @@
     <meta http-equiv="Expires" content="0" />
     
     <!-- App Version -->
-    <meta name="app-version" content="2.1.0" />
-    <meta name="build-timestamp" content="2025-03-13T10:00:00Z" />
-    <meta name="build-id" content="v2.1.0-build-210" />
+    <meta name="app-version" content="2.1.2" />
+    <meta name="build-timestamp" content="2025-03-13T14:00:00Z" />
+    <meta name="build-id" content="v2.1.2-build-212" />
     
     <!-- Permissions Policy for Geolocation - Allow all origins for iframe compatibility -->
     <meta http-equiv="Permissions-Policy" content="geolocation=*" />
@@ -54,9 +54,9 @@
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/service-worker.js?v=2.1.0')
+          navigator.serviceWorker.register('/service-worker.js?v=2.1.2')
             .then(registration => {
-              console.log('✅ [PWA] Service Worker registered v2.1.0:', registration.scope);
+              console.log('✅ [PWA] Service Worker registered v2.1.2:', registration.scope);
               
               // Check for updates every 30 seconds
               setInterval(() => {

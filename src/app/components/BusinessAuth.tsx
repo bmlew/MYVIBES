@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
-import { Loader2, ArrowRight, Building2, MapPin, Mail, Lock, Phone, User, CheckCircle2 } from 'lucide-react';
+import { Loader2, ArrowRight, Building2, MapPin, Mail, Lock, Phone, User, CheckCircle2, ChevronLeft } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
 
 interface BusinessAuthProps {
   onAuthenticated?: (data: any) => void;
+  onBack?: () => void;
 }
 
-export function BusinessAuth({ onAuthenticated }: BusinessAuthProps) {
+export function BusinessAuth({ onAuthenticated, onBack }: BusinessAuthProps) {
   const [isLogin, setIsLogin] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -154,6 +155,17 @@ export function BusinessAuth({ onAuthenticated }: BusinessAuthProps) {
       {/* Right Panel - Form */}
       <div className="w-full md:w-1/2 flex items-center justify-center p-8 bg-white">
         <div className="w-full max-w-md">
+          {/* Back to Landing Button */}
+          {onBack && (
+            <button
+              onClick={onBack}
+              className="mb-6 flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors group"
+            >
+              <ChevronLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
+              <span className="text-sm font-medium">Back to Home</span>
+            </button>
+          )}
+
           <div className="mb-8">
             <h2 className="text-3xl font-bold text-gray-900 mb-2">
               {isLogin ? 'Welcome back' : 'Partner with us'}

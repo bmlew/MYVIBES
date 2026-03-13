@@ -633,6 +633,7 @@ export async function trackAdClick(businessId: string, clickType: string, userEm
 // Track reservation
 export async function trackReservation(reservationData: {
   business_id: string;
+  user_id?: string;
   customer_name: string;
   customer_email: string;
   customer_phone: string;

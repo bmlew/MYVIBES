@@ -89,6 +89,13 @@ export default function App() {
       localStorage.setItem('myvibes_referral_code', refCode.toUpperCase());
     }
 
+    // Check if URL is /app (customer PWA entry point)
+    if (path === '/app' || path === '/app/') {
+      console.log('🎯 Customer app URL detected, showing customer app');
+      setCurrentView('customer-app');
+      return;
+    }
+
     // Match /review/:businessId pattern
     const reviewMatch = path.match(/^\/review\/([^/]+)$/);
     if (reviewMatch) {
@@ -190,7 +197,10 @@ export default function App() {
         </Suspense>
       ) : currentView === 'business-auth' ? (
         <Suspense fallback={<LoadingFallback />}>
-          <BusinessAuth onAuthSuccess={handleBusinessAuthSuccess} />
+          <BusinessAuth 
+            onAuthSuccess={handleBusinessAuthSuccess} 
+            onBack={() => setCurrentView('landing')}
+          />
         </Suspense>
       ) : currentView === 'business-dashboard' ? (
         <Suspense fallback={<LoadingFallback />}>

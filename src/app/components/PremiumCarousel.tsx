@@ -73,10 +73,12 @@ const PremiumCarouselComponent: React.FC<PremiumCarouselProps> = ({
 
   const currentItem = items[currentIndex];
 
-  // Debug logging
+  // Debug logging (dev only)
   useEffect(() => {
-    console.log('🎨 PremiumCarousel currentItem:', currentItem);
-    console.log('🖼️ Image URL:', currentItem?.image_url);
+    if (import.meta.env.DEV) {
+      console.log('🎨 PremiumCarousel currentItem:', currentItem);
+      console.log('🖼️ Image URL:', currentItem?.image_url);
+    }
   }, [currentItem]);
 
   const formatEventDate = (dateString: string) => {

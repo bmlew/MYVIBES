@@ -1,330 +1,239 @@
-import { useState, useEffect, useCallback } from 'react';
-import { ArrowLeft, Calendar, Clock, Users, MapPin, Phone, Mail, CheckCircle, XCircle, AlertCircle, Trash2 } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Calendar, Clock, Users, MapPin, CheckCircle, XCircle, AlertCircle, Loader2 } from 'lucide-react';
 import * as api from '@/utils/api';
 
 interface Reservation {
   id: string;
-  business_id: string;
-  business_name: string;
-  business_logo?: string;
-  business_address?: string;
-  business_city?: string;
-  user_name: string;
-  user_email: string;
-  user_mobile: string;
-  party_size: number;
-  reservation_date: string;
-  reservation_time: string;
-  special_requests?: string;
-  status: 'pending' | 'confirmed' | 'rejected';
+  venue_id: string;
+  venue_name: string;
+  venue_location?: string;
+  guest_count: number;
+  date: string;
+  time: string;
+  status: 'pending' | 'confirmed' | 'cancelled';
   created_at: string;
-  confirmed_at?: string;
-  rejected_at?: string;
-  rejection_reason?: string;
 }
 
 interface MyReservationsProps {
   userId: string;
-  onClose: () => void;
-  onViewBusiness?: (businessId: string) => void;
 }
 
-export function MyReservations({ userId, onClose, onViewBusiness }: MyReservationsProps) {
+export function MyReservations({ userId }: MyReservationsProps) {
   const [reservations, setReservations] = useState<Reservation[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'upcoming' | 'past'>('upcoming');
-
-  const loadReservations = useCallback(async () => {
-    if (!userId || userId === 'guest') {
-      setLoading(false);
-      setReservations([]);
-      return;
-    }
-
-    try {
-      setLoading(true);
-      const data = await api.getUserReservations(userId);
-      setReservations(data.reservations || []);
-    } catch (error) {
-      console.error('Failed to load reservations:', error);
-      setReservations([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [userId]);
 
   useEffect(() => {
     loadReservations();
-  }, [loadReservations]);
+  }, [userId]);
 
-  const handleCancelReservation = async (reservationId: string) => {
-    if (!confirm('Are you sure you want to cancel this reservation?')) return;
-
+  const loadReservations = async () => {
+    setIsLoading(true);
     try {
-      const success = await api.cancelReservation(reservationId, userId);
-      if (success) {
-        // Remove from list
-        setReservations(reservations.filter(r => r.id !== reservationId));
-        alert('✅ Reservation cancelled successfully');
-      } else {
-        alert('❌ Failed to cancel reservation. Please contact the venue directly.');
-      }
-    } catch (error) {
-      console.error('Failed to cancel reservation:', error);
-      alert('❌ Failed to cancel reservation. Please try again.');
+      const data = await api.get(`/reservations/user/${userId}`);
+      setReservations(data);
+    } catch (err) {
+      console.error('Failed to load reservations:', err);
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const filteredReservations = reservations.filter(reservation => {
-    const reservationDateTime = new Date(`${reservation.reservation_date}T${reservation.reservation_time}`);
+  const getFilteredReservations = () => {
     const now = new Date();
-
-    if (filter === 'upcoming') {
-      return reservationDateTime >= now;
-    } else if (filter === 'past') {
-      return reservationDateTime < now;
-    }
-    return true;
-  });
+    
+    return reservations.filter(res => {
+      const resDate = new Date(`${res.date}T${res.time}`);
+      
+      if (filter === 'upcoming') {
+        return resDate >= now && res.status !== 'cancelled';
+      } else if (filter === 'past') {
+        return resDate < now || res.status === 'cancelled';
+      }
+      return true; // all
+    }).sort((a, b) => {
+      // Sort by date/time descending (newest first)
+      const dateA = new Date(`${a.date}T${a.time}`);
+      const dateB = new Date(`${b.date}T${b.time}`);
+      return dateB.getTime() - dateA.getTime();
+    });
+  };
 
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'confirmed':
-        return <CheckCircle className="w-5 h-5 text-green-600" />;
-      case 'rejected':
-        return <XCircle className="w-5 h-5 text-red-600" />;
-      case 'pending':
-        return <AlertCircle className="w-5 h-5 text-yellow-600" />;
+        return <CheckCircle className="w-5 h-5 text-green-500" />;
+      case 'cancelled':
+        return <XCircle className="w-5 h-5 text-red-500" />;
       default:
-        return null;
+        return <AlertCircle className="w-5 h-5 text-yellow-500" />;
     }
   };
 
   const getStatusBadge = (status: string) => {
-    const styles = {
-      confirmed: 'bg-green-100 text-green-800',
-      rejected: 'bg-red-100 text-red-800',
-      pending: 'bg-yellow-100 text-yellow-800'
-    };
-
-    return (
-      <span className={`px-3 py-1 rounded-full text-xs font-semibold ${styles[status as keyof typeof styles]}`}>
-        {status.charAt(0).toUpperCase() + status.slice(1)}
-      </span>
-    );
+    const baseClasses = "px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wide";
+    switch (status) {
+      case 'confirmed':
+        return <span className={`${baseClasses} bg-green-100 text-green-700`}>Confirmed</span>;
+      case 'cancelled':
+        return <span className={`${baseClasses} bg-red-100 text-red-700`}>Cancelled</span>;
+      default:
+        return <span className={`${baseClasses} bg-yellow-100 text-yellow-700`}>Pending</span>;
+    }
   };
 
-  const formatDate = (dateString: string) => {
-    // Add time to avoid timezone issues with date-only strings
-    const date = new Date(dateString + 'T12:00:00');
+  const formatDate = (dateStr: string) => {
+    const date = new Date(dateStr);
     return date.toLocaleDateString('en-ZA', { 
-      weekday: 'short',
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric'
+      weekday: 'short', 
+      year: 'numeric', 
+      month: 'short', 
+      day: 'numeric' 
     });
   };
 
-  const formatTime = (timeString: string) => {
-    return timeString.substring(0, 5); // HH:MM format
+  const formatTime = (timeStr: string) => {
+    const [hours, minutes] = timeStr.split(':');
+    const hour = parseInt(hours);
+    const ampm = hour >= 12 ? 'PM' : 'AM';
+    const displayHour = hour % 12 || 12;
+    return `${displayHour}:${minutes} ${ampm}`;
   };
 
-  return (
-    <div className="h-full bg-gray-50 flex flex-col">
-      {/* Header */}
-      <div className="bg-gradient-to-r from-cyan-500 to-blue-600 text-white p-4 shadow-lg flex-shrink-0">
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-3">
-            <button onClick={onClose} className="p-1">
-              <ArrowLeft className="w-6 h-6" />
-            </button>
-            <div>
-              <h2 className="text-xl font-bold">My Reservations</h2>
-              <p className="text-xs opacity-90">{filteredReservations.length} reservation{filteredReservations.length !== 1 ? 's' : ''}</p>
-            </div>
-          </div>
-        </div>
+  const filteredReservations = getFilteredReservations();
 
-        {/* Filter Tabs */}
-        <div className="flex gap-2">
-          <button
-            onClick={() => setFilter('all')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-              filter === 'all'
-                ? 'bg-white text-blue-600'
-                : 'bg-white/20 text-white hover:bg-white/30'
-            }`}
-          >
-            All ({reservations.length})
-          </button>
-          <button
-            onClick={() => setFilter('upcoming')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-              filter === 'upcoming'
-                ? 'bg-white text-blue-600'
-                : 'bg-white/20 text-white hover:bg-white/30'
-            }`}
-          >
-            Upcoming
-          </button>
-          <button
-            onClick={() => setFilter('past')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-              filter === 'past'
-                ? 'bg-white text-blue-600'
-                : 'bg-white/20 text-white hover:bg-white/30'
-            }`}
-          >
-            Past
-          </button>
-        </div>
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="w-8 h-8 animate-spin text-cyan-500" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Filter Tabs */}
+      <div className="flex gap-2 border-b border-gray-200">
+        <button
+          onClick={() => setFilter('upcoming')}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            filter === 'upcoming'
+              ? 'border-cyan-500 text-cyan-600'
+              : 'border-transparent text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          Upcoming
+        </button>
+        <button
+          onClick={() => setFilter('past')}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            filter === 'past'
+              ? 'border-cyan-500 text-cyan-600'
+              : 'border-transparent text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          Past
+        </button>
+        <button
+          onClick={() => setFilter('all')}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            filter === 'all'
+              ? 'border-cyan-500 text-cyan-600'
+              : 'border-transparent text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          All
+        </button>
       </div>
 
       {/* Reservations List */}
-      <div className="flex-1 overflow-y-auto">
-        {loading ? (
-          <div className="flex items-center justify-center h-full">
-            <div className="text-center">
-              <Calendar className="w-12 h-12 text-gray-300 mx-auto mb-2 animate-pulse" />
-              <p className="text-gray-500">Loading reservations...</p>
-            </div>
-          </div>
-        ) : filteredReservations.length === 0 ? (
-          <div className="flex items-center justify-center h-full">
-            <div className="text-center p-6">
-              <Calendar className="w-16 h-16 text-gray-300 mx-auto mb-3" />
-              <h3 className="font-semibold text-gray-700 mb-2">
-                {filter === 'upcoming' ? 'No upcoming reservations' : filter === 'past' ? 'No past reservations' : 'No reservations yet'}
-              </h3>
-              <p className="text-sm text-gray-500">
-                {filter === 'upcoming' 
-                  ? 'Book a table at your favorite venue to see it here!'
-                  : 'Your reservation history will appear here.'}
-              </p>
-            </div>
-          </div>
-        ) : (
-          <div className="divide-y divide-gray-200">
-            {filteredReservations.map((reservation) => {
-              const reservationDateTime = new Date(`${reservation.reservation_date}T${reservation.reservation_time}`);
-              const isPast = reservationDateTime < new Date();
-              const canCancel = !isPast && reservation.status === 'confirmed';
+      {filteredReservations.length === 0 ? (
+        <div className="text-center py-12">
+          <Calendar className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">
+            {filter === 'upcoming' ? 'No Upcoming Reservations' : 
+             filter === 'past' ? 'No Past Reservations' : 
+             'No Reservations Yet'}
+          </h3>
+          <p className="text-gray-500 text-sm">
+            {filter === 'upcoming' 
+              ? 'Book a table at your favorite venue to see it here!'
+              : 'Your reservation history will appear here'}
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {filteredReservations.map((reservation) => (
+            <div
+              key={reservation.id}
+              className="bg-white border border-gray-200 rounded-xl p-5 hover:shadow-md transition-shadow"
+            >
+              {/* Header */}
+              <div className="flex items-start justify-between mb-4">
+                <div className="flex-1">
+                  <h3 className="text-lg font-bold text-gray-900 mb-1">
+                    {reservation.venue_name}
+                  </h3>
+                  {reservation.venue_location && (
+                    <p className="text-sm text-gray-500 flex items-center gap-1">
+                      <MapPin className="w-3.5 h-3.5" />
+                      {reservation.venue_location}
+                    </p>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  {getStatusIcon(reservation.status)}
+                  {getStatusBadge(reservation.status)}
+                </div>
+              </div>
 
-              return (
-                <div
-                  key={reservation.id}
-                  className="p-4 bg-white hover:bg-gray-50 transition-colors"
-                >
-                  <div className="flex gap-3">
-                    {/* Business Logo */}
-                    <div className="flex-shrink-0">
-                      {reservation.business_logo ? (
-                        <img
-                          src={reservation.business_logo}
-                          alt={reservation.business_name}
-                          className="w-16 h-16 rounded-lg object-cover"
-                        />
-                      ) : (
-                        <div className="w-16 h-16 rounded-lg bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center">
-                          <span className="text-white text-2xl font-bold">
-                            {reservation.business_name.charAt(0)}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Reservation Details */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-start justify-between gap-2 mb-2">
-                        <h3 
-                          className="font-bold text-lg cursor-pointer hover:text-cyan-600 transition-colors"
-                          onClick={() => onViewBusiness && onViewBusiness(reservation.business_id)}
-                        >
-                          {reservation.business_name}
-                        </h3>
-                        {getStatusBadge(reservation.status)}
-                      </div>
-
-                      {/* Date, Time, Party Size */}
-                      <div className="space-y-1 mb-3">
-                        <div className="flex items-center gap-2 text-sm text-gray-600">
-                          <Calendar className="w-4 h-4" />
-                          <span>{formatDate(reservation.reservation_date)}</span>
-                        </div>
-                        <div className="flex items-center gap-2 text-sm text-gray-600">
-                          <Clock className="w-4 h-4" />
-                          <span>{formatTime(reservation.reservation_time)}</span>
-                        </div>
-                        <div className="flex items-center gap-2 text-sm text-gray-600">
-                          <Users className="w-4 h-4" />
-                          <span>{reservation.party_size} {reservation.party_size === 1 ? 'person' : 'people'}</span>
-                        </div>
-                      </div>
-
-                      {/* Special Requests */}
-                      {reservation.special_requests && (
-                        <div className="bg-gray-50 p-2 rounded text-xs text-gray-600 mb-2">
-                          <strong>Note:</strong> {reservation.special_requests}
-                        </div>
-                      )}
-
-                      {/* Rejection Reason */}
-                      {reservation.status === 'rejected' && reservation.rejection_reason && (
-                        <div className="bg-red-50 border border-red-200 p-2 rounded text-xs text-red-700 mb-2">
-                          <strong>Rejection reason:</strong> {reservation.rejection_reason}
-                        </div>
-                      )}
-
-                      {/* Contact Info */}
-                      {reservation.business_address && (
-                        <div className="flex items-center gap-2 text-xs text-gray-500 mb-1">
-                          <MapPin className="w-3 h-3" />
-                          <span>{reservation.business_address}, {reservation.business_city}</span>
-                        </div>
-                      )}
-
-                      {/* Status Info */}
-                      <div className="flex items-center gap-2 mt-2">
-                        {getStatusIcon(reservation.status)}
-                        <span className="text-xs text-gray-500">
-                          {reservation.status === 'confirmed' && reservation.confirmed_at && (
-                            `Confirmed on ${new Date(reservation.confirmed_at).toLocaleDateString()}`
-                          )}
-                          {reservation.status === 'rejected' && reservation.rejected_at && (
-                            `Rejected on ${new Date(reservation.rejected_at).toLocaleDateString()}`
-                          )}
-                          {reservation.status === 'pending' && (
-                            'Awaiting confirmation from venue'
-                          )}
-                        </span>
-                      </div>
-
-                      {/* Actions */}
-                      <div className="flex gap-2 mt-3">
-                        <button
-                          onClick={() => onViewBusiness && onViewBusiness(reservation.business_id)}
-                          className="flex-1 bg-cyan-600 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-cyan-700 transition-colors"
-                        >
-                          View Venue
-                        </button>
-                        {canCancel && (
-                          <button
-                            onClick={() => handleCancelReservation(reservation.id)}
-                            className="px-3 py-2 bg-red-100 text-red-600 rounded-lg text-sm font-medium hover:bg-red-200 transition-colors flex items-center gap-1"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                            Cancel
-                          </button>
-                        )}
-                      </div>
-                    </div>
+              {/* Reservation Details */}
+              <div className="grid grid-cols-3 gap-4 pt-4 border-t border-gray-100">
+                <div className="flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-cyan-500" />
+                  <div>
+                    <p className="text-xs text-gray-500">Date</p>
+                    <p className="text-sm font-medium text-gray-900">
+                      {formatDate(reservation.date)}
+                    </p>
                   </div>
                 </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
+                <div className="flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-cyan-500" />
+                  <div>
+                    <p className="text-xs text-gray-500">Time</p>
+                    <p className="text-sm font-medium text-gray-900">
+                      {formatTime(reservation.time)}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Users className="w-4 h-4 text-cyan-500" />
+                  <div>
+                    <p className="text-xs text-gray-500">Guests</p>
+                    <p className="text-sm font-medium text-gray-900">
+                      {reservation.guest_count} {reservation.guest_count === 1 ? 'person' : 'people'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Booked timestamp */}
+              <div className="mt-4 pt-4 border-t border-gray-100">
+                <p className="text-xs text-gray-400">
+                  Booked on {new Date(reservation.created_at).toLocaleDateString('en-ZA', {
+                    year: 'numeric',
+                    month: 'short',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                  })}
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

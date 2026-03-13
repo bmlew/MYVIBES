@@ -4,6 +4,7 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Achievements } from './Achievements';
 import { RewardsRedemption } from './RewardsRedemption';
+import { MyReservations } from './MyReservations';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import * as api from '@/utils/api';
 
@@ -25,10 +26,9 @@ interface CustomerProfileProps {
   onBack: () => void;
   onUpdate: (data: Partial<UserProfile>) => Promise<void>;
   onLogout: () => void;
-  onOpenAffiliate: () => void;
 }
 
-export function CustomerProfile({ user, onBack, onUpdate, onLogout, onOpenAffiliate }: CustomerProfileProps) {
+export function CustomerProfile({ user, onBack, onUpdate, onLogout }: CustomerProfileProps) {
   const [formData, setFormData] = useState<Partial<UserProfile>>(user);
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -292,8 +292,12 @@ export function CustomerProfile({ user, onBack, onUpdate, onLogout, onOpenAffili
 
         {/* Gamification Tabs */}
         <div className="bg-white rounded-2xl shadow-xl overflow-hidden mb-6">
-          <Tabs defaultValue="achievements" className="w-full">
-            <TabsList className="w-full grid grid-cols-2 rounded-none bg-gray-100 p-1">
+          <Tabs defaultValue="reservations" className="w-full">
+            <TabsList className="w-full grid grid-cols-3 rounded-none bg-gray-100 p-1">
+              <TabsTrigger value="reservations" className="flex items-center gap-2">
+                <Calendar className="w-4 h-4" />
+                Bookings
+              </TabsTrigger>
               <TabsTrigger value="achievements" className="flex items-center gap-2">
                 <Trophy className="w-4 h-4" />
                 Achievements
@@ -303,6 +307,9 @@ export function CustomerProfile({ user, onBack, onUpdate, onLogout, onOpenAffili
                 Rewards
               </TabsTrigger>
             </TabsList>
+            <TabsContent value="reservations" className="p-6">
+              <MyReservations userId={user.id} />
+            </TabsContent>
             <TabsContent value="achievements" className="p-6">
               <Achievements 
                 userId={user.id} 
@@ -341,24 +348,6 @@ export function CustomerProfile({ user, onBack, onUpdate, onLogout, onOpenAffili
             <li>• Add your birthday for special treats</li>
             <li>• Add mobile number for reservations</li>
           </ul>
-        </div>
-
-        {/* Affiliate Portal Button */}
-        <div className="mt-6">
-          <Button 
-            onClick={onOpenAffiliate}
-            className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-lg hover:from-purple-700 hover:to-indigo-700 py-6 h-auto"
-          >
-            <div className="flex items-center gap-3">
-              <div className="bg-white/20 p-2 rounded-full">
-                <Hash className="w-5 h-5 text-white" />
-              </div>
-              <div className="text-left">
-                <div className="font-bold text-lg">Partner / Influencer Portal</div>
-                <div className="text-xs text-purple-100 opacity-90">Earn cash by referring friends & businesses</div>
-              </div>
-            </div>
-          </Button>
         </div>
       </div>
     </div>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef, lazy, Suspense, memo } from 'react';
 import { 
   Utensils, 
   Bell, 
@@ -25,27 +25,28 @@ import { ImageWithFallback } from './components/figma/ImageWithFallback';
 import { MyVibesLogo } from './components/MyVibesLogo';
 
 // Import customer app components
+// Lazy load heavy components for code splitting
+const VenueDetail = lazy(() => import('./components/VenueDetail').then(m => ({ default: m.VenueDetail })));
+const NotificationCenter = lazy(() => import('./components/NotificationCenter').then(m => ({ default: m.NotificationCenter })));
+const SearchFilters = lazy(() => import('./components/SearchFilters').then(m => ({ default: m.SearchFilters })));
+const ReservationModal = lazy(() => import('./components/ReservationModal').then(m => ({ default: m.ReservationModal })));
+const DirectionsModal = lazy(() => import('./components/DirectionsModal').then(m => ({ default: m.DirectionsModal })));
+const MyReservations = lazy(() => import('./components/MyReservations').then(m => ({ default: m.MyReservations })));
+
+// Import frequently used components
 import { FilterChip } from './components/FilterChip';
 import { SpecialCard } from './components/SpecialCard';
 import { VenueCard } from './components/VenueCard';
 import { AIRecommendations } from './components/AIRecommendations';
-import { VenueDetail } from './components/VenueDetail';
 import { OnlineStatusBadge } from './components/OfflineIndicator';
-import { SearchFilters } from './components/SearchFilters';
-import { ReservationModal } from './components/ReservationModal';
-import { DirectionsModal } from './components/DirectionsModal';
 import { EventListItem } from './components/EventListItem';
 import { FavoriteToggle } from './components/FavoriteToggle';
 import { PremiumCarousel } from './components/PremiumCarousel';
-import { NotificationCenter } from './components/NotificationCenter';
-import { MyReservations } from './components/MyReservations';
-
-import { AffiliatePortal } from './components/AffiliatePortal';
 
 // Constants
 const PLACEHOLDER_IMAGE = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="150" height="150"%3E%3Crect width="150" height="150" fill="%23e5e7eb"/%3E%3C/svg%3E';
 
-type View = 'home' | 'search' | 'events' | 'favorites' | 'profile' | 'venue-detail' | 'notifications' | 'reservations' | 'affiliate';
+type View = 'home' | 'search' | 'events' | 'favorites' | 'profile' | 'venue-detail' | 'notifications' | 'reservations';
 
 interface UserLocation {
   latitude: number;
@@ -106,8 +107,18 @@ interface Event {
   business?: Business;
 }
 
+// Simple loading fallback for lazy components
+const ComponentLoader = () => (
+  <div className="flex items-center justify-center p-8">
+    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-cyan-500"></div>
+  </div>
+);
+
 export function CustomerApp() {
-  console.log('🔵 CustomerApp component rendered');
+  // Performance: Only log in development
+  if (import.meta.env.DEV) {
+    console.log('🔵 CustomerApp component rendered');
+  }
   
   const [currentView, setCurrentView] = useState<View>('home');
   const [activeFilters, setActiveFilters] = useState<string[]>(['All']);
@@ -129,7 +140,7 @@ export function CustomerApp() {
     }
   }, []);
   const [locationError, setLocationError] = useState<string | null>(null);
-  const [locationName, setLocationName] = useState<string>('Johannesburg, South Africa');
+  const [locationName, setLocationName] = useState<string>('Sandton, Johannesburg');
   const [selectedVenueId, setSelectedVenueId] = useState<string>('palms');
   const [selectedVenueData, setSelectedVenueData] = useState<Business | null>(null);
   const [appliedFilters, setAppliedFilters] = useState<FilterState>({
@@ -639,27 +650,46 @@ export function CustomerApp() {
             if (data.status === 'OK' && data.results.length > 0) {
               const result = data.results[0];
               
-              // Try to get suburb/locality first
-              const locality = result.address_components.find((comp: any) => 
-                comp.types.includes('sublocality') || comp.types.includes('locality')
+              // Priority order for location extraction:
+              // 1. Neighborhood (sublocality_level_1) - most specific
+              // 2. Sublocality (any level)
+              // 3. Locality (city/town)
+              // 4. First part of formatted address
+              
+              const neighborhood = result.address_components.find((comp: any) => 
+                comp.types.includes('sublocality_level_1') || comp.types.includes('neighborhood')
               );
               
-              if (locality) {
+              const sublocality = result.address_components.find((comp: any) => 
+                comp.types.includes('sublocality')
+              );
+              
+              const locality = result.address_components.find((comp: any) => 
+                comp.types.includes('locality')
+              );
+              
+              if (neighborhood) {
+                setLocationName(neighborhood.long_name);
+                console.log('📍 Neighborhood detected:', neighborhood.long_name);
+              } else if (sublocality) {
+                setLocationName(sublocality.long_name);
+                console.log('📍 Sublocality detected:', sublocality.long_name);
+              } else if (locality) {
                 setLocationName(locality.long_name);
-                console.log('📍 Location name set to:', locality.long_name);
+                console.log('📍 Locality detected:', locality.long_name);
               } else {
                 // Fallback to first part of address
                 const parts = result.formatted_address.split(',');
-                setLocationName(parts[0] || 'Johannesburg, South Africa');
-                console.log('📍 Location name set to:', parts[0] || 'Johannesburg, South Africa');
+                setLocationName(parts[0] || 'Sandton, Johannesburg');
+                console.log('📍 Location from address:', parts[0] || 'Sandton, Johannesburg');
               }
             } else {
-              setLocationName('Johannesburg, South Africa');
-              console.log('📍 Location name fallback: Johannesburg, South Africa');
+              setLocationName('Sandton, Johannesburg');
+              console.log('📍 Location name fallback: Sandton, Johannesburg');
             }
           } catch (error) {
             console.error('🚨 Reverse geocoding error:', error);
-            setLocationName('Johannesburg, South Africa');
+            setLocationName('Sandton, Johannesburg');
           }
         })();
       },
@@ -764,28 +794,47 @@ export function CustomerApp() {
                 if (data.status === 'OK' && data.results.length > 0) {
                   const result = data.results[0];
                   
-                  // Try to get suburb/locality first
-                  const locality = result.address_components.find((comp: any) => 
-                    comp.types.includes('sublocality') || comp.types.includes('locality')
+                  // Priority order for location extraction:
+                  // 1. Neighborhood (sublocality_level_1) - most specific
+                  // 2. Sublocality (any level)
+                  // 3. Locality (city/town)
+                  // 4. First part of formatted address
+                  
+                  const neighborhood = result.address_components.find((comp: any) => 
+                    comp.types.includes('sublocality_level_1') || comp.types.includes('neighborhood')
                   );
                   
-                  if (locality) {
+                  const sublocality = result.address_components.find((comp: any) => 
+                    comp.types.includes('sublocality')
+                  );
+                  
+                  const locality = result.address_components.find((comp: any) => 
+                    comp.types.includes('locality')
+                  );
+                  
+                  if (neighborhood) {
+                    setLocationName(neighborhood.long_name);
+                    console.log('📍 Neighborhood detected:', neighborhood.long_name);
+                  } else if (sublocality) {
+                    setLocationName(sublocality.long_name);
+                    console.log('📍 Sublocality detected:', sublocality.long_name);
+                  } else if (locality) {
                     setLocationName(locality.long_name);
-                    console.log('📍 State updated: locationName =', locality.long_name);
+                    console.log('📍 Locality detected:', locality.long_name);
                   } else {
                     // Fallback to first part of address
                     const parts = result.formatted_address.split(',');
-                    setLocationName(parts[0] || 'Johannesburg, South Africa');
-                    console.log('📍 State updated: locationName =', parts[0] || 'Johannesburg, South Africa');
+                    setLocationName(parts[0] || 'Sandton, Johannesburg');
+                    console.log('📍 Location from address:', parts[0] || 'Sandton, Johannesburg');
                   }
                 } else {
-                  setLocationName('Johannesburg, South Africa');
-                  console.log('📍 State updated: locationName = "Johannesburg, South Africa"');
+                  setLocationName('Sandton, Johannesburg');
+                  console.log('📍 State updated: locationName = "Sandton, Johannesburg"');
                 }
               } catch (error) {
                 console.error('🚨 Reverse geocoding error:', error);
-                setLocationName('Johannesburg, South Africa');
-                console.log('📍 State updated: locationName = "Johannesburg, South Africa"');
+                setLocationName('Sandton, Johannesburg');
+                console.log('📍 State updated: locationName = "Sandton, Johannesburg"');
               }
             })();
           }
@@ -848,8 +897,8 @@ export function CustomerApp() {
         setHasInitialized(true);
         
         // Fetch businesses (non-blocking) - Force refresh to ensure suspended businesses are removed
-        // Fetch with 50km radius and limit 100 to improve performance (pagination support)
-        const businessesData = await api.getBusinesses(userLocation?.latitude, userLocation?.longitude, true, 50, 100);
+        // PERFORMANCE: Fetch with 30km radius and limit 50 for faster initial load
+        const businessesData = await api.getBusinesses(userLocation?.latitude, userLocation?.longitude, true, 30, 50);
         
         // Ensure we have an array
         const businessesArray = Array.isArray(businessesData) ? businessesData : [];
@@ -1357,28 +1406,30 @@ export function CustomerApp() {
         
         {/* Venue Detail View - Full Screen */}
         {currentView === 'venue-detail' ? (
-          <VenueDetail 
-            venueId={selectedVenueId}
-            onBack={() => setCurrentView('home')}
-            onReserve={(event) => {
-              if (event) {
-                setReservationInitialData({
-                  date: event.event_date,
-                  time: event.start_time,
-                  notes: `Booking for event: ${event.title}`
-                });
-              } else {
-                setReservationInitialData(undefined);
-              }
-              setShowReservationModal(true);
-            }}
-            onGetDirections={() => setShowDirectionsModal(true)}
-            onVenueDataLoaded={(business) => setSelectedVenueData(business)}
-            isFavorite={favorites[selectedVenueId]}
-            onToggleFavorite={() => toggleFavorite(selectedVenueId)}
-            userProfile={userProfile}
-            locationName={locationName}
-          />
+          <Suspense fallback={<ComponentLoader />}>
+            <VenueDetail 
+              venueId={selectedVenueId}
+              onBack={() => setCurrentView('home')}
+              onReserve={(event) => {
+                if (event) {
+                  setReservationInitialData({
+                    date: event.event_date,
+                    time: event.start_time,
+                    notes: `Booking for event: ${event.title}`
+                  });
+                } else {
+                  setReservationInitialData(undefined);
+                }
+                setShowReservationModal(true);
+              }}
+              onGetDirections={() => setShowDirectionsModal(true)}
+              onVenueDataLoaded={(business) => setSelectedVenueData(business)}
+              isFavorite={favorites[selectedVenueId]}
+              onToggleFavorite={() => toggleFavorite(selectedVenueId)}
+              userProfile={userProfile}
+              locationName={locationName}
+            />
+          </Suspense>
         ) : (
           <>
             {/* Status Bar - Hide on profile view */}
@@ -2053,7 +2104,6 @@ export function CustomerApp() {
                       onBack={() => setCurrentView('home')}
                       onUpdate={handleUpdateProfile}
                       onLogout={handleLogout}
-                      onOpenAffiliate={() => setCurrentView('affiliate')}
                     />
                   ) : (
                         <div className="p-4">
@@ -2110,46 +2160,36 @@ export function CustomerApp() {
                 </div>
               )}
 
-              {/* Affiliate View */}
-              {currentView === 'affiliate' && (
-                <div className="min-h-screen bg-white">
-                  <AffiliatePortal 
-                    onBack={() => setCurrentView('profile')} 
-                    user={userProfile ? {
-                      name: userProfile.name || userProfile.username || 'Valued User',
-                      email: userProfile.email,
-                      phone: userProfile.mobile
-                    } : undefined}
-                  />
-                </div>
-              )}
-
               {/* Notifications View */}
               {currentView === 'notifications' && (
                 <div className="h-full">
-                  <NotificationCenter 
-                    userId={userProfile?.email || 'guest'}
-                    onClose={() => setCurrentView('home')}
-                    onNotificationClick={(notification) => {
-                      // Navigate to the business if it's a special/event notification
-                      if (notification.business_id) {
-                        openVenueDetail(notification.business_id);
-                      }
-                    }}
-                  />
+                  <Suspense fallback={<ComponentLoader />}>
+                    <NotificationCenter 
+                      userId={userProfile?.email || 'guest'}
+                      onClose={() => setCurrentView('home')}
+                      onNotificationClick={(notification) => {
+                        // Navigate to the business if it's a special/event notification
+                        if (notification.business_id) {
+                          openVenueDetail(notification.business_id);
+                        }
+                      }}
+                    />
+                  </Suspense>
                 </div>
               )}
 
               {/* My Reservations View */}
               {currentView === 'reservations' && (
                 <div className="h-full">
-                  <MyReservations 
-                    userId={userProfile?.email || 'guest'}
-                    onClose={() => setCurrentView('profile')}
-                    onViewBusiness={(businessId) => {
-                      openVenueDetail(businessId);
-                    }}
-                  />
+                  <Suspense fallback={<ComponentLoader />}>
+                    <MyReservations 
+                      userId={userProfile?.email || 'guest'}
+                      onClose={() => setCurrentView('profile')}
+                      onViewBusiness={(businessId) => {
+                        openVenueDetail(businessId);
+                      }}
+                    />
+                  </Suspense>
                 </div>
               )}
             </div>
@@ -2213,27 +2253,33 @@ export function CustomerApp() {
 
       {/* Modals */}
       {showFiltersModal && (
-        <SearchFilters 
-          onClose={() => setShowFiltersModal(false)}
-          onApply={handleApplyFilters}
-        />
+        <Suspense fallback={<ComponentLoader />}>
+          <SearchFilters 
+            onClose={() => setShowFiltersModal(false)}
+            onApply={handleApplyFilters}
+          />
+        </Suspense>
       )}
 
       {showReservationModal && selectedVenueData && (
-        <ReservationModal 
-          business={selectedVenueData}
-          onClose={() => setShowReservationModal(false)}
-          userProfile={userProfile}
-          initialData={reservationInitialData}
-        />
+        <Suspense fallback={<ComponentLoader />}>
+          <ReservationModal 
+            business={selectedVenueData}
+            onClose={() => setShowReservationModal(false)}
+            userProfile={userProfile}
+            initialData={reservationInitialData}
+          />
+        </Suspense>
       )}
 
       {showDirectionsModal && (
-        <DirectionsModal 
-          onClose={() => setShowDirectionsModal(false)}
-          venueName={selectedVenueData?.name || 'Restaurant'}
-          address={selectedVenueData ? `${selectedVenueData.address}, ${selectedVenueData.city}` : 'Address not available'}
-        />
+        <Suspense fallback={<ComponentLoader />}>
+          <DirectionsModal 
+            onClose={() => setShowDirectionsModal(false)}
+            venueName={selectedVenueData?.name || 'Restaurant'}
+            address={selectedVenueData ? `${selectedVenueData.address}, ${selectedVenueData.city}` : 'Address not available'}
+          />
+        </Suspense>
       )}
 
       {/* User Profile Modal */}

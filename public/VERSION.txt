@@ -1,14 +1,26 @@
-MYVIBES v2.1.0
-Build: 210
+MYVIBES v2.1.2
+Build: 212
 Date: 2025-03-13
-Timestamp: 1710345600
+Timestamp: 1710357600
 
-Features in this version:
-- Removed debug gear icon from production
-- Fixed bottom navigation visibility
-- Changed location fallback to "Johannesburg, South Africa"
-- Added v2.1 version indicator next to logo
-- Updated service worker to v2.1.0
-- Improved cache-busting for APK generation
+🎯 What's New in v2.1.2:
+✅ My Reservations Tab - View all your table bookings in one place
+✅ Reservation History - See upcoming & past reservations
+✅ Booking Details - Venue name, location, date, time, guest count
+✅ Status Tracking - Confirmed, pending, or cancelled reservations
+✅ User-specific Reservations - Filtered by your user ID
 
-If you see this file with version 2.1.0, the deployment is successful!
+🔧 Technical Updates:
+- Added MyReservations component with filter tabs (Upcoming/Past/All)
+- New backend endpoint: GET /reservations/user/:userId
+- Updated reservation tracking to include user_id
+- Enhanced CustomerProfile with 3 tabs: Bookings, Achievements, Rewards
+- Improved reservation data structure with venue details
+
+🐛 Fixes:
+- Reservations now properly linked to user accounts
+- Added default tab to show Bookings first
+- Empty states for users with no reservations
+
+If you see this file with version 2.1.2, the deployment is successful!
+Test at: /version-check.html
