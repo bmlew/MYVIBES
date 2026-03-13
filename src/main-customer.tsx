@@ -3,7 +3,7 @@ import ReactDOM from 'react-dom/client';
 import CustomerAppPWA from './app/CustomerAppPWA';
 import './styles/fonts.css';
 import './styles/theme.css';
-import './index.css';
+import './styles/index.css';
 
 /**
  * Customer PWA Entry Point
