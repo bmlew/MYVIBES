@@ -28,6 +28,8 @@ interface VenueDetailProps {
   onReserve: (event?: Event) => void;
   onGetDirections: () => void;
   distance?: number;
+  userProfile?: { name?: string; username?: string; email?: string };
+  locationName?: string;
   onVenueDataLoaded?: (business: Business) => void;
   isFavorite?: boolean;
   onToggleFavorite?: () => void;
@@ -93,7 +95,7 @@ interface VenueData {
   events: Event[];
 }
 
-export function VenueDetail({ venueId, onBack, onReserve, onGetDirections, distance, onVenueDataLoaded, isFavorite, onToggleFavorite }: VenueDetailProps) {
+export function VenueDetail({ venueId, onBack, onReserve, onGetDirections, distance, onVenueDataLoaded, isFavorite, onToggleFavorite, userProfile, locationName }: VenueDetailProps) {
   const [business, setBusiness] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -353,6 +355,28 @@ export function VenueDetail({ venueId, onBack, onReserve, onGetDirections, dista
 
   return (
     <div className="h-full flex flex-col bg-white">
+      {/* Status Bar with User Name */}
+      {userProfile && (
+        <div className="bg-gradient-to-r from-cyan-500 to-blue-600 text-white px-6 py-3 flex-shrink-0">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <span className="font-medium text-sm">{userProfile.name || userProfile.username || 'Guest'}</span>
+            </div>
+            <div className="text-right">
+              <div className="text-xs font-semibold">
+                {new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+              </div>
+            </div>
+          </div>
+          {locationName && (
+            <div className="flex items-center gap-2 text-xs">
+              <MapPin className="w-3 h-3" />
+              <span className="opacity-90">{locationName}</span>
+            </div>
+          )}
+        </div>
+      )}
+      
       {/* Header Image */}
       <div className="relative h-48">
         <img 
@@ -392,7 +416,31 @@ export function VenueDetail({ venueId, onBack, onReserve, onGetDirections, dista
           >
             <Heart className={`w-5 h-5 ${isFavorite ? 'fill-current' : ''}`} />
           </button>
-          <button className="w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-lg">
+          <button 
+            onClick={async () => {
+              const shareData = {
+                title: business.name,
+                text: `Check out ${business.name} on MYVIBES!`,
+                url: window.location.href
+              };
+              
+              if (navigator.share) {
+                try {
+                  await navigator.share(shareData);
+                  console.log('✅ Shared successfully');
+                } catch (err) {
+                  if ((err as Error).name !== 'AbortError') {
+                    console.error('❌ Share failed:', err);
+                  }
+                }
+              } else {
+                // Fallback: copy to clipboard
+                navigator.clipboard.writeText(window.location.href);
+                alert('Link copied to clipboard!');
+              }
+            }}
+            className="w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-lg hover:scale-105 transition-all"
+          >
             <Share2 className="w-5 h-5" />
           </button>
         </div>

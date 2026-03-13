@@ -175,8 +175,8 @@ export default function App() {
       <OfflineBanner />
       <Toaster />
 
-      {/* Mode Switcher - For Demo Purposes */}
-      {currentView !== 'landing' && (
+      {/* Mode Switcher - Disabled for Production */}
+      {false && currentView !== 'landing' && (
         <div className="fixed top-4 right-4 z-50 bg-white rounded-lg shadow-lg p-2 flex gap-2 flex-wrap max-w-xs sm:max-w-none">
           <button
             onClick={() => setCurrentView('landing')}

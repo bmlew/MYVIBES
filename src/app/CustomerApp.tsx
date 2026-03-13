@@ -129,7 +129,7 @@ export function CustomerApp() {
     }
   }, []);
   const [locationError, setLocationError] = useState<string | null>(null);
-  const [locationName, setLocationName] = useState<string>('Detecting location...');
+  const [locationName, setLocationName] = useState<string>('Johannesburg, South Africa');
   const [selectedVenueId, setSelectedVenueId] = useState<string>('palms');
   const [selectedVenueData, setSelectedVenueData] = useState<Business | null>(null);
   const [appliedFilters, setAppliedFilters] = useState<FilterState>({
@@ -1347,9 +1347,9 @@ export function CustomerApp() {
   // }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-0 sm:p-4">
+    <div className="h-screen bg-gray-50 flex items-start sm:items-center justify-center p-0 sm:p-4 overflow-hidden">
       {/* Mobile App Container */}
-      <div className="w-full max-w-md bg-white sm:rounded-3xl shadow-2xl overflow-hidden flex flex-col h-screen sm:h-[812px]">
+      <div className="w-full max-w-md bg-white sm:rounded-3xl shadow-2xl overflow-hidden flex flex-col h-full sm:h-[812px]">
         
         {/* Venue Detail View - Full Screen */}
         {currentView === 'venue-detail' ? (
@@ -1372,6 +1372,8 @@ export function CustomerApp() {
             onVenueDataLoaded={(business) => setSelectedVenueData(business)}
             isFavorite={favorites[selectedVenueId]}
             onToggleFavorite={() => toggleFavorite(selectedVenueId)}
+            userProfile={userProfile}
+            locationName={locationName}
           />
         ) : (
           <>
