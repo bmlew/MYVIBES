@@ -607,7 +607,8 @@ export function CustomerApp() {
     }
 
     isRequestingLocationRef.current = true;
-    setLocationName('Detecting location...');
+    // Don't change location name during detection - keep default  
+    // setLocationName('Detecting location...');
     setLocationError(null);
 
     navigator.geolocation.getCurrentPosition(
@@ -646,16 +647,16 @@ export function CustomerApp() {
               } else {
                 // Fallback to first part of address
                 const parts = result.formatted_address.split(',');
-                setLocationName(parts[0] || 'Your location');
-                console.log('📍 Location name set to:', parts[0] || 'Your location');
+                setLocationName(parts[0] || 'Johannesburg, South Africa');
+                console.log('📍 Location name set to:', parts[0] || 'Johannesburg, South Africa');
               }
             } else {
-              setLocationName('Your location');
-              console.log('📍 Location name fallback: Your location');
+              setLocationName('Johannesburg, South Africa');
+              console.log('📍 Location name fallback: Johannesburg, South Africa');
             }
           } catch (error) {
             console.error('🚨 Reverse geocoding error:', error);
-            setLocationName('Your location');
+            setLocationName('Johannesburg, South Africa');
           }
         })();
       },
@@ -771,17 +772,17 @@ export function CustomerApp() {
                   } else {
                     // Fallback to first part of address
                     const parts = result.formatted_address.split(',');
-                    setLocationName(parts[0] || 'Your location');
-                    console.log('📍 State updated: locationName =', parts[0] || 'Your location');
+                    setLocationName(parts[0] || 'Johannesburg, South Africa');
+                    console.log('📍 State updated: locationName =', parts[0] || 'Johannesburg, South Africa');
                   }
                 } else {
-                  setLocationName('Your location');
-                  console.log('📍 State updated: locationName = "Your location"');
+                  setLocationName('Johannesburg, South Africa');
+                  console.log('📍 State updated: locationName = "Johannesburg, South Africa"');
                 }
               } catch (error) {
                 console.error('🚨 Reverse geocoding error:', error);
-                setLocationName('Your location');
-                console.log('📍 State updated: locationName = "Your location"');
+                setLocationName('Johannesburg, South Africa');
+                console.log('📍 State updated: locationName = "Johannesburg, South Africa"');
               }
             })();
           }
@@ -1396,6 +1397,7 @@ export function CustomerApp() {
                 <div>
                   <div className="flex items-center gap-2 mb-1">
                     <MyVibesLogo className="h-10" />
+                    <span className="text-[8px] opacity-50 font-mono">v2.1</span>
                   </div>
                   {/* Customer Name */}
                   {userProfile && (
