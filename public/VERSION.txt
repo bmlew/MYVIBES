@@ -1,0 +1,14 @@
+MYVIBES v2.1.0
+Build: 210
+Date: 2025-03-13
+Timestamp: 1710345600
+
+Features in this version:
+- Removed debug gear icon from production
+- Fixed bottom navigation visibility
+- Changed location fallback to "Johannesburg, South Africa"
+- Added v2.1 version indicator next to logo
+- Updated service worker to v2.1.0
+- Improved cache-busting for APK generation
+
+If you see this file with version 2.1.0, the deployment is successful!

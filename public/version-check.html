@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>MYVIBES - Version Check</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            color: white;
+            min-height: 100vh;
+            padding: 2rem;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: rgba(255,255,255,0.05);
+            border-radius: 16px;
+            padding: 2rem;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        h1 {
+            color: #06b6d4;
+            margin-bottom: 1rem;
+            font-size: 2rem;
+        }
+        .status {
+            padding: 1rem;
+            border-radius: 8px;
+            margin: 1rem 0;
+            border-left: 4px solid;
+        }
+        .status.success {
+            background: rgba(34, 197, 94, 0.1);
+            border-color: #22c55e;
+        }
+        .status.error {
+            background: rgba(239, 68, 68, 0.1);
+            border-color: #ef4444;
+        }
+        .status.warning {
+            background: rgba(251, 191, 36, 0.1);
+            border-color: #fbbf24;
+        }
+        .status.info {
+            background: rgba(59, 130, 246, 0.1);
+            border-color: #3b82f6;
+        }
+        pre {
+            background: rgba(0,0,0,0.3);
+            padding: 1rem;
+            border-radius: 8px;
+            overflow-x: auto;
+            margin: 1rem 0;
+            font-size: 0.9rem;
+        }
+        button {
+            background: #06b6d4;
+            color: white;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1rem;
+            margin: 0.5rem 0.5rem 0.5rem 0;
+        }
+        button:hover {
+            background: #0891b2;
+        }
+        .detail {
+            font-size: 0.9rem;
+            opacity: 0.8;
+            margin-top: 0.5rem;
+        }
+        .badge {
+            display: inline-block;
+            background: #06b6d4;
+            color: white;
+            padding: 0.25rem 0.75rem;
+            border-radius: 12px;
+            font-size: 0.85rem;
+            font-weight: bold;
+            margin: 0 0.5rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 MYVIBES Version Check</h1>
+        <p>This page checks if the new v2.1.0 deployment is live and visible to PWA builders.</p>
+        
+        <div id="loading" class="status info">
+            <strong>⏳ Checking deployment status...</strong>
+        </div>
+        
+        <div id="results"></div>
+        
+        <button onclick="runChecks()">🔄 Re-check</button>
+        <button onclick="clearAllCaches()">🗑️ Clear All Caches</button>
+        <button onclick="window.open('/', '_blank')">🏠 Open Main App</button>
+    </div>
+
+    <script>
+        const EXPECTED_VERSION = '2.1.0';
+        const EXPECTED_VERSION_CODE = 210;
+        
+        async function runChecks() {
+            const results = document.getElementById('results');
+            const loading = document.getElementById('loading');
+            results.innerHTML = '';
+            loading.style.display = 'block';
+            
+            let allPassed = true;
+            
+            // Check 1: VERSION.txt
+            try {
+                const versionRes = await fetch('/VERSION.txt?' + Date.now());
+                const versionText = await versionRes.text();
+                
+                if (versionText.includes('v2.1.0') && versionText.includes('210')) {
+                    addResult('success', 'VERSION.txt Check', 
+                        `✅ Version file is up to date!<div class="detail">${versionText.split('\\n')[0]}</div>`);
+                } else {
+                    allPassed = false;
+                    addResult('error', 'VERSION.txt Check', 
+                        `❌ Old version file found!<pre>${versionText}</pre>`);
+                }
+            } catch (e) {
+                allPassed = false;
+                addResult('error', 'VERSION.txt Check', `❌ Failed to load: ${e.message}`);
+            }
+            
+            // Check 2: manifest.json
+            try {
+                const manifestRes = await fetch('/manifest.json?' + Date.now());
+                const manifest = await manifestRes.json();
+                
+                const hasVersion = manifest.version === EXPECTED_VERSION;
+                const hasVersionCode = manifest.version_code === EXPECTED_VERSION_CODE;
+                
+                if (hasVersion && hasVersionCode) {
+                    addResult('success', 'manifest.json Check', 
+                        `✅ Manifest version is correct!<div class="detail">Version: ${manifest.version}, Code: ${manifest.version_code}</div>`);
+                } else {
+                    allPassed = false;
+                    addResult('error', 'manifest.json Check', 
+                        `❌ Manifest version mismatch!<pre>${JSON.stringify({
+                            version: manifest.version || 'MISSING',
+                            version_code: manifest.version_code || 'MISSING'
+                        }, null, 2)}</pre>`);
+                }
+            } catch (e) {
+                allPassed = false;
+                addResult('error', 'manifest.json Check', `❌ Failed to load: ${e.message}`);
+            }
+            
+            // Check 3: manifest-customer.json
+            try {
+                const customerManifestRes = await fetch('/manifest-customer.json?' + Date.now());
+                const customerManifest = await customerManifestRes.json();
+                
+                const hasVersion = customerManifest.version === EXPECTED_VERSION;
+                const hasVersionCode = customerManifest.version_code === EXPECTED_VERSION_CODE;
+                
+                if (hasVersion && hasVersionCode) {
+                    addResult('success', 'manifest-customer.json Check', 
+                        `✅ Customer manifest version is correct!<div class="detail">Version: ${customerManifest.version}, Code: ${customerManifest.version_code}</div>`);
+                } else {
+                    allPassed = false;
+                    addResult('error', 'manifest-customer.json Check', 
+                        `❌ Customer manifest version mismatch!<pre>${JSON.stringify({
+                            version: customerManifest.version || 'MISSING',
+                            version_code: customerManifest.version_code || 'MISSING'
+                        }, null, 2)}</pre>`);
+                }
+            } catch (e) {
+                allPassed = false;
+                addResult('error', 'manifest-customer.json Check', `❌ Failed to load: ${e.message}`);
+            }
+            
+            // Check 4: Service Worker
+            try {
+                const swRes = await fetch('/service-worker.js?' + Date.now());
+                const swText = await swRes.text();
+                
+                if (swText.includes('v2.1.0') || swText.includes('2.1')) {
+                    addResult('success', 'Service Worker Check', 
+                        `✅ Service worker is updated to v2.1!`);
+                } else {
+                    allPassed = false;
+                    addResult('warning', 'Service Worker Check', 
+                        `⚠️ Service worker may be outdated (couldn't find v2.1.0 reference)`);
+                }
+            } catch (e) {
+                allPassed = false;
+                addResult('error', 'Service Worker Check', `❌ Failed to load: ${e.message}`);
+            }
+            
+            // Check 5: Cache Headers
+            try {
+                const headerRes = await fetch('/manifest.json?' + Date.now());
+                const cacheControl = headerRes.headers.get('Cache-Control');
+                const xVersion = headerRes.headers.get('X-Version');
+                
+                const hasNoCache = cacheControl && cacheControl.includes('no-cache');
+                const hasCorrectVersion = xVersion === EXPECTED_VERSION;
+                
+                if (hasNoCache && hasCorrectVersion) {
+                    addResult('success', 'HTTP Headers Check', 
+                        `✅ Headers are configured correctly!<div class="detail">Cache-Control: ${cacheControl}<br>X-Version: ${xVersion}</div>`);
+                } else {
+                    allPassed = false;
+                    addResult('warning', 'HTTP Headers Check', 
+                        `⚠️ Headers may not be optimal<div class="detail">Cache-Control: ${cacheControl || 'MISSING'}<br>X-Version: ${xVersion || 'MISSING'}</div>`);
+                }
+            } catch (e) {
+                addResult('warning', 'HTTP Headers Check', `⚠️ Could not check headers: ${e.message}`);
+            }
+            
+            loading.style.display = 'none';
+            
+            // Final verdict
+            if (allPassed) {
+                addResult('success', '🎉 FINAL VERDICT', 
+                    `<strong>✅ ALL CHECKS PASSED!</strong><br><br>
+                    Your deployment is ready for APK generation.<br><br>
+                    Next steps:<br>
+                    1. Go to <a href="https://www.pwabuilder.com" target="_blank" style="color: #06b6d4">PWABuilder.com</a><br>
+                    2. Enter your site URL<br>
+                    3. Verify it shows version <span class="badge">2.1.0</span><br>
+                    4. Generate APK<br><br>
+                    <strong>Important:</strong> Use PWABuilder in INCOGNITO/PRIVATE mode to avoid cache issues!`);
+            } else {
+                addResult('error', '❌ FINAL VERDICT', 
+                    `<strong>Some checks failed!</strong><br><br>
+                    Possible causes:<br>
+                    1. Deployment hasn't finished yet (wait 2-3 minutes)<br>
+                    2. CDN cache hasn't cleared (wait 5-10 minutes)<br>
+                    3. Browser cache (clear cache and try again)<br><br>
+                    Try clicking "🔄 Re-check" in a few minutes.`);
+            }
+        }
+        
+        function addResult(type, title, message) {
+            const results = document.getElementById('results');
+            const div = document.createElement('div');
+            div.className = 'status ' + type;
+            div.innerHTML = `<strong>${title}</strong><br>${message}`;
+            results.appendChild(div);
+        }
+        
+        async function clearAllCaches() {
+            try {
+                // Clear all caches
+                const cacheNames = await caches.keys();
+                await Promise.all(cacheNames.map(name => caches.delete(name)));
+                
+                // Unregister service workers
+                const registrations = await navigator.serviceWorker.getRegistrations();
+                await Promise.all(registrations.map(reg => reg.unregister()));
+                
+                addResult('success', 'Cache Cleared', 
+                    `✅ Cleared ${cacheNames.length} caches and ${registrations.length} service workers.<br>
+                    Reloading page in 2 seconds...`);
+                
+                setTimeout(() => {
+                    window.location.reload(true);
+                }, 2000);
+            } catch (e) {
+                addResult('error', 'Cache Clear Failed', `❌ ${e.message}`);
+            }
+        }
+        
+        // Auto-run checks on page load
+        window.addEventListener('load', runChecks);
+    </script>
+</body>
+</html>
