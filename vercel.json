@@ -6,6 +6,14 @@
   "framework": null,
   "rewrites": [
     {
+      "source": "/app",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/app/manifest.json",
+      "destination": "/manifest-customer.json"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }
@@ -21,6 +29,15 @@
         {
           "key": "Service-Worker-Allowed",
           "value": "/"
+        }
+      ]
+    },
+    {
+      "source": "/manifest-customer.json",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "application/manifest+json"
         }
       ]
     },

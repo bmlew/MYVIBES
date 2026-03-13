@@ -3,7 +3,7 @@
   "short_name": "MYVIBES",
   "description": "Discover the best restaurants, bars, and events near you. Get exclusive deals, earn loyalty points, and find your next vibe.",
   "start_url": "/app",
-  "scope": "/app",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#0f172a",
   "theme_color": "#06b6d4",
