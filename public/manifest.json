@@ -1,8 +1,9 @@
 {
   "name": "MYVIBES - Hospitality Platform",
   "short_name": "MYVIBES",
+  "version": "2.1.0",
   "description": "Discover dining, events, and entertainment. Connect with restaurants and hotels in real-time with loyalty rewards and gamification.",
-  "start_url": "/",
+  "start_url": "/?v=2.1.0",
   "scope": "/",
   "display": "standalone",
   "background_color": "#0f172a",

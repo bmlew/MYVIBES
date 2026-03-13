@@ -311,6 +311,9 @@ export function CustomerApp() {
   // Debug: Track component mount/unmount
   useEffect(() => {
     console.log('🟢 CustomerApp MOUNTED');
+    console.log('📱 MYVIBES APP VERSION: v2.1.0');
+    console.log('📅 Build Date: 2025-03-13');
+    console.log('🔍 Check for "v2.1" next to logo to verify correct version');
     return () => {
       console.log('🔴 CustomerApp UNMOUNTED');
     };

@@ -4,6 +4,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     
+    <!-- App Version -->
+    <meta name="app-version" content="2.1.0" />
+    <meta name="build-timestamp" content="2025-03-13" />
+    
     <!-- Permissions Policy for Geolocation - Allow all origins for iframe compatibility -->
     <meta http-equiv="Permissions-Policy" content="geolocation=*" />
     
@@ -40,17 +44,44 @@
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
     
-    <!-- Service Worker Registration -->
+    <!-- Service Worker Registration with Auto-Update -->
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/service-worker.js')
+          navigator.serviceWorker.register('/service-worker.js?v=2.1.0')
             .then(registration => {
-              console.log('✅ Service Worker registered:', registration.scope);
+              console.log('✅ [PWA] Service Worker registered v2.1.0:', registration.scope);
+              
+              // Check for updates every 30 seconds
+              setInterval(() => {
+                registration.update();
+              }, 30000);
+              
+              // Auto-update when new version found
+              registration.addEventListener('updatefound', () => {
+                const newWorker = registration.installing;
+                console.log('🔄 [PWA] New Service Worker found, updating...');
+                
+                newWorker.addEventListener('statechange', () => {
+                  if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                    console.log('✨ [PWA] New version available! Activating...');
+                    // Tell the new SW to skip waiting
+                    newWorker.postMessage({ type: 'SKIP_WAITING' });
+                    // Reload page to get new version
+                    window.location.reload();
+                  }
+                });
+              });
             })
             .catch(error => {
-              console.error('❌ Service Worker registration failed:', error);
+              console.error('❌ [PWA] Service Worker registration failed:', error);
             });
+        });
+        
+        // Reload page when service worker takes control (new version)
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+          console.log('🔄 [PWA] New Service Worker activated, reloading...');
+          window.location.reload();
         });
       }
     </script>
