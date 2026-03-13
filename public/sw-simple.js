@@ -1,17 +1,11 @@
 // Simple Service Worker for Customer PWA
-const CACHE_NAME = 'myvibes-customer-v1.0.2';
+const CACHE_NAME = 'myvibes-customer-v1.0.3';
 const STATIC_ASSETS = [
   '/app',
   '/app.html',
   '/manifest-customer.json',
-  '/icons/icon-72x72.png',
-  '/icons/icon-96x96.png',
-  '/icons/icon-128x128.png',
-  '/icons/icon-144x144.png',
-  '/icons/icon-152x152.png',
-  '/icons/icon-192x192.png',
-  '/icons/icon-384x384.png',
-  '/icons/icon-512x512.png',
+  // Note: Icons will be cached on-demand when first loaded
+  // Not pre-cached to avoid errors if they don't exist
 ];
 
 // Install event - cache static assets
