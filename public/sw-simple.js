@@ -1,28 +1,20 @@
 // Simple Service Worker for Customer PWA
-const CACHE_NAME = 'myvibes-customer-v1.0.4';
-const STATIC_ASSETS = [
-  '/app',
-  '/app.html',
-  '/manifest-customer.json',
-  // Note: Icons will be cached on-demand when first loaded
-  // Not pre-cached to avoid errors if they don't exist
-];
+const CACHE_NAME = 'myvibes-customer-v1.0.6';
 
-// Install event - cache static assets
+// No pre-caching - everything cached on-demand
+const STATIC_ASSETS = [];
+
+// Install event - skip waiting immediately
 self.addEventListener('install', (event) => {
   console.log('[Service Worker] Installing version:', CACHE_NAME);
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then((cache) => {
-        console.log('[Service Worker] Caching app shell');
-        return cache.addAll(STATIC_ASSETS);
-      })
       .then(() => {
-        console.log('[Service Worker] Cached successfully');
+        console.log('[Service Worker] Cache opened successfully');
         return self.skipWaiting();
       })
       .catch((error) => {
-        console.error('[Service Worker] Cache failed:', error);
+        console.error('[Service Worker] Cache open failed:', error);
       })
   );
 });
