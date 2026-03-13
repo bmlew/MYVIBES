@@ -20,9 +20,6 @@ import {
   Trophy
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import heroImage from 'figma:asset/d95e0ce7509549217f0b362c454da0eeed849bc5.png';
-import newHeroImage from 'figma:asset/2e8f912e88fc0f4707265910b67395a918100ab5.png';
-import heroBackgroundImage from 'figma:asset/dc9a44cad42fa55a2314ce738a7ff0428cc48ffe.png';
 import { MyVibesLogo, MyVibesIcon } from './components/MyVibesLogo';
 import { ImageWithFallback } from './components/figma/ImageWithFallback';
 
@@ -31,6 +28,10 @@ const SocialMediaAdsGallery = lazy(() => import('./components/SocialMediaAdsGall
 // Rebuild trigger comment
 
 import { ROICalculator } from './components/ROICalculator';
+
+// Hero images
+const heroBackgroundImage = "https://images.unsplash.com/photo-1763054761579-a5392d7186ef?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1920";
+const newHeroImage = "https://images.unsplash.com/photo-1758426637742-80bd0f983611?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080";
 
 interface LandingPageProps {
   onTryDemo: () => void;

@@ -3,7 +3,6 @@ import { ArrowLeft, Building2, Mail, Phone, MapPin, Lock, Globe, Check, User } f
 import { Button } from './components/ui/button';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { toast } from "sonner";
-import logoImage from 'figma:asset/4703bef6581c776921a3e305e39de2390a36cac5.png';
 import { MyVibesLogo } from '@/app/components/MyVibesLogo';
 
 interface BusinessRegistrationProps {

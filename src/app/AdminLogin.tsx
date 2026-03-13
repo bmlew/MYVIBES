@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router'; // Changed from 'react-router-dom'
 import { Lock, Shield } from 'lucide-react';
-import logoImage from 'figma:asset/4703bef6581c776921a3e305e39de2390a36cac5.png';
 import { MyVibesLogo } from '@/app/components/MyVibesLogo';
 
 export default function AdminLogin() {

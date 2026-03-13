@@ -48,7 +48,6 @@ import { SocialMediaAdsManager } from '@/app/components/SocialMediaAdsManager';
 import { ReservationsManager } from '@/app/components/ReservationsManager';
 import { BusinessProfileSettings } from '@/app/components/BusinessProfileSettings';
 import { Toast, useToast } from '@/app/components/Toast';
-import logoImage from 'figma:asset/4703bef6581c776921a3e305e39de2390a36cac5.png';
 import { MyVibesLogo } from '@/app/components/MyVibesLogo';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 

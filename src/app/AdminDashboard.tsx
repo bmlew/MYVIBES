@@ -30,7 +30,6 @@ import { FinancialHub } from './components/admin/FinancialHub';
 import { GlobalSubscriptions } from './components/admin/GlobalSubscriptions';
 import { SocialMediaManager } from './components/admin/SocialMediaManager';
 import { UserManagement } from './components/admin/UserManagement';
-import logoImage from 'figma:asset/4703bef6581c776921a3e305e39de2390a36cac5.png';
 import { MyVibesLogo } from '@/app/components/MyVibesLogo';
 
 interface AdminDashboardProps {

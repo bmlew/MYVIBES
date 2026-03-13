@@ -22,7 +22,6 @@ import { useOnlineStatus } from '@/hooks/useOnlineStatus';
 import { useDebounce } from '@/hooks/useDebounce';
 import * as api from '@/utils/api';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
-import logoImage from 'figma:asset/4703bef6581c776921a3e305e39de2390a36cac5.png';
 import { ImageWithFallback } from './components/figma/ImageWithFallback';
 import { MyVibesLogo } from './components/MyVibesLogo';
 
