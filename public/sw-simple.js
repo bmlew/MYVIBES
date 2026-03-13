@@ -1,5 +1,5 @@
 // Simple Service Worker for Customer PWA
-const CACHE_NAME = 'myvibes-customer-v1.0.3';
+const CACHE_NAME = 'myvibes-customer-v1.0.4';
 const STATIC_ASSETS = [
   '/app',
   '/app.html',

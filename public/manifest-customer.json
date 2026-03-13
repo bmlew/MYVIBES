@@ -17,22 +17,6 @@
       "purpose": "any maskable"
     }
   ],
-  "screenshots": [
-    {
-      "src": "/screenshots/customer-mobile-1.png",
-      "sizes": "540x720",
-      "type": "image/png",
-      "form_factor": "narrow",
-      "label": "Discover nearby restaurants and events"
-    },
-    {
-      "src": "/screenshots/customer-mobile-2.png",
-      "sizes": "540x720",
-      "type": "image/png",
-      "form_factor": "narrow",
-      "label": "Earn loyalty points with every check-in"
-    }
-  ],
   "share_target": {
     "action": "/app/share",
     "method": "POST",
