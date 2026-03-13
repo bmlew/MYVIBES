@@ -50,48 +50,19 @@
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
     
-    <!-- Service Worker Registration with Auto-Update -->
+    <!-- Service Worker Registration - DISABLED AUTO-UPDATE to prevent reload loops -->
     <script>
       if ('serviceWorker' in navigator) {
-        // Prevent reload loops with a session flag
-        let isRefreshing = false;
-        
         window.addEventListener('load', () => {
           navigator.serviceWorker.register('/service-worker.js?v=2.1.3')
             .then(registration => {
               console.log('✅ [PWA] Service Worker registered v2.1.3:', registration.scope);
-              
-              // Check for updates every 60 seconds (reduced frequency)
-              setInterval(() => {
-                registration.update();
-              }, 60000);
-              
-              // Handle updates when new version found
-              registration.addEventListener('updatefound', () => {
-                const newWorker = registration.installing;
-                console.log('🔄 [PWA] New Service Worker found, updating...');
-                
-                newWorker.addEventListener('statechange', () => {
-                  if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                    console.log('✨ [PWA] New version available! Will activate on next load.');
-                    // Just tell it to skip waiting, but DON'T reload here
-                    newWorker.postMessage({ type: 'SKIP_WAITING' });
-                  }
-                });
-              });
+              // Auto-update DISABLED to prevent reload loops
+              // Manual updates can be triggered from debug panel if needed
             })
             .catch(error => {
               console.error('❌ [PWA] Service Worker registration failed:', error);
             });
-        });
-        
-        // Only reload ONCE when service worker takes control
-        navigator.serviceWorker.addEventListener('controllerchange', () => {
-          if (!isRefreshing) {
-            isRefreshing = true;
-            console.log('🔄 [PWA] New Service Worker activated, reloading once...');
-            window.location.reload();
-          }
         });
       }
     </script>

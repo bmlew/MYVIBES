@@ -1,16 +1,4 @@
 /**
- * PWA utility functions for VIBESPOT
- * Handles service worker registration, install prompts, and PWA features
- */
-
-export interface BeforeInstallPromptEvent extends Event {
-  prompt: () => Promise<void>;
-  userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
-}
-
-let deferredPrompt: BeforeInstallPromptEvent | null = null;
-
-/**
  * Register the service worker
  */
 export async function registerServiceWorker(): Promise<ServiceWorkerRegistration | null> {
@@ -22,23 +10,25 @@ export async function registerServiceWorker(): Promise<ServiceWorkerRegistration
 
       console.log('[PWA] Service Worker registered:', registration.scope);
 
-      // Check for updates every hour
-      setInterval(() => {
-        registration.update();
-      }, 60 * 60 * 1000);
+      // DISABLED: Auto-update checking to prevent reload loops
+      // Check for updates manually only when needed
+      // setInterval(() => {
+      //   registration.update();
+      // }, 60 * 60 * 1000);
 
+      // DISABLED: Auto-update notifications to prevent reload loops
       // Listen for updates
-      registration.addEventListener('updatefound', () => {
-        const newWorker = registration.installing;
-        if (newWorker) {
-          newWorker.addEventListener('statechange', () => {
-            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-              // New service worker available
-              notifyUpdate();
-            }
-          });
-        }
-      });
+      // registration.addEventListener('updatefound', () => {
+      //   const newWorker = registration.installing;
+      //   if (newWorker) {
+      //     newWorker.addEventListener('statechange', () => {
+      //       if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+      //         // New service worker available
+      //         notifyUpdate();
+      //       }
+      //     });
+      //   }
+      // });
 
       return registration;
     } catch (error) {
