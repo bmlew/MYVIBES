@@ -129,8 +129,7 @@ app.post("/make-server-175b2872/auth/business/register", async (c) => {
 
     // Determine subscription tier and monthly fee
     const subscription_tier = plan || 'free';
-    const monthly_fee = subscription_tier === 'premium' ? 999.00 : 
-                       subscription_tier === 'standard' ? 499.00 : 0.00;
+    const monthly_fee = subscription_tier === 'paid' ? 499.00 : 0.00;
 
     // Create business record in Postgres
     const { data: business, error: businessError } = await supabase
@@ -590,12 +589,15 @@ app.get("/make-server-175b2872/admin/stats", async (c) => {
 
     const tierCounts = {
       free: 0,
-      standard: 0,
-      premium: 0
+      paid: 0
     };
 
     subscriptionBreakdown?.forEach(b => {
-      tierCounts[b.subscription_tier] = (tierCounts[b.subscription_tier] || 0) + 1;
+      if (b.subscription_tier === 'free') {
+        tierCounts.free++;
+      } else {
+        tierCounts.paid++;
+      }
     });
 
     return c.json({
@@ -612,8 +614,7 @@ app.get("/make-server-175b2872/admin/stats", async (c) => {
       },
       subscriptions: {
         free: tierCounts.free,
-        standard: tierCounts.standard,
-        premium: tierCounts.premium
+        paid: tierCounts.paid
       },
       affiliates: {
         total: totalAffiliates || 0,

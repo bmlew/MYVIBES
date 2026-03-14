@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Share2, DollarSign, Users, ChevronLeft, Building, CreditCard, Wallet, Copy, Check, Bell, MapPin, LogOut } from 'lucide-react';
+import { Share2, DollarSign, Users, ChevronLeft, Building, CreditCard, Wallet, Copy, Check, Bell, MapPin, LogOut, Smartphone } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Card } from './ui/card';
 import { toast } from "sonner";
 import { projectId, publicAnonKey } from '/utils/supabase/info';
+import { getReferralLink, getBusinessReferralLink, getCustomerReferralLink } from '/src/config/app';
 
 interface AffiliatePortalProps {
   onBack?: () => void;
@@ -247,7 +248,7 @@ export function AffiliatePortal({ onBack, user }: AffiliatePortalProps) {
   };
 
   if (view === 'dashboard' && affiliate) {
-    return <AffiliateDashboard affiliate={affiliate} onLogout={() => setView('login')} API_URL={API_URL} sessionToken={sessionToken} />;
+    return <AffiliateDashboard affiliate={affiliate} onLogout={() => setView('login')} onBack={onBack} API_URL={API_URL} sessionToken={sessionToken} />;
   }
 
   return (
@@ -389,7 +390,7 @@ export function AffiliatePortal({ onBack, user }: AffiliatePortalProps) {
   );
 }
 
-function AffiliateDashboard({ affiliate, onLogout, API_URL, sessionToken }: { affiliate: Affiliate, onLogout: () => void, API_URL: string, sessionToken: string | null }) {
+function AffiliateDashboard({ affiliate, onLogout, onBack, API_URL, sessionToken }: { affiliate: Affiliate, onLogout: () => void, onBack?: () => void, API_URL: string, sessionToken: string | null }) {
   const [commissions, setCommissions] = useState<Commission[]>([]);
   const [copied, setCopied] = useState(false);
   const [bankDetails, setBankDetails] = useState(affiliate.bank_details);
@@ -430,10 +431,20 @@ function AffiliateDashboard({ affiliate, onLogout, API_URL, sessionToken }: { af
       const response = await fetch(`${API_URL}/partners/${affiliate.id}/commissions`, {
         headers
       });
+      
+      if (!response.ok) {
+        // Silently handle if endpoint doesn't exist yet
+        if (response.status === 404) {
+          console.log('Commissions endpoint not available yet');
+          return;
+        }
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
       const data = await response.json();
       setCommissions(data.commissions || []);
     } catch (error) {
-      console.error('Error fetching commissions:', error);
+      console.log('Affiliates endpoint not available (404)');
     }
   };
 
@@ -492,10 +503,16 @@ function AffiliateDashboard({ affiliate, onLogout, API_URL, sessionToken }: { af
       {/* Header */}
       <div className="bg-white px-4 pt-6 pb-2 border-b border-slate-100 sticky top-0 z-30">
         <div className="flex justify-between items-center mb-6">
+            {onBack && (
+                <Button variant="ghost" onClick={onBack} size="sm" className="flex items-center gap-1">
+                    <ChevronLeft className="w-4 h-4" /> Back
+                </Button>
+            )}
             <div className="flex items-center gap-2">
                 <Share2 className="w-5 h-5 text-cyan-600" />
                 <h2 className="text-lg font-bold text-slate-900">Affiliate Portal</h2>
             </div>
+            <div className="w-16" /> {/* Spacer for alignment */}
         </div>
         
         <div className="flex items-center gap-3 mb-2">
@@ -536,69 +553,120 @@ function AffiliateDashboard({ affiliate, onLogout, API_URL, sessionToken }: { af
              </div>
           </div>
 
-          {/* Card 3: App Downloads */}
+          {/* Card 3: Customer Referrals */}
           <div className="snap-center shrink-0 w-[140px] h-[240px] bg-white rounded-[32px] p-5 flex flex-col justify-between text-slate-900 shadow-sm border border-slate-100">
              <div>
-                <p className="text-xs font-medium text-slate-500 leading-tight mb-1">App<br/>Downloads</p>
-                <h3 className="text-2xl font-bold tracking-tight">{affiliate.app_downloads || 0}</h3>
+                <p className="text-xs font-medium text-slate-500 leading-tight mb-1">Customer<br/>Referrals</p>
+                <h3 className="text-2xl font-bold tracking-tight">{affiliate.total_customer_referrals || 0}</h3>
              </div>
              <div>
-                 <div className="text-[10px] text-slate-400 mb-1">Referral Code:</div>
-                 <div className="text-xs font-mono font-bold bg-slate-100 px-2 py-1 rounded inline-block text-slate-600">{affiliate.code}</div>
+                 <div className="text-[10px] text-slate-400 mb-1">App Downloads:</div>
+                 <div className="text-lg font-bold text-green-600">{affiliate.app_downloads || 0}</div>
              </div>
           </div>
 
-           {/* Card 4: Biz Referrals */}
+           {/* Card 4: Business Referrals */}
            <div className="snap-center shrink-0 w-[140px] h-[240px] bg-white rounded-[32px] p-5 flex flex-col justify-between text-slate-900 shadow-sm border border-slate-100">
              <div>
-                <p className="text-xs font-medium text-slate-500 leading-tight mb-1">Biz<br/>Referrals</p>
-                <h3 className="text-2xl font-bold tracking-tight">{affiliate.total_referrals}</h3>
+                <p className="text-xs font-medium text-slate-500 leading-tight mb-1">Business<br/>Referrals</p>
+                <h3 className="text-2xl font-bold tracking-tight">{affiliate.total_business_referrals || 0}</h3>
              </div>
               <div>
-                 <div className="text-[10px] text-slate-400 mb-1">Partner Code:</div>
-                 <button onClick={copyCode} className="text-xs font-mono font-bold bg-slate-100 px-2 py-1 rounded flex items-center gap-1 text-slate-600 hover:bg-slate-200 w-full justify-between">
+                 <div className="text-[10px] text-slate-400 mb-1">Your Universal Code:</div>
+                 <button 
+                   onClick={copyCode}
+                   className="text-xs font-mono font-bold bg-cyan-100 px-2 py-1 rounded flex items-center gap-1 text-cyan-700 hover:bg-cyan-200 w-full justify-between"
+                 >
                      {affiliate.code}
-                     <Copy className="w-3 h-3" />
+                     {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                  </button>
              </div>
           </div>
         </div>
 
-        {/* Promote & Earn Banner */}
-        <div className="bg-gradient-to-r from-[#D946EF] to-[#EC4899] rounded-[32px] p-6 text-white shadow-lg shadow-pink-200 relative overflow-hidden">
+        {/* Promote & Earn: Two Referral Cards */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          
+          {/* Business Referral Card */}
+          <div className="bg-gradient-to-br from-[#0EA5E9] to-[#0066FF] rounded-[32px] p-6 text-white shadow-lg shadow-blue-200 relative overflow-hidden">
              <div className="absolute top-0 right-0 w-48 h-48 bg-white/20 rounded-full blur-3xl -mr-12 -mt-12 pointer-events-none"></div>
              
-             <h3 className="text-xl font-bold mb-2 relative z-10">Promote & Earn</h3>
-             <p className="text-sm text-pink-100 mb-6 relative z-10 max-w-[200px]">
-                Share your unique link with friends and followers.
+             <h3 className="text-xl font-bold mb-2 relative z-10 flex items-center gap-2">
+               <Building className="w-6 h-6" />
+               Business Referrals
+             </h3>
+             <p className="text-sm text-blue-100 mb-6 relative z-10">
+                Send this link to business owners. It takes them directly to the business registration page with your affiliate code pre-filled. Earn <strong className="text-white">commission on their subscription</strong>!
              </p>
 
-             <div className="flex flex-col sm:flex-row gap-3 items-stretch relative z-10">
-                 <div className="bg-white/10 backdrop-blur-md rounded-2xl p-3 flex-1 border border-white/20">
-                     <p className="text-[10px] uppercase tracking-wider text-pink-200 mb-1">Your Unique Link</p>
-                     <p className="font-mono font-bold text-sm truncate">myvibes.app/?ref={affiliate.code}</p>
+             <div className="flex flex-col gap-3 relative z-10">
+                 <div className="bg-white/10 backdrop-blur-md rounded-2xl p-3 border border-white/20">
+                     <p className="text-[10px] uppercase tracking-wider text-blue-200 mb-1">Business Registration Link</p>
+                     <p className="font-mono font-bold text-sm break-all">{getBusinessReferralLink(affiliate.code)}</p>
                  </div>
                  <Button 
                     onClick={async () => {
-                        const link = `https://myvibes.app/?ref=${affiliate.code}`;
-                        try {
-                            await navigator.clipboard.writeText(link);
-                            toast.success('Referral link copied!');
-                        } catch (err) {
-                             const textArea = document.createElement("textarea");
-                             textArea.value = link;
-                             document.body.appendChild(textArea);
-                             textArea.select();
-                             document.execCommand('copy');
-                             document.body.removeChild(textArea);
-                             toast.success('Referral link copied!');
+                        const link = getBusinessReferralLink(affiliate.code);
+                        const success = await copyToClipboard(link);
+                        if (success) {
+                          toast.success('Business referral link copied!');
                         }
                     }}
-                    className="bg-white text-pink-600 hover:bg-pink-50 rounded-xl px-6 font-bold shadow-sm h-auto py-3"
-                >
-                     Copy
-                 </Button>
+                    className="bg-white text-blue-600 hover:bg-blue-50 rounded-xl px-6 font-bold shadow-sm h-auto py-3 w-full"
+                 >
+                      <Copy className="w-4 h-4 mr-2" />
+                      Copy Business Link
+                  </Button>
              </div>
+
+             <div className="mt-4 relative z-10">
+                <p className="text-xs text-blue-100 flex items-center gap-2">
+                    <span className="inline-block w-2 h-2 bg-white rounded-full"></span>
+                    Business clicks → Registration page opens → Code auto-fills → You earn!
+                </p>
+             </div>
+          </div>
+
+          {/* Customer App Download Card */}
+          <div className="bg-gradient-to-r from-[#D946EF] to-[#EC4899] rounded-[32px] p-6 text-white shadow-lg shadow-pink-200 relative overflow-hidden">
+             <div className="absolute top-0 right-0 w-48 h-48 bg-white/20 rounded-full blur-3xl -mr-12 -mt-12 pointer-events-none"></div>
+             
+             <h3 className="text-xl font-bold mb-2 relative z-10 flex items-center gap-2">
+               <Smartphone className="w-6 h-6" />
+               Customer App Downloads
+             </h3>
+             <p className="text-sm text-pink-100 mb-6 relative z-10">
+                Share on social media. When customers download the app and create an account, you earn <strong className="text-white">R20</strong> per signup + <strong className="text-white">R200</strong> every 100 check-ins!
+             </p>
+
+             <div className="flex flex-col gap-3 relative z-10">
+                 <div className="bg-white/10 backdrop-blur-md rounded-2xl p-3 border border-white/20">
+                     <p className="text-[10px] uppercase tracking-wider text-pink-200 mb-1">Customer App Download Link</p>
+                     <p className="font-mono font-bold text-sm break-all">{getCustomerReferralLink(affiliate.code)}</p>
+                 </div>
+                 <Button 
+                    onClick={async () => {
+                        const link = getCustomerReferralLink(affiliate.code);
+                        const success = await copyToClipboard(link);
+                        if (success) {
+                          toast.success('Customer referral link copied!');
+                        }
+                    }}
+                    className="bg-white text-pink-600 hover:bg-pink-50 rounded-xl px-6 font-bold shadow-sm h-auto py-3 w-full"
+                 >
+                      <Copy className="w-4 h-4 mr-2" />
+                      Copy Customer Link
+                  </Button>
+             </div>
+
+             <div className="mt-4 relative z-10">
+                <p className="text-xs text-pink-100 flex items-center gap-2">
+                    <span className="inline-block w-2 h-2 bg-white rounded-full"></span>
+                    Customers click → Download app → Create account → You get credited!
+                </p>
+             </div>
+          </div>
+
         </div>
 
         {/* Bottom Split Section */}

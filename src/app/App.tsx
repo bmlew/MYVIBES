@@ -3,6 +3,7 @@ import { InstallPrompt } from './components/InstallPrompt';
 import { OfflineBanner } from './components/OfflineBanner';
 import { clearInvalidBusinessCache } from '@/utils/offlineStorage';
 import '@/utils/fix-businesses'; // Import fix utilities for browser console
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 import { Toaster } from '@/app/components/ui/sonner';
 
@@ -21,7 +22,17 @@ const CustomerApp = lazy(() =>
 );
 
 const BusinessDashboard = lazy(() => import('./BusinessDashboard').then(m => ({ default: m.BusinessDashboard })));
-const BusinessAuth = lazy(() => import('./components/BusinessAuth').then(m => ({ default: m.BusinessAuth })));
+const BusinessAuth = lazy(() => 
+  import('./components/BusinessAuth')
+    .then(module => ({ default: module.BusinessAuth || module.default }))
+    .catch(err => {
+      console.error('Error loading BusinessAuth:', err);
+      // Retry after short delay
+      return new Promise(resolve => setTimeout(() => resolve(
+        import('./components/BusinessAuth').then(module => ({ default: module.BusinessAuth || module.default }))
+      ), 1000));
+    })
+);
 const ROICalculator = lazy(() => import('./components/ROICalculator').then(m => ({ default: m.ROICalculator })));
 const AdminDashboard = lazy(() => 
   import('./AdminDashboard')
@@ -87,6 +98,18 @@ export default function App() {
     if (refCode) {
       console.log('📢 Referral code detected:', refCode);
       localStorage.setItem('myvibes_referral_code', refCode.toUpperCase());
+    }
+
+    // Check if URL is /business-register (business registration with affiliate code)
+    if (path === '/business-register' || path === '/business-register/') {
+      console.log('🏢 Business registration URL detected');
+      if (refCode) {
+        console.log('🎯 Affiliate code detected for business registration:', refCode);
+        // Store it so BusinessAuth can read it
+        localStorage.setItem('myvibes_affiliate_code_prefill', refCode.toUpperCase());
+      }
+      setCurrentView('business-auth');
+      return;
     }
 
     // Check if URL is /app (customer PWA entry point)
@@ -239,9 +262,11 @@ export default function App() {
           <InvestorDeck onBack={() => setCurrentView('landing')} />
         </Suspense>
       ) : currentView === 'platform-admin' ? (
-        <Suspense fallback={<LoadingFallback />}>
-          <AdminDashboard onNavigate={setCurrentView} />
-        </Suspense>
+        <ErrorBoundary>
+          <Suspense fallback={<LoadingFallback />}>
+            <AdminDashboard onNavigate={setCurrentView} />
+          </Suspense>
+        </ErrorBoundary>
       ) : (
         <Suspense fallback={<LoadingFallback />}>
           <LandingPage 

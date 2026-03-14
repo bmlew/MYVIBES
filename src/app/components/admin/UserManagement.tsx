@@ -1,15 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { Search, Filter, Download, MoreHorizontal, Plus, Loader2, User as UserIcon, Mail, MapPin, Phone, Calendar, CreditCard, Shield } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Search, Filter, Download, MoreHorizontal, Plus, Loader2, User as UserIcon, Mail, MapPin, Phone, Calendar, CreditCard, Shield, Edit, Eye, Trash2 } from 'lucide-react';
 import { Button } from '@/app/components/ui/button';
 import { Badge } from '@/app/components/ui/badge';
 import { toast } from "sonner";
 import { projectId, publicAnonKey } from '/utils/supabase/info';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/app/components/ui/dropdown-menu";
 import {
   Dialog,
   DialogContent,
@@ -35,6 +29,79 @@ interface User {
   city?: string;
 }
 
+// Custom Dropdown Component
+function ActionMenu({ user, onView, onEdit, onSuspend, onDelete }: { user: User; onView: () => void; onEdit: () => void; onSuspend: () => void; onDelete: () => void }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    }
+
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [isOpen]);
+
+  return (
+    <div className="relative" ref={menuRef}>
+      <Button 
+        variant="ghost" 
+        className="h-8 w-8 p-0 cursor-pointer hover:bg-slate-100"
+        onClick={() => setIsOpen(!isOpen)}
+      >
+        <MoreHorizontal className="w-4 h-4" />
+      </Button>
+      
+      {isOpen && (
+        <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-slate-200 py-1 z-50">
+          <button
+            onClick={() => {
+              onView();
+              setIsOpen(false);
+            }}
+            className="w-full px-4 py-2 text-left text-sm hover:bg-slate-50 flex items-center gap-2 text-slate-700"
+          >
+            <Eye className="w-4 h-4 text-slate-500" /> View Profile
+          </button>
+          <button
+            onClick={() => {
+              onEdit();
+              setIsOpen(false);
+            }}
+            className="w-full px-4 py-2 text-left text-sm hover:bg-slate-50 flex items-center gap-2 text-slate-700"
+          >
+            <Edit className="w-4 h-4 text-slate-500" /> Edit Details
+          </button>
+          <button
+            onClick={() => {
+              onSuspend();
+              setIsOpen(false);
+            }}
+            className="w-full px-4 py-2 text-left text-sm hover:bg-red-50 flex items-center gap-2 text-orange-600"
+          >
+            <Shield className="w-4 h-4" /> {user.status.toLowerCase() === 'suspended' ? 'Activate Account' : 'Suspend Account'}
+          </button>
+          <div className="border-t border-slate-100 my-1"></div>
+          <button
+            onClick={() => {
+              onDelete();
+              setIsOpen(false);
+            }}
+            className="w-full px-4 py-2 text-left text-sm hover:bg-red-50 flex items-center gap-2 text-red-600"
+          >
+            <Trash2 className="w-4 h-4" /> Delete User
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function UserManagement() {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
@@ -46,6 +113,7 @@ export function UserManagement() {
   const [isViewOpen, setIsViewOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isSuspendOpen, setIsSuspendOpen] = useState(false);
+  const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Edit Form State
@@ -137,6 +205,11 @@ export function UserManagement() {
     setIsSuspendOpen(true);
   };
 
+  const handleDelete = (user: User) => {
+    setSelectedUser(user);
+    setIsDeleteOpen(true);
+  };
+
   const confirmUpdate = async () => {
     if (!selectedUser) return;
     
@@ -190,6 +263,31 @@ export function UserManagement() {
     } catch (error) {
       console.error('Status update error:', error);
       toast.error('Failed to update user status');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const confirmDelete = async () => {
+    if (!selectedUser) return;
+    
+    try {
+      setIsSubmitting(true);
+      const response = await fetch(`${API_URL}/admin/customers/${selectedUser.id}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${publicAnonKey}`
+        }
+      });
+
+      if (!response.ok) throw new Error('Failed to delete');
+
+      toast.success('User deleted successfully');
+      setIsDeleteOpen(false);
+      fetchUsers();
+    } catch (error) {
+      console.error('Delete error:', error);
+      toast.error('Failed to delete user');
     } finally {
       setIsSubmitting(false);
     }
@@ -309,24 +407,13 @@ export function UserManagement() {
                       {user.lastActive}
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" className="h-8 w-8 p-0 cursor-pointer hover:bg-slate-100">
-                            <MoreHorizontal className="w-4 h-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-48 bg-white shadow-lg border-slate-200 z-50">
-                          <DropdownMenuItem onClick={() => handleView(user)} className="cursor-pointer gap-2">
-                             <UserIcon className="w-4 h-4 text-slate-500" /> View Profile
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleEdit(user)} className="cursor-pointer gap-2">
-                             <MoreHorizontal className="w-4 h-4 text-slate-500" /> Edit Details
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleSuspend(user)} className="text-red-600 cursor-pointer focus:text-red-700 focus:bg-red-50 gap-2">
-                             <Shield className="w-4 h-4" /> {user.status.toLowerCase() === 'suspended' ? 'Activate Account' : 'Suspend Account'}
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                      <ActionMenu 
+                        user={user} 
+                        onView={() => handleView(user)} 
+                        onEdit={() => handleEdit(user)} 
+                        onSuspend={() => handleSuspend(user)}
+                        onDelete={() => handleDelete(user)}
+                      />
                     </td>
                   </tr>
                 ))}
@@ -478,6 +565,30 @@ export function UserManagement() {
             >
               {isSubmitting && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
               {selectedUser?.status.toLowerCase() === 'suspended' ? 'Reactivate' : 'Suspend Account'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* DELETE CONFIRMATION MODAL */}
+      <Dialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Delete Account</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete <b>{selectedUser?.name}</b>?
+              This action is irreversible and will permanently remove the user from the system.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsDeleteOpen(false)}>Cancel</Button>
+            <Button 
+              variant="destructive" 
+              onClick={confirmDelete}
+              disabled={isSubmitting}
+            >
+              {isSubmitting && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+              Delete Account
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -394,7 +394,7 @@ export function SocialMediaManager() {
           </h3>
           <div className="space-y-4">
             {['Meta Graph API', 'Google Ads Manager', 'TikTok for Business', 'WhatsApp Business API'].map((api, i) => (
-              <div key={i} className="flex items-center justify-between">
+              <div key={`api-${i}-${api}`} className="flex items-center justify-between">
                 <span className="text-sm text-slate-600 font-medium">{api}</span>
                 <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 font-medium px-3 py-1">
                   Healthy

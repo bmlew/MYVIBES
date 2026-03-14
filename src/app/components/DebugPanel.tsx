@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { Bug, RefreshCw, X, Bell, Database } from 'lucide-react';
+import { Bug, RefreshCw, X, Bell, Database, Info, Download } from 'lucide-react';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import * as api from '@/utils/api';
+import { getVersionInfo, checkForUpdate, triggerUpdate } from '@/utils/version';
 
 interface DebugPanelProps {
   businessCount: number;
@@ -15,6 +16,8 @@ export function DebugPanel({ businessCount, onRefresh }: DebugPanelProps) {
   const [reseeding, setReseeding] = useState(false);
   const [sending, setSending] = useState(false);
   const [seedingManual, setSeedingManual] = useState(false);
+  const [updateAvailable, setUpdateAvailable] = useState(false);
+  const [updating, setUpdating] = useState(false);
 
   const fetchDebugInfo = async () => {
     setLoading(true);
@@ -32,10 +35,25 @@ export function DebugPanel({ businessCount, onRefresh }: DebugPanelProps) {
         const data = await response.json();
         setDebugInfo(data);
       }
+
+      // Check for updates
+      const hasUpdate = await checkForUpdate();
+      setUpdateAvailable(hasUpdate);
     } catch (error) {
       console.error('Error fetching debug info:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleUpdate = async () => {
+    setUpdating(true);
+    try {
+      await triggerUpdate();
+    } catch (error) {
+      console.error('Update failed:', error);
+      alert('Update failed. Please try clearing cache manually.');
+      setUpdating(false);
     }
   };
 
@@ -175,6 +193,36 @@ export function DebugPanel({ businessCount, onRefresh }: DebugPanelProps) {
           </div>
 
           <div className="space-y-3 text-sm">
+            {/* Version Info Section */}
+            <div className="bg-cyan-50 p-3 rounded border border-cyan-200">
+              <div className="flex items-center gap-2 mb-2">
+                <Info className="w-4 h-4 text-cyan-700" />
+                <p className="font-semibold text-cyan-900">App Version</p>
+              </div>
+              <div className="space-y-1 text-xs">
+                <p className="text-cyan-700"><strong>Version:</strong> {getVersionInfo().version}</p>
+                <p className="text-cyan-700"><strong>Build:</strong> {getVersionInfo().buildId}</p>
+                <p className="text-cyan-700"><strong>Time:</strong> {getVersionInfo().timestamp}</p>
+              </div>
+              
+              {updateAvailable && (
+                <button
+                  onClick={handleUpdate}
+                  disabled={updating}
+                  className="mt-3 w-full flex items-center justify-center gap-2 bg-gradient-to-r from-cyan-500 to-blue-600 text-white py-2 px-4 rounded-lg hover:from-cyan-600 hover:to-blue-700 transition-colors text-xs font-semibold"
+                >
+                  <Download className="w-4 h-4" />
+                  {updating ? 'Updating...' : 'Update Available - Click to Install'}
+                </button>
+              )}
+              
+              {!updateAvailable && !loading && (
+                <p className="mt-2 text-xs text-cyan-600 flex items-center gap-1">
+                  ✅ You're on the latest version
+                </p>
+              )}
+            </div>
+
             <div className="bg-blue-50 p-2 rounded border border-blue-200">
               <p className="font-semibold text-blue-900">Loaded in App:</p>
               <p className="text-blue-700">{businessCount} businesses</p>

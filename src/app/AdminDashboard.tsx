@@ -19,7 +19,12 @@ import {
   Share2,
   Settings,
   LogOut,
-  Bell
+  Bell,
+  Lock,
+  Eye,
+  EyeOff,
+  BarChart3,
+  Link2
 } from 'lucide-react';
 import { motion } from 'motion/react';
 
@@ -31,16 +36,157 @@ import { GlobalSubscriptions } from './components/admin/GlobalSubscriptions';
 import { SocialMediaManager } from './components/admin/SocialMediaManager';
 import { UserManagement } from './components/admin/UserManagement';
 import { MyVibesLogo } from '@/app/components/MyVibesLogo';
+import { PlatformSettings } from './components/admin/PlatformSettings';
+import { AnalyticsDashboard } from './components/admin/AnalyticsDashboard';
+import { AffiliateManagement } from './components/admin/AffiliateManagement';
 
 interface AdminDashboardProps {
   onNavigate: (view: 'landing' | 'customer-app' | 'business-dashboard' | 'roi' | 'platform-admin') => void;
 }
 
-type Tab = 'dashboard' | 'users' | 'businesses' | 'banking' | 'subscriptions' | 'social';
+type Tab = 'dashboard' | 'users' | 'businesses' | 'banking' | 'subscriptions' | 'social' | 'settings' | 'analytics' | 'affiliates';
+
+// Admin credentials
+const ADMIN_USERNAME = 'admin';
+const ADMIN_PASSWORD = 'myvibes2025';
 
 export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [loginError, setLoginError] = useState('');
 
+  const handleLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
+      setIsAuthenticated(true);
+      setLoginError('');
+      setUsername('');
+      setPassword('');
+    } else {
+      setLoginError('Invalid username or password');
+      setPassword('');
+    }
+  };
+
+  const handleLogout = () => {
+    setIsAuthenticated(false);
+    setUsername('');
+    setPassword('');
+    onNavigate('landing');
+  };
+
+  // If not authenticated, show login screen
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center p-4">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="w-full max-w-md"
+        >
+          {/* Logo */}
+          <div className="text-center mb-8">
+            <MyVibesLogo variant="white" />
+            <h1 className="text-2xl font-bold text-white mt-6">Admin Portal</h1>
+            <p className="text-slate-400 text-sm mt-2">Secure access required</p>
+          </div>
+
+          {/* Login Form */}
+          <div className="bg-white rounded-2xl shadow-2xl p-8">
+            <div className="flex items-center justify-center w-16 h-16 bg-cyan-100 rounded-full mx-auto mb-6">
+              <Lock className="w-8 h-8 text-cyan-600" />
+            </div>
+
+            <h2 className="text-xl font-bold text-slate-900 text-center mb-6">Sign In</h2>
+
+            {loginError && (
+              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+                <p className="text-sm text-red-600 text-center">{loginError}</p>
+              </div>
+            )}
+
+            <form onSubmit={handleLogin} className="space-y-4">
+              {/* Username */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Username
+                </label>
+                <input
+                  type="text"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+                  placeholder="Enter username"
+                  autoComplete="username"
+                  required
+                />
+              </div>
+
+              {/* Password */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Password
+                </label>
+                <div className="relative">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent pr-12"
+                    placeholder="Enter password"
+                    autoComplete="current-password"
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  >
+                    {showPassword ? (
+                      <EyeOff className="w-5 h-5" />
+                    ) : (
+                      <Eye className="w-5 h-5" />
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {/* Submit Button */}
+              <button
+                type="submit"
+                className="w-full bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-semibold py-3 rounded-lg hover:from-cyan-600 hover:to-blue-700 transition-all shadow-lg hover:shadow-xl"
+              >
+                Sign In
+              </button>
+            </form>
+
+            {/* Back to Landing */}
+            <div className="mt-6 pt-6 border-t border-slate-200">
+              <button
+                onClick={() => onNavigate('landing')}
+                className="w-full text-sm text-slate-600 hover:text-slate-900 font-medium"
+              >
+                ← Back to Landing Page
+              </button>
+            </div>
+          </div>
+
+          {/* Security Notice */}
+          <div className="mt-6 text-center">
+            <p className="text-xs text-slate-400">
+              🔒 This area is restricted to authorized administrators only
+            </p>
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
+
+  // Authenticated - show admin dashboard
   return (
     <div className="min-h-screen bg-slate-50 flex font-sans text-slate-900">
       
@@ -66,6 +212,15 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
             }`}
           >
             <LayoutDashboard className="w-5 h-5" /> Dashboard
+          </button>
+
+          <button 
+            onClick={() => setActiveTab('analytics')}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-sm font-medium ${
+              activeTab === 'analytics' ? 'bg-cyan-600 text-white shadow-lg shadow-cyan-900/20' : 'text-slate-400 hover:text-white hover:bg-slate-800'
+            }`}
+          >
+            <BarChart3 className="w-5 h-5" /> Analytics
           </button>
           
           <div className="text-xs font-bold text-slate-500 uppercase tracking-wider px-3 mb-2 mt-6">Management</div>
@@ -116,6 +271,28 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
           >
             <Users className="w-5 h-5" /> Users
           </button>
+
+          <div className="text-xs font-bold text-slate-500 uppercase tracking-wider px-3 mb-2 mt-6">System</div>
+          
+          <button 
+            onClick={() => setActiveTab('settings')}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-sm font-medium ${
+              activeTab === 'settings' ? 'bg-cyan-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'
+            }`}
+          >
+            <Settings className="w-5 h-5" /> Settings
+          </button>
+
+          <div className="text-xs font-bold text-slate-500 uppercase tracking-wider px-3 mb-2 mt-6">Affiliates</div>
+          
+          <button 
+            onClick={() => setActiveTab('affiliates')}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-sm font-medium ${
+              activeTab === 'affiliates' ? 'bg-cyan-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'
+            }`}
+          >
+            <Award className="w-5 h-5" /> Affiliates
+          </button>
         </nav>
 
         {/* User Profile */}
@@ -132,7 +309,7 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
           </div>
           
           <button 
-            onClick={() => onNavigate('landing')}
+            onClick={handleLogout}
             className="w-full flex items-center justify-center gap-2 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-xs font-medium text-slate-300 transition-colors"
           >
             <LogOut className="w-3 h-3" /> Exit Admin
@@ -192,11 +369,14 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
         {/* Content Area */}
         <main className="flex-1 p-8 overflow-y-auto">
           {activeTab === 'dashboard' && <AdminOverview />}
+          {activeTab === 'analytics' && <AnalyticsDashboard />}
           {activeTab === 'businesses' && <BusinessManagement />}
           {activeTab === 'banking' && <FinancialHub />}
           {activeTab === 'subscriptions' && <GlobalSubscriptions />}
           {activeTab === 'social' && <SocialMediaManager />}
           {activeTab === 'users' && <UserManagement />}
+          {activeTab === 'settings' && <PlatformSettings />}
+          {activeTab === 'affiliates' && <AffiliateManagement />}
         </main>
       </div>
     </div>

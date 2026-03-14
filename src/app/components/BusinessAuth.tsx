@@ -1,14 +1,20 @@
-import React, { useState } from 'react';
+/**
+ * BusinessAuth Component
+ * Handles business authentication (login/register) for the MYVIBES platform
+ * @version 2.1.2 - Fixed import paths for production deployment
+ */
+import React, { useState, useEffect } from 'react';
 import { Loader2, ArrowRight, Building2, MapPin, Mail, Lock, Phone, User, CheckCircle2, ChevronLeft } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { projectId, publicAnonKey } from '/utils/supabase/info';
 
 interface BusinessAuthProps {
   onAuthenticated?: (data: any) => void;
+  onAuthSuccess?: (businessId: string, name: string) => void;
   onBack?: () => void;
 }
 
-export function BusinessAuth({ onAuthenticated, onBack }: BusinessAuthProps) {
+export function BusinessAuth({ onAuthenticated, onAuthSuccess, onBack }: BusinessAuthProps) {
   const [isLogin, setIsLogin] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -24,6 +30,18 @@ export function BusinessAuth({ onAuthenticated, onBack }: BusinessAuthProps) {
   const [address, setAddress] = useState('');
   const [city, setCity] = useState('');
   const [affiliateCode, setAffiliateCode] = useState('');
+
+  // Auto-fill affiliate code if coming from referral link
+  useEffect(() => {
+    const prefilledCode = localStorage.getItem('myvibes_affiliate_code_prefill');
+    if (prefilledCode) {
+      console.log('🎯 Auto-filling affiliate code:', prefilledCode);
+      setAffiliateCode(prefilledCode);
+      setIsLogin(false); // Switch to registration view
+      // Clear the prefill after using it
+      localStorage.removeItem('myvibes_affiliate_code_prefill');
+    }
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();

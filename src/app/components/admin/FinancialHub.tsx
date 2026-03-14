@@ -102,20 +102,36 @@ export function FinancialHub() {
 
   const fetchAffiliates = async () => {
     try {
-      const response = await fetch(`${API_URL}/admin/affiliates`, {
+      const response = await fetch(`${API_URL}/admin/partners`, {
         headers: { 'Authorization': `Bearer ${publicAnonKey}` }
       });
+      
+      // Check if response is OK and is JSON
+      if (!response.ok) {
+        console.warn('Partners endpoint not available (404)');
+        setAffiliates([]);
+        return;
+      }
+      
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        console.warn('Partners endpoint returned non-JSON response');
+        setAffiliates([]);
+        return;
+      }
+      
       const data = await response.json();
       setAffiliates(data.affiliates || []);
     } catch (error) {
-      console.error('Error fetching affiliates:', error);
+      console.warn('Partners feature error:', error);
+      setAffiliates([]);
     }
   };
 
   const handleProcessPayout = async (affiliateId: string) => {
     setProcessingPayout(affiliateId);
     try {
-      const response = await fetch(`${API_URL}/admin/affiliates/${affiliateId}/pay`, {
+      const response = await fetch(`${API_URL}/admin/partners/${affiliateId}/pay`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${publicAnonKey}` }
       });
@@ -137,7 +153,7 @@ export function FinancialHub() {
     
     setIsProcessingBatch(true);
     try {
-      const response = await fetch(`${API_URL}/admin/affiliates/pay-all`, {
+      const response = await fetch(`${API_URL}/admin/partners/pay-all`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${publicAnonKey}` }
       });
@@ -688,7 +704,7 @@ export function FinancialHub() {
         <TabsContent value="reports">
           <Card className="p-6 border-slate-100 shadow-sm">
             <h3 className="text-lg font-bold mb-6">Revenue vs Payouts</h3>
-            <div className="h-96 w-full">
+            <div className="h-96 w-full" key="financial-chart-container">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={chartData}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />

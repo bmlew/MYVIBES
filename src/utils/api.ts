@@ -76,13 +76,23 @@ async function apiCall(endpoint: string, options: RequestInit = {}) {
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error(`[API] Error ${response.status}:`, errorText);
+        let errorData;
+        try {
+          errorData = JSON.parse(errorText);
+        } catch {
+          errorData = { error: errorText };
+        }
+        
+        console.error(`[API] Error ${response.status}:`, errorData);
         console.error(`[API] Headers sent:`, {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${publicAnonKey.substring(0, 20)}...`,
           'X-Session-Token': sessionToken ? `${sessionToken.substring(0, 20)}...` : 'none'
         });
-        throw new Error(`API call failed (${response.status}): ${errorText || response.statusText}`);
+        
+        // Throw error with proper message
+        const errorMessage = errorData.error || errorText || response.statusText;
+        throw new Error(errorMessage);
       }
 
       const data = await response.json();
@@ -123,6 +133,42 @@ async function apiCall(endpoint: string, options: RequestInit = {}) {
   
   return requestPromise;
 }
+
+// ============================================
+// GENERIC API METHODS (for use in admin/components)
+// ============================================
+
+// Generic GET request
+export async function get(endpoint: string) {
+  return apiCall(endpoint);
+}
+
+// Generic POST request
+export async function post(endpoint: string, data?: any) {
+  return apiCall(endpoint, {
+    method: 'POST',
+    body: data ? JSON.stringify(data) : undefined
+  });
+}
+
+// Generic PUT request
+export async function put(endpoint: string, data?: any) {
+  return apiCall(endpoint, {
+    method: 'PUT',
+    body: data ? JSON.stringify(data) : undefined
+  });
+}
+
+// Generic DELETE request
+export async function del(endpoint: string) {
+  return apiCall(endpoint, {
+    method: 'DELETE'
+  });
+}
+
+// ============================================
+// DATABASE SEEDING
+// ============================================
 
 // Seed the database (call once on first load)
 export async function seedDatabase() {

@@ -9,7 +9,6 @@ export function ROICalculator({ onStart }: { onStart: () => void }) {
 
   // Affiliate State
   const [businessesReferred, setBusinessesReferred] = useState(5);
-  const [avgPlan, setAvgPlan] = useState<'standard' | 'premium'>('standard');
 
   // Influencer State
   const [monthlyDownloads, setMonthlyDownloads] = useState(50);
@@ -17,12 +16,12 @@ export function ROICalculator({ onStart }: { onStart: () => void }) {
 
   // Constants
   const COMMISSION_RATE = 0.10;
-  const PLAN_PRICES = { standard: 499, premium: 999 };
+  const PLAN_PRICE = 999; // Single tier at R999/mo
   const CPA_DOWNLOAD = 10; // R10 per verified download
   const CPA_BOOKING = 50;  // R50 per booking
 
   // Calculations
-  const affiliateMonthlyEarnings = businessesReferred * PLAN_PRICES[avgPlan] * COMMISSION_RATE;
+  const affiliateMonthlyEarnings = businessesReferred * PLAN_PRICE * COMMISSION_RATE;
   const affiliateYearlyEarnings = affiliateMonthlyEarnings * 12;
 
   const influencerMonthlyEarnings = (monthlyDownloads * CPA_DOWNLOAD) + (monthlyBookings * CPA_BOOKING);
@@ -87,34 +86,6 @@ export function ROICalculator({ onStart }: { onStart: () => void }) {
                     className="py-4"
                   />
                   <p className="text-xs text-slate-400 mt-2">Active venues paying monthly subscription</p>
-                </div>
-
-                <div>
-                  <label className="font-bold text-slate-700 block mb-4">Average Plan Type</label>
-                  <div className="grid grid-cols-2 gap-4">
-                    <button
-                      onClick={() => setAvgPlan('standard')}
-                      className={`p-4 rounded-xl border-2 text-left transition-all ${
-                        avgPlan === 'standard'
-                          ? 'border-cyan-500 bg-cyan-50'
-                          : 'border-slate-200 hover:border-slate-300'
-                      }`}
-                    >
-                      <div className="font-bold text-slate-900">Standard</div>
-                      <div className="text-sm text-slate-500">R499/mo</div>
-                    </button>
-                    <button
-                      onClick={() => setAvgPlan('premium')}
-                      className={`p-4 rounded-xl border-2 text-left transition-all ${
-                        avgPlan === 'premium'
-                          ? 'border-cyan-500 bg-cyan-50'
-                          : 'border-slate-200 hover:border-slate-300'
-                      }`}
-                    >
-                      <div className="font-bold text-slate-900">Premium</div>
-                      <div className="text-sm text-slate-500">R999/mo</div>
-                    </button>
-                  </div>
                 </div>
 
                 <div className="bg-blue-50 p-4 rounded-xl border border-blue-100">

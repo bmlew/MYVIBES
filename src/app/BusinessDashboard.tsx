@@ -49,7 +49,7 @@ import { ReservationsManager } from '@/app/components/ReservationsManager';
 import { BusinessProfileSettings } from '@/app/components/BusinessProfileSettings';
 import { Toast, useToast } from '@/app/components/Toast';
 import { MyVibesLogo } from '@/app/components/MyVibesLogo';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { projectId, publicAnonKey } from '/utils/supabase/info';
 
 type DashboardView = 'overview' | 'menu' | 'specials' | 'events' | 'analytics' | 'reviews' | 'settings' | 'ml-insights' | 'ads' | 'reservations' | 'debug';
 

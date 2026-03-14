@@ -1,19 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Users, Building2, DollarSign, Activity, TrendingUp, TrendingDown, AlertCircle, Server, Database, Globe, Loader2 
+  Users, Building2, DollarSign, Activity, TrendingUp, TrendingDown, AlertCircle, Server, Database, Globe, Loader2, CalendarCheck, UserCheck, CheckCircle2, Sparkles, MousePointerClick
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { projectId, publicAnonKey } from '../../../../utils/supabase/info';
+import { projectId, publicAnonKey } from '/utils/supabase/info';
 
 // --- Reusing Mock Data from Dashboard ---
 const REVENUE_DATA = [
-  { name: 'Jan', revenue: 45000, profit: 32000 },
-  { name: 'Feb', revenue: 52000, profit: 38000 },
-  { name: 'Mar', revenue: 48000, profit: 34000 },
-  { name: 'Apr', revenue: 61000, profit: 45000 },
-  { name: 'May', revenue: 55000, profit: 39000 },
-  { name: 'Jun', revenue: 67000, profit: 48000 },
-  { name: 'Jul', revenue: 72000, profit: 53000 },
+  { id: 'jan', name: 'Jan', revenue: 45000, profit: 32000 },
+  { id: 'feb', name: 'Feb', revenue: 52000, profit: 38000 },
+  { id: 'mar', name: 'Mar', revenue: 48000, profit: 34000 },
+  { id: 'apr', name: 'Apr', revenue: 61000, profit: 45000 },
+  { id: 'may', name: 'May', revenue: 55000, profit: 39000 },
+  { id: 'jun', name: 'Jun', revenue: 67000, profit: 48000 },
+  { id: 'jul', name: 'Jul', revenue: 72000, profit: 53000 },
 ];
 
 const StatCard = ({ title, value, trend, icon: Icon, trendUp, loading }: any) => (
@@ -44,7 +44,13 @@ export function AdminOverview() {
     total_customers: 0,
     active_businesses: 0,
     total_revenue: 0,
-    churn_rate: 0
+    churn_rate: 0,
+    total_reservations: 0,
+    total_checkins: 0,
+    reservation_completion_rate: 0,
+    total_special_clicks: 0,
+    special_to_reservation_matches: 0,
+    special_to_reservation_rate: 0
   });
 
   useEffect(() => {
@@ -67,7 +73,13 @@ export function AdminOverview() {
               total_customers: data.stats.total_customers || 0,
               active_businesses: data.stats.active_businesses || 0,
               total_revenue: data.stats.total_revenue || 0,
-              churn_rate: 2.4 // Still mock for now as we don't have historical churn data yet
+              churn_rate: 2.4, // Still mock for now as we don't have historical churn data yet
+              total_reservations: data.stats.total_reservations || 0,
+              total_checkins: data.stats.total_checkins || 0,
+              reservation_completion_rate: data.stats.reservation_completion_rate || 0,
+              total_special_clicks: data.stats.total_special_clicks || 0,
+              special_to_reservation_matches: data.stats.special_to_reservation_matches || 0,
+              special_to_reservation_rate: data.stats.special_to_reservation_rate || 0
             });
           }
         }
@@ -129,10 +141,66 @@ export function AdminOverview() {
         />
       </div>
 
+      {/* Reservation & Check-in Analytics */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <StatCard 
+          title="Total Reservations" 
+          value={stats.total_reservations.toLocaleString()} 
+          trend="+8.3%" 
+          icon={CalendarCheck} 
+          trendUp={true} 
+          loading={loading}
+        />
+        <StatCard 
+          title="Total Check-ins" 
+          value={stats.total_checkins.toLocaleString()} 
+          trend="+15.7%" 
+          icon={UserCheck} 
+          trendUp={true} 
+          loading={loading}
+        />
+        <StatCard 
+          title="Completion Rate" 
+          value={`${stats.reservation_completion_rate}%`} 
+          trend={stats.reservation_completion_rate >= 50 ? '+2.1%' : '-1.5%'} 
+          icon={CheckCircle2} 
+          trendUp={stats.reservation_completion_rate >= 50} 
+          loading={loading}
+        />
+      </div>
+
+      {/* Special Click Analytics */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <StatCard 
+          title="Special Clicks" 
+          value={stats.total_special_clicks.toLocaleString()} 
+          trend="+22.4%" 
+          icon={MousePointerClick} 
+          trendUp={true} 
+          loading={loading}
+        />
+        <StatCard 
+          title="Special → Reservations" 
+          value={stats.special_to_reservation_matches.toLocaleString()} 
+          trend="+11.8%" 
+          icon={Sparkles} 
+          trendUp={true} 
+          loading={loading}
+        />
+        <StatCard 
+          title="Conversion Rate" 
+          value={`${stats.special_to_reservation_rate}%`} 
+          trend={stats.special_to_reservation_rate >= 30 ? '+3.2%' : '-2.1%'} 
+          icon={CheckCircle2} 
+          trendUp={stats.special_to_reservation_rate >= 30} 
+          loading={loading}
+        />
+      </div>
+
       {/* Main Charts Area */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Revenue Chart */}
-        <div className="lg:col-span-2 bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+        <div className="lg:col-span-2 bg-white p-6 rounded-xl shadow-sm border border-slate-100" key="admin-revenue-card">
           <div className="flex justify-between items-center mb-6">
             <h3 className="text-lg font-bold text-slate-900">Platform Revenue</h3>
             <select className="bg-slate-50 border border-slate-200 text-sm rounded-lg px-3 py-2 outline-none">
@@ -144,25 +212,34 @@ export function AdminOverview() {
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={REVENUE_DATA}>
                 <defs>
-                  <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
+                  <linearGradient id="adminOverviewColorRevenue" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#06b6d4" stopOpacity={0.1}/>
                     <stop offset="95%" stopColor="#06b6d4" stopOpacity={0}/>
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#64748b'}} dy={10} />
-                <YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b'}} />
+                <CartesianGrid key="admin-grid" strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                <XAxis key="admin-x-axis" dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#64748b'}} dy={10} />
+                <YAxis key="admin-y-axis" axisLine={false} tickLine={false} tick={{fill: '#64748b'}} />
                 <Tooltip 
+                  key="admin-tooltip"
                   contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}} 
                 />
-                <Area type="monotone" dataKey="revenue" stroke="#06b6d4" strokeWidth={3} fillOpacity={1} fill="url(#colorRevenue)" />
+                <Area 
+                  key="admin-revenue-area"
+                  type="monotone" 
+                  dataKey="revenue" 
+                  stroke="#06b6d4" 
+                  strokeWidth={3} 
+                  fillOpacity={1} 
+                  fill="url(#adminOverviewColorRevenue)" 
+                />
               </AreaChart>
             </ResponsiveContainer>
           </div>
         </div>
 
         {/* System Health */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100" key="system-health-card">
           <h3 className="text-lg font-bold text-slate-900 mb-6">System Health</h3>
           <div className="space-y-4">
             <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg border border-green-100">

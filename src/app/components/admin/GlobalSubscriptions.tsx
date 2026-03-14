@@ -260,7 +260,7 @@ export function GlobalSubscriptions() {
                   dataKey="value"
                 >
                   {distribution.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
+                    <Cell key={`sub-cell-${index}`} fill={entry.color} />
                   ))}
                 </Pie>
                 <Tooltip />
@@ -269,7 +269,7 @@ export function GlobalSubscriptions() {
           </div>
           <div className="space-y-4 mt-6">
             {distribution.map((item, i) => (
-              <div key={i} className="flex justify-between items-center">
+              <div key={`sub-dist-${i}`} className="flex justify-between items-center">
                 <div className="flex items-center gap-2">
                   <div className="w-3 h-3 rounded-full" style={{ backgroundColor: item.color }} />
                   <span className="text-sm text-slate-600">{item.name}</span>

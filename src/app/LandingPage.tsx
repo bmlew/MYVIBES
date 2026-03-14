@@ -17,7 +17,8 @@ import {
   Sparkles,
   Music,
   Calendar,
-  Trophy
+  Trophy,
+  Shield
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { MyVibesLogo, MyVibesIcon } from './components/MyVibesLogo';
@@ -36,14 +37,28 @@ const newHeroImage = "https://images.unsplash.com/photo-1758426637742-80bd0f9836
 interface LandingPageProps {
   onTryDemo: () => void;
   onRegisterBusiness: () => void;
-  onNavigate: (page: 'landing' | 'customer-app' | 'business-dashboard' | 'business-auth' | 'roi' | 'faq' | 'popia' | 'disclaimers' | 'affiliate-portal' | 'investor-deck') => void;
+  onNavigate: (page: 'landing' | 'customer-app' | 'business-dashboard' | 'business-auth' | 'roi' | 'faq' | 'popia' | 'disclaimers' | 'affiliate-portal' | 'investor-deck' | 'platform-admin') => void;
 }
 
 export default function LandingPage({ onTryDemo, onRegisterBusiness, onNavigate }: LandingPageProps) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [adminClicks, setAdminClicks] = useState(0);
   
   console.log('🎨 LandingPage rendered');
 
+  // Secret admin access: Triple-click the logo
+  const handleLogoClick = () => {
+    setAdminClicks(prev => prev + 1);
+    setTimeout(() => setAdminClicks(0), 2000); // Reset after 2 seconds
+    
+    if (adminClicks === 2) { // On third click
+      if (confirm('🛡️ Access Admin Portal?')) {
+        onNavigate('platform-admin');
+      }
+      setAdminClicks(0);
+    }
+  };
+  
   return (
     <div className="min-h-screen bg-slate-950 font-sans text-white overflow-x-hidden">
       
@@ -52,7 +67,7 @@ export default function LandingPage({ onTryDemo, onRegisterBusiness, onNavigate 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-20">
             {/* Logo */}
-            <div className="cursor-pointer" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
+            <div className="cursor-pointer" onClick={handleLogoClick}>
               <MyVibesIcon size={48} />
             </div>
 

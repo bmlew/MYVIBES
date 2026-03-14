@@ -1,4 +1,5 @@
-import React, { Component, ErrorInfo, ReactNode } from 'react';
+import React, { Component, ReactNode } from 'react';
+import { AlertCircle, RefreshCw } from 'lucide-react';
 
 interface Props {
   children: ReactNode;
@@ -7,22 +8,40 @@ interface Props {
 
 interface State {
   hasError: boolean;
-  error?: Error;
+  error: Error | null;
+  errorInfo: React.ErrorInfo | null;
 }
 
 export class ErrorBoundary extends Component<Props, State> {
   constructor(props: Props) {
     super(props);
-    this.state = { hasError: false };
+    this.state = {
+      hasError: false,
+      error: null,
+      errorInfo: null
+    };
   }
 
-  static getDerivedStateFromError(error: Error): State {
-    return { hasError: true, error };
+  static getDerivedStateFromError(error: Error): Partial<State> {
+    return { hasError: true };
   }
 
-  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('❌ ErrorBoundary caught an error:', error, errorInfo);
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error('ErrorBoundary caught an error:', error, errorInfo);
+    this.setState({
+      error,
+      errorInfo
+    });
   }
+
+  handleReset = () => {
+    this.setState({
+      hasError: false,
+      error: null,
+      errorInfo: null
+    });
+    window.location.reload();
+  };
 
   render() {
     if (this.state.hasError) {
@@ -31,42 +50,47 @@ export class ErrorBoundary extends Component<Props, State> {
       }
 
       return (
-        <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-red-50 to-orange-50 p-4">
-          <div className="max-w-md w-full bg-white rounded-lg shadow-xl p-8 text-center">
-            <div className="text-6xl mb-4">⚠️</div>
-            <h1 className="text-2xl font-bold text-gray-900 mb-2">
-              Oops! Something went wrong
-            </h1>
-            <p className="text-gray-600 mb-6">
-              {this.state.error?.message || 'An unexpected error occurred'}
-            </p>
-            <div className="space-y-3">
-              <button
-                onClick={() => window.location.reload()}
-                className="w-full px-6 py-3 bg-gradient-to-r from-cyan-500 to-blue-600 text-white rounded-lg font-semibold hover:from-cyan-600 hover:to-blue-700 transition-all"
-              >
-                Reload Page
-              </button>
-              <button
-                onClick={() => {
-                  localStorage.clear();
-                  window.location.reload();
-                }}
-                className="w-full px-6 py-3 bg-gray-200 text-gray-800 rounded-lg font-semibold hover:bg-gray-300 transition-all"
-              >
-                Clear Cache & Reload
-              </button>
+        <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+          <div className="max-w-2xl w-full bg-white rounded-xl shadow-lg p-8">
+            <div className="flex items-center gap-4 mb-6">
+              <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">
+                <AlertCircle className="w-6 h-6 text-red-600" />
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold text-slate-900">Something went wrong</h1>
+                <p className="text-slate-600 mt-1">The application encountered an error</p>
+              </div>
             </div>
+
             {this.state.error && (
-              <details className="mt-6 text-left">
-                <summary className="cursor-pointer text-sm text-gray-500 hover:text-gray-700">
-                  Technical Details
-                </summary>
-                <pre className="mt-2 p-4 bg-gray-100 rounded text-xs overflow-auto text-red-600">
-                  {this.state.error.stack}
-                </pre>
-              </details>
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+                <p className="font-mono text-sm text-red-800 mb-2">
+                  <strong>Error:</strong> {this.state.error.toString()}
+                </p>
+                {this.state.errorInfo && (
+                  <details className="mt-2">
+                    <summary className="cursor-pointer text-sm text-red-700 font-medium">
+                      Stack trace
+                    </summary>
+                    <pre className="mt-2 text-xs overflow-auto bg-red-100 p-3 rounded">
+                      {this.state.errorInfo.componentStack}
+                    </pre>
+                  </details>
+                )}
+              </div>
             )}
+
+            <button
+              onClick={this.handleReset}
+              className="w-full bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-semibold py-3 px-6 rounded-lg hover:from-cyan-600 hover:to-blue-700 transition-all flex items-center justify-center gap-2"
+            >
+              <RefreshCw className="w-4 h-4" />
+              Reload Application
+            </button>
+
+            <p className="text-xs text-slate-500 text-center mt-4">
+              If this error persists, please contact support
+            </p>
           </div>
         </div>
       );

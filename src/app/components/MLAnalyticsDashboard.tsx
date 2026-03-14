@@ -270,7 +270,7 @@ export function MLAnalyticsDashboard({ businesses, specials, events, payments }:
               </div>
               <div className="space-y-3">
                 {category.insights.map((insight, i) => (
-                  <div key={i} className="flex items-start justify-between p-3 bg-gray-50 rounded-lg">
+                  <div key={insight.label} className="flex items-start justify-between p-3 bg-gray-50 rounded-lg">
                     <div className="flex-1">
                       <div className="text-sm text-gray-600 mb-1">{insight.label}</div>
                       <div className="font-bold text-lg">{insight.value}</div>
@@ -331,7 +331,7 @@ export function MLAnalyticsDashboard({ businesses, specials, events, payments }:
                 <div className="space-y-2 mb-4">
                   <div className="text-sm font-medium text-gray-700 mb-2">Included Metrics:</div>
                   {product.metrics.map((metric, i) => (
-                    <div key={i} className="flex items-center gap-2 text-sm text-gray-600">
+                    <div key={metric} className="flex items-center gap-2 text-sm text-gray-600">
                       <div className="w-1.5 h-1.5 rounded-full bg-purple-500" />
                       {metric}
                     </div>

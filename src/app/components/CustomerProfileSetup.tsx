@@ -76,7 +76,15 @@ export function CustomerProfileSetup({ onComplete }: CustomerProfileSetupProps) 
 
     } catch (err: any) {
       console.error('❌ Profile setup error:', err);
-      setError(err.message || 'Failed to create profile. Please try again.');
+      
+      // Handle specific field errors
+      if (err.message && err.message.includes('Email address already registered')) {
+        setError('This email is already registered. Please use a different email or sign in.');
+      } else if (err.message && err.message.includes('Mobile number already registered')) {
+        setError('This mobile number is already registered. Please use a different number.');
+      } else {
+        setError(err.message || 'Failed to create profile. Please try again.');
+      }
     } finally {
       setLoading(false);
     }

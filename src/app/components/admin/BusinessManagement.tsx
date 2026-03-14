@@ -35,6 +35,7 @@ export function BusinessManagement() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
   const API_URL = `https://${projectId}.supabase.co/functions/v1/make-server-175b2872`;
 
@@ -91,6 +92,8 @@ export function BusinessManagement() {
 
   const handleSimulatePayment = async (biz: Business) => {
     try {
+      toast.loading(`Processing payment for ${biz.name}...`, { id: `payment-${biz.id}` });
+      
       const response = await fetch(`${API_URL}/admin/process-subscription`, {
         method: 'POST',
         headers: {
@@ -104,15 +107,20 @@ export function BusinessManagement() {
         })
       });
 
-      if (!response.ok) throw new Error('Payment simulation failed');
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Payment simulation error:', errorText);
+        throw new Error('Payment simulation failed');
+      }
       
       const data = await response.json();
       toast.success(`Payment simulated for ${biz.name}`, {
+        id: `payment-${biz.id}`,
         description: data.commission ? `Commission paid: R${data.commission.amount}` : 'No commission triggered'
       });
     } catch (err) {
       console.error('Error simulating payment:', err);
-      toast.error('Failed to simulate payment');
+      toast.error('Failed to simulate payment', { id: `payment-${biz.id}` });
     }
   };
 
@@ -202,13 +210,6 @@ export function BusinessManagement() {
           </Button>
         </div>
         <div className="flex gap-3">
-          <Button 
-            variant="destructive" 
-            className="bg-red-600 hover:bg-red-700 text-white gap-2"
-            onClick={handleResetSystem}
-          >
-            <Trash2 className="w-4 h-4" /> Reset System
-          </Button>
           <Button className="bg-slate-900 text-white hover:bg-slate-800">
             Export CSV
           </Button>
@@ -328,37 +329,71 @@ export function BusinessManagement() {
                       </div>
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <DropdownMenu>
+                      <DropdownMenu modal={false} open={openMenuId === biz.id} onOpenChange={(open) => setOpenMenuId(open ? biz.id : null)}>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" className="h-8 w-8 p-0 cursor-pointer hover:bg-slate-100">
                             <span className="sr-only">Open menu</span>
                             <MoreHorizontal className="h-4 w-4" />
                           </Button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-48 bg-white shadow-lg border-slate-200 z-50">
+                        <DropdownMenuContent align="end" className="w-48">
                           <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                          <DropdownMenuItem onClick={() => handleAction('View Profile', biz)} className="cursor-pointer">
+                          <DropdownMenuItem 
+                            onSelect={() => {
+                              handleAction('View Profile', biz);
+                              setOpenMenuId(null);
+                            }}
+                          >
                             View Profile
                           </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleAction('View Financials', biz)} className="cursor-pointer">
+                          <DropdownMenuItem 
+                            onSelect={() => {
+                              handleAction('View Financials', biz);
+                              setOpenMenuId(null);
+                            }}
+                          >
                             View Financials
                           </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleSimulatePayment(biz)} className="cursor-pointer text-blue-600 focus:text-blue-700 focus:bg-blue-50">
+                          <DropdownMenuItem 
+                            onSelect={() => {
+                              handleSimulatePayment(biz);
+                              setOpenMenuId(null);
+                            }}
+                            className="text-blue-600 focus:text-blue-700 focus:bg-blue-50"
+                          >
                             Simulate Payment
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
                           {biz.subscription_status === 'pending' && (
-                            <DropdownMenuItem onClick={() => handleAction('Approve Business', biz)} className="text-green-600 cursor-pointer focus:text-green-700 focus:bg-green-50">
+                            <DropdownMenuItem 
+                              onSelect={() => {
+                                handleAction('Approve Business', biz);
+                                setOpenMenuId(null);
+                              }}
+                              className="text-green-600 focus:text-green-700 focus:bg-green-50"
+                            >
                               Approve Business
                             </DropdownMenuItem>
                           )}
                           {!biz.is_active && biz.subscription_status !== 'pending' && (
-                            <DropdownMenuItem onClick={() => handleAction('Approve Business', biz)} className="text-green-600 cursor-pointer focus:text-green-700 focus:bg-green-50">
+                            <DropdownMenuItem 
+                              onSelect={() => {
+                                handleAction('Approve Business', biz);
+                                setOpenMenuId(null);
+                              }}
+                              className="text-green-600 focus:text-green-700 focus:bg-green-50"
+                            >
                               Re-activate Business
                             </DropdownMenuItem>
                           )}
                           {biz.is_active && (
-                            <DropdownMenuItem onClick={() => handleAction('Suspend Business', biz)} className="text-red-600 cursor-pointer focus:text-red-700 focus:bg-red-50">
+                            <DropdownMenuItem 
+                              onSelect={() => {
+                                handleAction('Suspend Business', biz);
+                                setOpenMenuId(null);
+                              }}
+                              className="text-red-600 focus:text-red-700 focus:bg-red-50"
+                            >
                               Suspend Business
                             </DropdownMenuItem>
                           )}

@@ -409,7 +409,7 @@ export function CustomerAnalytics({ allReservations, businesses }: CustomerAnaly
                 dataKey="count"
               >
                 {customerData.partySizeChart.map((entry: any, index: number) => (
-                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  <Cell key={`cust-party-cell-${index}`} fill={COLORS[index % COLORS.length]} />
                 ))}
               </Pie>
               <Tooltip />
@@ -431,7 +431,7 @@ export function CustomerAnalytics({ allReservations, businesses }: CustomerAnaly
         </h3>
         <div className="grid grid-cols-3 gap-4">
           {customerData.peakHours.map((peak: any, idx: number) => (
-            <div key={idx} className="p-4 bg-gradient-to-br from-orange-50 to-orange-100 rounded-lg border border-orange-200">
+            <div key={`peak-hour-${peak.hour}`} className="p-4 bg-gradient-to-br from-orange-50 to-orange-100 rounded-lg border border-orange-200">
               <div className="text-2xl font-bold text-orange-700 mb-1">
                 {peak.hour}:00 - {peak.hour + 1}:00
               </div>
@@ -493,7 +493,7 @@ export function CustomerAnalytics({ allReservations, businesses }: CustomerAnaly
               dataKey="value"
             >
               {customerData.statusChart.map((entry: any, index: number) => (
-                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                <Cell key={`cust-status-cell-${index}`} fill={COLORS[index % COLORS.length]} />
               ))}
             </Pie>
             <Tooltip />
@@ -530,4 +530,11 @@ export function CustomerAnalytics({ allReservations, businesses }: CustomerAnaly
             <div className="text-sm font-semibold text-purple-900 mb-2">👥 Customer Value</div>
             <p className="text-sm text-gray-700">
               Avg value: R{customerData.avgCustomerValue.toFixed(0)}. 
-              VIP customers ({customerData.vipCustom
+              VIP customers ({customerData.vipCustomers}) have a higher value.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

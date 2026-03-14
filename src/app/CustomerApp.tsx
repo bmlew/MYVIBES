@@ -1351,11 +1351,20 @@ export function CustomerApp() {
       
       // Sync legacy (email based) for admin
       if (customer.email) {
-        api.saveCustomerProfile(customer).catch(console.error);
+        await api.saveCustomerProfile(customer);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Remote update failed:', err);
-      // Suppress error to user since local update succeeded
+      // Check if it's a duplicate error - if so, revert optimistic update and throw
+      if (err.message && (err.message.includes('already registered') || err.message.includes('duplicate'))) {
+        // Revert optimistic update
+        if (userProfile) {
+          setUserProfile(userProfile);
+          localStorage.setItem('vibespot_customer_profile', JSON.stringify(userProfile));
+        }
+        throw err; // Re-throw to allow caller to handle
+      }
+      // For other errors, suppress to user since local update succeeded
     }
   };
 
@@ -1375,8 +1384,19 @@ export function CustomerApp() {
   };
 
   const handleSaveProfile = async (updatedProfile: UserProfile) => {
-    await handleUpdateProfile(updatedProfile);
-    setShowProfileModal(false);
+    try {
+      await handleUpdateProfile(updatedProfile);
+      setShowProfileModal(false);
+    } catch (error: any) {
+      // Show error to user
+      if (error.message && (error.message.includes('Email address already registered') || 
+          error.message.includes('Mobile number already registered'))) {
+        alert(error.message);
+      } else {
+        alert('Failed to update profile. Please try again.');
+      }
+      // Keep modal open so user can fix the error
+    }
   };
 
   if (authLoading) {
@@ -2200,7 +2220,7 @@ export function CustomerApp() {
         )}
 
         {/* Bottom Navigation - Always visible */}
-        <div className="bg-white border-t border-gray-200 px-2 py-2 pb-safe flex items-center justify-around flex-shrink-0" style={{ paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))' }}>
+        <div className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white border-t border-gray-200 px-2 py-2 flex items-center justify-around z-50" style={{ paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))' }}>
           <button 
             onClick={() => {
               setSearchQuery('');

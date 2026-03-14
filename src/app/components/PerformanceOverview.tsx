@@ -182,13 +182,13 @@ export function PerformanceOverview() {
         <h3 className="text-lg font-semibold mb-4">Revenue & Bookings Trend</h3>
         <div className="h-[300px] w-full">
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={analytics}>
+            <AreaChart data={analytics} key="perf-revenue-bookings-chart">
             <defs>
-              <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
+              <linearGradient id="perfColorRevenue" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor="#FF6B35" stopOpacity={0.8}/>
                 <stop offset="95%" stopColor="#FF6B35" stopOpacity={0.1}/>
               </linearGradient>
-              <linearGradient id="colorBookings" x1="0" y1="0" x2="0" y2="1">
+              <linearGradient id="perfColorBookings" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor="#9B59B6" stopOpacity={0.8}/>
                 <stop offset="95%" stopColor="#9B59B6" stopOpacity={0.1}/>
               </linearGradient>
@@ -212,7 +212,7 @@ export function PerformanceOverview() {
               dataKey="revenue" 
               stroke="#FF6B35" 
               fillOpacity={1} 
-              fill="url(#colorRevenue)" 
+              fill="url(#perfColorRevenue)" 
               name="Revenue (R)"
             />
             <Area 
@@ -221,7 +221,7 @@ export function PerformanceOverview() {
               dataKey="bookings" 
               stroke="#9B59B6" 
               fillOpacity={1} 
-              fill="url(#colorBookings)"
+              fill="url(#perfColorBookings)"
               name="Bookings"
             />
           </AreaChart>
@@ -290,7 +290,7 @@ export function PerformanceOverview() {
                   dataKey="orders"
                 >
                   {cuisineStats.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    <Cell key={`perf-cuisine-cell-${index}`} fill={COLORS[index % COLORS.length]} />
                   ))}
                 </Pie>
                 <Tooltip 

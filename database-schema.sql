@@ -1,6 +1,8 @@
 -- =====================================================
 -- MYVIBES Platform Database Schema
 -- Target: 10,000+ customers, 3,000+ establishments
+-- Run in Supabase SQL Editor
+-- Dashboard: https://supabase.com/dashboard/project/YOUR_PROJECT/sql/new
 -- =====================================================
 
 -- Drop existing tables if they exist (be careful in production!)
@@ -478,16 +480,18 @@ CREATE TABLE IF NOT EXISTS platform_settings (
 CREATE INDEX IF NOT EXISTS idx_platform_settings_key ON platform_settings(key);
 
 -- =====================================================
--- 12. INSERT DEFAULT PLATFORM SETTINGS
+-- 12. DEFAULT PLATFORM SETTINGS (Optional)
 -- =====================================================
-INSERT INTO platform_settings (key, value, description) VALUES
-  ('subscription_standard_price', '499', 'Monthly price for Standard tier (ZAR)'),
-  ('subscription_premium_price', '999', 'Monthly price for Premium tier (ZAR)'),
-  ('affiliate_commission_rate', '10', 'Default affiliate commission rate (%)'),
-  ('grace_period_days', '7', 'Default grace period for missed payments (days)'),
-  ('payment_reminder_days', '3', 'Days before payment due to send reminder'),
-  ('featured_listings_limit', '10', 'Number of featured businesses on homepage')
-ON CONFLICT (key) DO NOTHING;
+-- Uncomment and customize these values for your platform
+
+-- INSERT INTO platform_settings (key, value, description) VALUES
+--   ('subscription_standard_price', '499', 'Monthly price for Standard tier (ZAR)'),
+--   ('subscription_premium_price', '999', 'Monthly price for Premium tier (ZAR)'),
+--   ('affiliate_commission_rate', '10', 'Default affiliate commission rate (%)'),
+--   ('grace_period_days', '7', 'Default grace period for missed payments (days)'),
+--   ('payment_reminder_days', '3', 'Days before payment due to send reminder'),
+--   ('featured_listings_limit', '10', 'Number of featured businesses on homepage')
+-- ON CONFLICT (key) DO NOTHING;
 
 -- =====================================================
 -- 13. CREATE UPDATE TIMESTAMP TRIGGERS

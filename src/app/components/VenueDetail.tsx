@@ -4,6 +4,7 @@ import { Leaderboard } from './Leaderboard';
 import { useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
 import * as api from '@/utils/api';
+import { getVenueShareUrl } from '/src/config/app';
 import { 
   ArrowLeft, 
   Heart, 
@@ -419,8 +420,7 @@ export function VenueDetail({ venueId, onBack, onReserve, onGetDirections, dista
           <button 
             onClick={async () => {
               // Ensure we share the customer app URL with proper cache busting
-              const baseUrl = window.location.origin;
-              const shareUrl = `${baseUrl}/app?v=2.1.1&ts=${Date.now()}&venue=${business.id}`;
+              const shareUrl = getVenueShareUrl(business.id);
               
               const shareData = {
                 title: business.name,

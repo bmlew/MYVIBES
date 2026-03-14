@@ -71,7 +71,7 @@ export function AnalyticsCharts({ viewsData, categoryData, performanceData }: An
                 dataKey="value"
               >
                 {categoryData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  <Cell key={`analytics-category-cell-${index}`} fill={COLORS[index % COLORS.length]} />
                 ))}
               </Pie>
               <Tooltip />

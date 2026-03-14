@@ -36,6 +36,11 @@ let seedingInProgress = false;
 // UTILITY FUNCTIONS
 // ============================================
 
+// Generate UUID v4
+function generateUUID(): string {
+  return crypto.randomUUID();
+}
+
 function calculateDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371;
   const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -278,17 +283,20 @@ app.post("/make-server-175b2872/auth/business/register", async (c) => {
     const subscriptionPrice = selectedPlan === 'premium' ? 999 : 499;
 
     let validAffiliate = null;
+    
     if (affiliate_code && affiliate_code.trim()) {
+      const trimmedCode = affiliate_code.toUpperCase().trim();
+      
       const affiliates = await kv.getByPrefix('affiliate:');
       validAffiliate = affiliates.find(
-        (aff: any) => aff.code === affiliate_code.toUpperCase().trim() && aff.status === 'approved'
+        (aff: any) => aff.code === trimmedCode && aff.status === 'approved'
       );
       
       if (!validAffiliate) {
         return c.json({ error: 'Invalid or inactive affiliate code. Please check and try again.' }, 400);
       }
       
-      console.log(`✅ Valid affiliate code: ${affiliate_code} - Affiliate: ${validAffiliate.name}`);
+      console.log(`✅ Valid referral code: ${trimmedCode} - Partner: ${validAffiliate.name}`);
     }
 
     // Check email existence (This is still slow but acceptable for registration, 
@@ -320,8 +328,8 @@ app.post("/make-server-175b2872/auth/business/register", async (c) => {
     const existingBusinesses = await kv.getByPrefix('business:');
     const existingBusiness = existingBusinesses.find((b: any) => b.email === email);
     
-    // Use existing ID if recovering, else generate new
-    const businessId = existingBusiness ? existingBusiness.id : `business-${Date.now()}`;
+    // Use existing ID if recovering, else generate new UUID
+    const businessId = existingBusiness ? existingBusiness.id : generateUUID();
     const business = {
       id: businessId,
       user_id: authData.user.id,
@@ -375,8 +383,23 @@ app.post("/make-server-175b2872/auth/business/register", async (c) => {
 
     if (validAffiliate) {
       validAffiliate.total_referrals = (validAffiliate.total_referrals || 0) + 1;
-      await kv.set(validAffiliate.id, validAffiliate); // Fixed key format
-      console.log(`💰 Affiliate ${validAffiliate.name} credited with new referral. Total: ${validAffiliate.total_referrals}`);
+      validAffiliate.total_business_referrals = (validAffiliate.total_business_referrals || 0) + 1;
+      await kv.set(validAffiliate.id, validAffiliate);
+      console.log(`💰 Partner ${validAffiliate.name} credited with BUSINESS referral. Total: ${validAffiliate.total_referrals} (${validAffiliate.total_business_referrals} business)`);
+      
+      // ✨ Create referral tracking with B- prefix on the ASSOCIATION ID
+      const referralId = `referral:B-${businessId}`;
+      await kv.set(referralId, {
+        id: referralId,
+        association_id: `B-${businessId}`, // ✨ B-prefix for business
+        affiliate_id: validAffiliate.id,
+        affiliate_code: validAffiliate.code,
+        type: 'business',
+        business_id: businessId,
+        business_name: business_name,
+        plan: selectedPlan,
+        created_at: new Date().toISOString()
+      });
     }
 
     return c.json({
@@ -653,7 +676,7 @@ app.post("/make-server-175b2872/partners/register", async (c) => {
              let customerId;
              
              if (!customer) {
-                 customerId = `customer:${Date.now()}`;
+                 customerId = generateUUID();
                  customer = {
                      id: customerId,
                      username: normalizedEmail.split('@')[0].replace(/[^a-z0-9]/g, ''),
@@ -676,7 +699,20 @@ app.post("/make-server-175b2872/partners/register", async (c) => {
     }
 
     const affiliateId = `affiliate:${Date.now()}`;
-    const code = name.substring(0, 3).toUpperCase() + Math.floor(1000 + Math.random() * 9000); // Simple code generation
+    
+    // ✨ NEW: Generate unified code (no B/C prefix yet - that's added during referral)
+    // Format: FIRST3LETTERS + 4 RANDOM DIGITS
+    const namePrefix = name.replace(/[^a-zA-Z]/g, '').substring(0, 3).toUpperCase();
+    const randomDigits = Math.floor(1000 + Math.random() * 9000);
+    const baseCode = `${namePrefix}${randomDigits}`;
+    
+    // Ensure code uniqueness
+    let code = baseCode;
+    let counter = 1;
+    while (existingAffiliates.some((a: any) => a.code === code)) {
+      code = `${namePrefix}${randomDigits + counter}`;
+      counter++;
+    }
 
     // Generate Session for New Partner if needed (Auto-Login)
     const now = new Date().toISOString();
@@ -700,7 +736,7 @@ app.post("/make-server-175b2872/partners/register", async (c) => {
         let customerId;
 
         if (!customer) {
-            customerId = `customer:${Date.now()}`;
+            customerId = generateUUID();
             customer = {
                 id: customerId,
                 username: email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, ''),
@@ -729,7 +765,7 @@ app.post("/make-server-175b2872/partners/register", async (c) => {
       name,
       email,
       phone,
-      code,
+      code, // ✨ Base code without prefix
       bank_details: {
           bank_name: bank_name || '',
           account_number: account_number || '',
@@ -740,11 +776,14 @@ app.post("/make-server-175b2872/partners/register", async (c) => {
       total_earnings: 0,
       paid_earnings: 0,
       total_referrals: 0,
+      total_customer_referrals: 0, // ✨ NEW: Track customer referrals separately
+      total_business_referrals: 0, // ✨ NEW: Track business referrals separately
       app_downloads: 0,
       joined_at: new Date().toISOString()
     };
 
     await kv.set(affiliateId, newAffiliate);
+    console.log(`✅ Partner registered with unified code: ${code} (can be used as C-${code} or B-${code})`);
     return c.json({ success: true, affiliate: newAffiliate, token: isNewSession ? authToken : undefined });
   } catch (error: any) {
     console.error('Partner registration error:', error);
@@ -775,7 +814,7 @@ app.post("/make-server-175b2872/partners/login", async (c) => {
              
              if (!customer) {
                  // Create Basic Customer Record for Partner Login
-                 customerId = `customer:${Date.now()}`;
+                 customerId = generateUUID();
                  customer = {
                      id: customerId,
                      username: email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, ''),
@@ -865,6 +904,78 @@ app.get("/make-server-175b2872/partners/:id/commissions", async (c) => {
         return c.json({ commissions: myCommissions.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime()) });
     } catch (error) {
         return c.json({ error: 'Failed to fetch commissions' }, 500);
+    }
+});
+
+// ✨ NEW: Get Partner Referral Analytics (B/C Association ID System)
+app.get("/make-server-175b2872/partners/:id/referrals", async (c) => {
+    try {
+        const id = c.req.param('id');
+        
+        // Security Check: Verify ownership
+        const affiliate = await kv.get(id);
+        if (!affiliate) return c.json({ error: 'Partner not found' }, 404);
+        
+        if (!await verifyAffiliateAccess(c, affiliate.email)) {
+            console.error(`⛔ Unauthorized referrals access for ${id}`);
+            return c.json({ error: 'Unauthorized' }, 401);
+        }
+
+        // Get all referral tracking records (association IDs have B- or C- prefix)
+        const allReferrals = await kv.getByPrefix('referral:');
+        const myReferrals = allReferrals.filter((ref: any) => ref.affiliate_id === id);
+        
+        // Separate by association ID prefix
+        const customerReferrals = myReferrals.filter((r: any) => 
+          r.association_id && r.association_id.startsWith('C-')
+        );
+        const businessReferrals = myReferrals.filter((r: any) => 
+          r.association_id && r.association_id.startsWith('B-')
+        );
+        
+        // Calculate earnings by type
+        const commissions = await kv.getByPrefix('comm:');
+        const myCommissions = commissions.filter((comm: any) => comm.affiliate_id === id);
+        
+        const customerEarnings = myCommissions
+          .filter((c: any) => c.type === 'Customer Download' || c.customer_id)
+          .reduce((sum: number, c: any) => sum + (c.amount || 0), 0);
+          
+        const businessEarnings = myCommissions
+          .filter((c: any) => c.type !== 'Customer Download' && !c.customer_id)
+          .reduce((sum: number, c: any) => sum + (c.amount || 0), 0);
+        
+        // Get partner visits to referred businesses
+        const allPartnerVisits = await kv.getByPrefix('partner_visit:');
+        const myVisits = allPartnerVisits.filter((v: any) => v.affiliate_id === id);
+        const totalBonusPoints = myVisits.reduce((sum: number, v: any) => sum + (v.bonus_points || 0), 0);
+        
+        return c.json({
+          summary: {
+            total_referrals: affiliate.total_referrals || 0,
+            customer_referrals: affiliate.total_customer_referrals || 0,
+            business_referrals: affiliate.total_business_referrals || 0,
+            customer_earnings: customerEarnings,
+            business_earnings: businessEarnings,
+            universal_code: affiliate.code,
+            partner_business_visits: myVisits.length,
+            partner_visit_bonus_points: totalBonusPoints
+          },
+          referrals: {
+            customers: customerReferrals.sort((a: any, b: any) => 
+              new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+            ),
+            businesses: businessReferrals.sort((a: any, b: any) => 
+              new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+            )
+          },
+          partner_visits: myVisits.sort((a: any, b: any) => 
+            new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+          )
+        });
+    } catch (error) {
+        console.error('Failed to fetch referrals:', error);
+        return c.json({ error: 'Failed to fetch referrals' }, 500);
     }
 });
 
@@ -1106,7 +1217,7 @@ app.post("/make-server-175b2872/admin/seed-content", async (c) => {
        }
        
        for (const item of items) {
-          const specialId = item.id || `special:${businessId}:${Date.now() + Math.random()}`;
+          const specialId = item.id || generateUUID();
           await kv.set(specialId, {
             id: specialId,
             business_id: businessId,
@@ -1136,6 +1247,8 @@ app.post("/make-server-175b2872/auth/business/signin", async (c) => {
     const body = await c.req.json();
     const { email, password } = body;
 
+    console.log('🔐 Business sign in attempt:', email);
+
     if (!email || !password) {
       return c.json({ error: 'Email and password are required' }, 400);
     }
@@ -1146,15 +1259,37 @@ app.post("/make-server-175b2872/auth/business/signin", async (c) => {
     });
 
     if (authError) {
-      return c.json({ error: 'Invalid email or password' }, 401);
+      console.error('❌ Auth error during sign in:', authError.message);
+      
+      // Provide more specific error messages
+      if (authError.message?.includes('Invalid login credentials')) {
+        return c.json({ 
+          error: 'Invalid email or password. Please check your credentials and try again.' 
+        }, 401);
+      }
+      
+      if (authError.message?.includes('Email not confirmed')) {
+        return c.json({ 
+          error: 'Please verify your email address before signing in.' 
+        }, 401);
+      }
+      
+      return c.json({ 
+        error: 'Sign in failed. Please try again or contact support.'
+      }, 401);
     }
+    
+    console.log('✅ Auth successful for user:', authData.user.id);
 
     // OPTIMIZED: Use helper to find business (checks fast link first)
     const business = await getBusinessForUser(authData.user.id);
 
     if (!business) {
-      return c.json({ error: 'Business not found' }, 404);
+      console.error('❌ Business not found for user:', authData.user.id);
+      return c.json({ error: 'Business account not found. Please register first.' }, 404);
     }
+
+    console.log('✅ Business found:', business.id, business.name);
 
     const signedBusiness = await signBusinessUrls(business);
 
@@ -1165,7 +1300,7 @@ app.post("/make-server-175b2872/auth/business/signin", async (c) => {
       business: signedBusiness
     });
   } catch (error: any) {
-    console.error('Sign in error:', error);
+    console.error('❌ Sign in server error:', error);
     return c.json({ error: `Sign in failed: ${error.message || error}` }, 500);
   }
 });
@@ -1421,7 +1556,7 @@ app.post("/make-server-175b2872/kv/specials", async (c) => {
       return c.json({ error: e.message }, 403);
     }
 
-    const specialId = `special:${business_id}:${Date.now()}`;
+    const specialId = generateUUID();
     const special = {
       ...body,
       id: specialId,
@@ -2007,6 +2142,9 @@ app.get("/make-server-175b2872/admin/stats", async (c) => {
     const allSpecials = await kv.getByPrefix('special:');
     const allEvents = await kv.getByPrefix('event:');
     const allCustomers = await kv.getByPrefix('customer:');
+    const allReservations = await kv.getByPrefix('reservation:');
+    const allCheckIns = await kv.getByPrefix('checkin:');
+    const allSpecialClicks = await kv.getByPrefix('special_click:');
     
     // Calculate stats
     const activeBusinesses = allBusinesses.filter((b: any) => b.is_active === true).length;
@@ -2060,7 +2198,73 @@ app.get("/make-server-175b2872/admin/stats", async (c) => {
       total_customers: allCustomers.length,
       total_transactions: 0,
       pending_payouts: 0,
-      paid_subscriptions: activeBusinesses
+      paid_subscriptions: activeBusinesses,
+      
+      // Reservation & Check-in Stats
+      total_reservations: allReservations.length,
+      total_checkins: allCheckIns.length,
+      reservation_completion_rate: allReservations.length > 0 
+        ? Math.round((allCheckIns.length / allReservations.length) * 100) 
+        : 0,
+      
+      // Special Click Stats
+      total_special_clicks: allSpecialClicks.length,
+      // Match special clicks to reservations (within 24 hours)
+      special_to_reservation_matches: (() => {
+        let matches = 0;
+        const MATCHING_WINDOW = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+        
+        allSpecialClicks.forEach((click: any) => {
+          const clickTime = new Date(click.timestamp).getTime();
+          const clickUserId = click.user_id;
+          const clickUserEmail = click.user_email;
+          const clickBusinessId = click.business_id;
+          
+          // Find if this user made a reservation within 24 hours after clicking
+          const hasMatchingReservation = allReservations.some((rsv: any) => {
+            const rsvTime = new Date(rsv.timestamp).getTime();
+            const timeDiff = rsvTime - clickTime;
+            
+            // Check if reservation is within 24 hours after the click
+            // AND matches the same business
+            // AND matches the same user (by ID or email)
+            return (
+              timeDiff >= 0 && 
+              timeDiff <= MATCHING_WINDOW &&
+              rsv.businessId === clickBusinessId &&
+              (rsv.userId === clickUserId || rsv.customerEmail === clickUserEmail)
+            );
+          });
+          
+          if (hasMatchingReservation) matches++;
+        });
+        
+        return matches;
+      })(),
+      special_to_reservation_rate: allSpecialClicks.length > 0
+        ? Math.round(((() => {
+            let matches = 0;
+            const MATCHING_WINDOW = 24 * 60 * 60 * 1000;
+            allSpecialClicks.forEach((click: any) => {
+              const clickTime = new Date(click.timestamp).getTime();
+              const clickUserId = click.user_id;
+              const clickUserEmail = click.user_email;
+              const clickBusinessId = click.business_id;
+              const hasMatchingReservation = allReservations.some((rsv: any) => {
+                const rsvTime = new Date(rsv.timestamp).getTime();
+                const timeDiff = rsvTime - clickTime;
+                return (
+                  timeDiff >= 0 && 
+                  timeDiff <= MATCHING_WINDOW &&
+                  rsv.businessId === clickBusinessId &&
+                  (rsv.userId === clickUserId || rsv.customerEmail === clickUserEmail)
+                );
+              });
+              if (hasMatchingReservation) matches++;
+            });
+            return matches;
+          })() / allSpecialClicks.length) * 100)
+        : 0
     };
     
     return c.json({ stats });
@@ -2326,6 +2530,52 @@ app.post("/make-server-175b2872/affiliates/register", async (c) => {
   } catch (error) {
     console.error('Affiliate registration error:', error);
     return c.json({ error: 'Registration failed' }, 500);
+  }
+});
+
+// Update affiliate code
+app.post("/make-server-175b2872/affiliates/update-code", async (c) => {
+  try {
+    const body = await c.req.json();
+    const { affiliate_id, new_code } = body;
+
+    if (!affiliate_id || !new_code) {
+      return c.json({ error: 'Affiliate ID and new code are required' }, 400);
+    }
+
+    const upperCode = new_code.toUpperCase().trim();
+
+    // Check if new code already exists
+    const existingAffiliates = await kv.getByPrefix('affiliate:');
+    const codeExists = existingAffiliates.some((aff: any) => aff.code === upperCode && aff.id !== affiliate_id);
+    
+    if (codeExists) {
+      return c.json({ error: 'Code already in use by another affiliate' }, 400);
+    }
+
+    // Get the affiliate
+    const affiliate = await kv.get(affiliate_id);
+    if (!affiliate) {
+      return c.json({ error: 'Affiliate not found' }, 404);
+    }
+
+    const oldCode = affiliate.code;
+
+    // Update the affiliate code
+    affiliate.code = upperCode;
+    affiliate.updated_at = new Date().toISOString();
+    await kv.set(affiliate_id, affiliate);
+
+    console.log(`✅ Affiliate code updated: ${oldCode} → ${upperCode} (${affiliate.name})`);
+
+    return c.json({
+      success: true,
+      message: 'Affiliate code updated successfully',
+      affiliate
+    });
+  } catch (error) {
+    console.error('Error updating affiliate code:', error);
+    return c.json({ error: 'Failed to update code' }, 500);
   }
 });
 
@@ -3002,15 +3252,18 @@ app.post("/make-server-175b2872/auth/customer/register", async (c) => {
       return c.json({ error: 'Username is already taken' }, 400);
     }
     
-    // Handle Referral / Influencer Code
+    // ✨ Handle Referral / Influencer Code (universal code)
     let referredBy = null;
     let validAffiliate = null;
+    
     if (referral_code) {
+       const trimmedCode = referral_code.toUpperCase().trim();
+       
        const affiliates = await kv.getByPrefix('affiliate:');
-       validAffiliate = affiliates.find((a: any) => a.code === referral_code.toUpperCase().trim());
+       validAffiliate = affiliates.find((a: any) => a.code === trimmedCode);
        if (validAffiliate) {
            referredBy = validAffiliate.id;
-           console.log(`📢 Customer ${name} referred by Influencer: ${validAffiliate.name}`);
+           console.log(`📢 Customer ${name} referred by Partner: ${validAffiliate.name} using code ${trimmedCode}`);
        }
     }
 
@@ -3032,36 +3285,56 @@ app.post("/make-server-175b2872/auth/customer/register", async (c) => {
       total_spend: 0,
       loyalty_points: 0,
       referred_by: referredBy,
-      referral_code: referral_code || null
+      referral_code: referral_code ? referral_code.toUpperCase().trim() : null
     };
 
     // Store customer and lookup
     await kv.set(customerId, customer);
     await kv.set(lookupKey, { id: customerId });
     
-    // Increment Influencer Stats
+    // ✨ Increment Influencer Stats (Customer Referral)
     if (validAffiliate) {
-        const DOWNLOAD_BOUNTY = 20; // R20 per download
+        // Get configurable download bounty
+        const platformSettings = await getPlatformSettings();
+        const DOWNLOAD_BOUNTY = platformSettings.rewards.customer_download_bounty;
+        
         validAffiliate.app_downloads = (validAffiliate.app_downloads || 0) + 1;
         validAffiliate.total_referrals = (validAffiliate.total_referrals || 0) + 1;
+        validAffiliate.total_customer_referrals = (validAffiliate.total_customer_referrals || 0) + 1;
         validAffiliate.pending_balance = (validAffiliate.pending_balance || 0) + DOWNLOAD_BOUNTY;
         validAffiliate.total_earnings = (validAffiliate.total_earnings || 0) + DOWNLOAD_BOUNTY;
         
         await kv.set(validAffiliate.id, validAffiliate);
-        console.log(`📈 Influencer ${validAffiliate.name} download count incremented. +R${DOWNLOAD_BOUNTY}`);
+        console.log(`📈 Partner ${validAffiliate.name} CUSTOMER referral counted. +R${DOWNLOAD_BOUNTY}. Total: ${validAffiliate.total_referrals} (${validAffiliate.total_customer_referrals} customers)`);
         
-        // Record Commission Transaction
+        // ✨ Record Commission Transaction
         const commissionId = `comm:${Date.now()}`;
         const commission = {
             id: commissionId,
             affiliate_id: validAffiliate.id,
+            customer_id: customerId,
+            customer_name: name,
             business_name: 'App Download',
             amount: DOWNLOAD_BOUNTY,
             status: 'pending',
             date: now,
-            type: 'Download Bounty'
+            type: 'Customer Download',
+            referral_code: validAffiliate.code
         };
         await kv.set(commissionId, commission);
+        
+        // ✨ Create referral tracking with C- prefix on the ASSOCIATION ID
+        const referralId = `referral:C-${customerId}`;
+        await kv.set(referralId, {
+          id: referralId,
+          association_id: `C-${customerId}`, // ✨ C-prefix for customer
+          affiliate_id: validAffiliate.id,
+          affiliate_code: validAffiliate.code,
+          type: 'customer',
+          customer_id: customerId,
+          customer_name: name,
+          created_at: now
+        });
     }
 
     // Generate Session
@@ -3137,18 +3410,38 @@ app.post("/make-server-175b2872/auth/customer/profile", async (c) => {
       return c.json({ error: 'Email and Name are required' }, 400);
     }
 
+    if (!mobile) {
+      return c.json({ error: 'Mobile number is required' }, 400);
+    }
+
+    // Clean inputs
+    const cleanEmail = email.toLowerCase().trim();
+    const cleanMobile = mobile.trim();
+
     // Check if customer exists
     const existingCustomers = await kv.getByPrefix('customer:');
-    let customer = existingCustomers.find((c: any) => c.email === email);
+    let customer = existingCustomers.find((c: any) => c.email === cleanEmail);
 
     const now = new Date().toISOString();
 
     if (customer) {
-      // Update existing
+      // Update existing - check if mobile is being changed to a duplicate
+      if (cleanMobile !== customer.mobile) {
+        const mobileExists = existingCustomers.find((c: any) => 
+          c.mobile === cleanMobile && c.id !== customer.id
+        );
+        if (mobileExists) {
+          return c.json({ 
+            error: 'Mobile number already registered',
+            field: 'mobile'
+          }, 400);
+        }
+      }
+
       customer = {
         ...customer,
         name,
-        mobile,
+        mobile: cleanMobile,
         city: city || customer.city || 'Unknown',
         notificationPreference: notificationPreference || customer.notificationPreference || 'email',
         birthday: birthday || customer.birthday,
@@ -3159,13 +3452,29 @@ app.post("/make-server-175b2872/auth/customer/profile", async (c) => {
       // Key is likely the ID if created properly
       await kv.set(customer.id, customer);
     } else {
-      // Create new
+      // Create new - Check for duplicate email and mobile
+      const emailExists = existingCustomers.find((c: any) => c.email === cleanEmail);
+      if (emailExists) {
+        return c.json({ 
+          error: 'Email address already registered',
+          field: 'email'
+        }, 400);
+      }
+
+      const mobileExists = existingCustomers.find((c: any) => c.mobile === cleanMobile);
+      if (mobileExists) {
+        return c.json({ 
+          error: 'Mobile number already registered',
+          field: 'mobile'
+        }, 400);
+      }
+
       const customerId = `customer:${Date.now()}`;
       customer = {
         id: customerId,
         name,
-        email,
-        mobile,
+        email: cleanEmail,
+        mobile: cleanMobile,
         city: city || 'Johannesburg', // Default if not provided
         notificationPreference: notificationPreference || 'email',
         birthday: birthday || null,
@@ -3180,7 +3489,7 @@ app.post("/make-server-175b2872/auth/customer/profile", async (c) => {
       await kv.set(customerId, customer);
     }
 
-    console.log(`👤 Customer profile synced: ${name} (${email})`);
+    console.log(`👤 Customer profile synced: ${name} (${cleanEmail})`);
     return c.json({ success: true, customer });
   } catch (error) {
     console.error('Error saving customer profile:', error);
@@ -3307,6 +3616,30 @@ app.put("/make-server-175b2872/admin/customers/:id/status", async (c) => {
   }
 });
 
+// Delete Customer (Admin)
+app.delete("/make-server-175b2872/admin/customers/:id", async (c) => {
+  try {
+    const id = c.req.param('id');
+    
+    const customer = await kv.get(id);
+    if (!customer) {
+      return c.json({ error: 'Customer not found' }, 404);
+    }
+
+    // Delete the customer from the KV store
+    await kv.del(id);
+    
+    return c.json({ 
+      success: true, 
+      message: 'Customer deleted successfully',
+      deletedCustomer: customer 
+    });
+  } catch (error) {
+    console.error('Error deleting customer:', error);
+    return c.json({ error: 'Failed to delete customer' }, 500);
+  }
+});
+
 // ============================================
 // ANALYTICS ROUTES
 // ============================================
@@ -3398,6 +3731,46 @@ app.post("/make-server-175b2872/analytics/track-reservation", async (c) => {
   } catch (error) {
     console.error('Reservation track error:', error);
     return c.json({ error: 'Failed to track reservation' }, 500);
+  }
+});
+
+// Track special click
+app.post("/make-server-175b2872/analytics/track-special-click", async (c) => {
+  try {
+    const body = await c.req.json();
+    
+    const specialId = body.special_id || body.specialId;
+    const businessId = body.business_id || body.businessId;
+    const userId = body.user_id || body.userId;
+    const userEmail = body.user_email || body.userEmail || 'anonymous';
+    
+    if (!specialId || !businessId) {
+      return c.json({ error: 'Missing required fields' }, 400);
+    }
+
+    // Record the click event
+    const clickEventId = generateUUID();
+    const clickEvent = {
+      id: clickEventId,
+      special_id: specialId,
+      business_id: businessId,
+      user_id: userId || null,
+      user_email: userEmail,
+      timestamp: new Date().toISOString()
+    };
+    await kv.set(clickEventId, clickEvent);
+    
+    // Update special's click count
+    const special = await kv.get(specialId);
+    if (special) {
+      special.click_count = (special.click_count || 0) + 1;
+      await kv.set(specialId, special);
+    }
+
+    return c.json({ success: true, clickEventId });
+  } catch (error) {
+    console.error('Special click track error:', error);
+    return c.json({ error: 'Failed to track special click' }, 500);
   }
 });
 
@@ -3515,6 +3888,185 @@ app.post("/make-server-175b2872/geocode", async (c) => {
   } catch (error) {
     console.error('Geocoding error:', error);
     return c.json({ error: 'Geocoding failed due to server error' }, 500);
+  }
+});
+
+// ============================================
+// PLATFORM SETTINGS ROUTES
+// ============================================
+
+// Helper: Get platform settings with defaults
+async function getPlatformSettings() {
+  let settings = await kv.get('platform:settings');
+  
+  if (!settings) {
+    // Default configuration
+    settings = {
+      rewards: {
+        // Customer Referral Settings
+        customer_download_bounty: 20, // R20 per download (immediate)
+        customer_checkin_threshold: 100, // Every 100 check-ins = 1 customer reward
+        customer_checkin_reward: 200, // R200 reward per threshold reached
+        
+        // Business Referral Settings
+        business_subscription_commission_percentage: 15, // 15% of subscription price
+        business_recurring_commission: true, // Pay partner every time business pays
+        
+        // Partner Visit Bonuses
+        partner_visit_bonus_points: 50, // Points when visiting referred business
+        
+        // General Settings
+        checkin_points: 10, // Points per check-in
+        checkin_cooldown_hours: 1 // Hours before next check-in allowed
+      },
+      updated_at: new Date().toISOString()
+    };
+    
+    // Save defaults
+    await kv.set('platform:settings', settings);
+    console.log('✅ Created default platform settings');
+  }
+  
+  return settings;
+}
+
+// Get Platform Settings
+app.get("/make-server-175b2872/settings", async (c) => {
+  try {
+    const settings = await getPlatformSettings();
+    return c.json({ config: settings });
+  } catch (error) {
+    console.error('Error fetching settings:', error);
+    return c.json({ error: 'Failed to fetch settings' }, 500);
+  }
+});
+
+// Save Platform Settings
+app.post("/make-server-175b2872/settings", async (c) => {
+  try {
+    const { config } = await c.req.json();
+    
+    if (!config) {
+      return c.json({ error: 'Configuration is required' }, 400);
+    }
+
+    await kv.set('platform:settings', config);
+    console.log('✅ Platform settings updated');
+    
+    return c.json({ success: true, config });
+  } catch (error) {
+    console.error('Error saving settings:', error);
+    return c.json({ error: 'Failed to save settings' }, 500);
+  }
+});
+
+// ============================================
+// BUSINESS SUBSCRIPTION PAYMENT ROUTES
+// ============================================
+
+// Process Business Subscription Payment (with Partner Commission)
+app.post("/make-server-175b2872/payments/subscription", async (c) => {
+  try {
+    const { business_id, amount, payment_method, transaction_id } = await c.req.json();
+    
+    if (!business_id || !amount) {
+      return c.json({ error: 'Business ID and amount are required' }, 400);
+    }
+    
+    // Get business
+    const business = await kv.get(`business:${business_id}`);
+    if (!business) {
+      return c.json({ error: 'Business not found' }, 404);
+    }
+    
+    // Get platform settings
+    const platformSettings = await getPlatformSettings();
+    
+    // Record payment
+    const paymentId = `payment:${Date.now()}`;
+    const payment = {
+      id: paymentId,
+      business_id: business_id,
+      business_name: business.name,
+      amount: amount,
+      payment_method: payment_method || 'card',
+      transaction_id: transaction_id || `txn_${Date.now()}`,
+      status: 'completed',
+      date: new Date().toISOString(),
+      type: 'subscription',
+      plan: business.subscription_plan || 'standard'
+    };
+    await kv.set(paymentId, payment);
+    
+    // Update business subscription status
+    business.subscription_status = 'active';
+    business.payment_status = 'paid';
+    business.last_payment_date = new Date().toISOString();
+    business.next_payment_due = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(); // 30 days
+    await kv.set(`business:${business_id}`, business);
+    
+    console.log(`💳 Subscription payment processed: ${business.name} - R${amount}`);
+    
+    // ✨ NEW: Award partner recurring commission if business was referred
+    let partnerCommission = null;
+    
+    if (business.referred_by && platformSettings.rewards.business_recurring_commission) {
+      const referral = await kv.get(`referral:B-${business_id}`);
+      
+      if (referral && referral.affiliate_id) {
+        const affiliate = await kv.get(referral.affiliate_id);
+        
+        if (affiliate) {
+          // Calculate commission
+          const commissionPercentage = platformSettings.rewards.business_subscription_commission_percentage;
+          const commissionAmount = Math.round((amount * commissionPercentage) / 100);
+          
+          // Update affiliate earnings
+          affiliate.pending_balance = (affiliate.pending_balance || 0) + commissionAmount;
+          affiliate.total_earnings = (affiliate.total_earnings || 0) + commissionAmount;
+          await kv.set(affiliate.id, affiliate);
+          
+          // Record commission
+          const commissionId = `comm:${Date.now()}_subscription`;
+          const commission = {
+            id: commissionId,
+            affiliate_id: affiliate.id,
+            business_id: business_id,
+            business_name: business.name,
+            amount: commissionAmount,
+            base_amount: amount,
+            commission_percentage: commissionPercentage,
+            status: 'pending',
+            date: new Date().toISOString(),
+            type: 'Business Subscription (Recurring)',
+            payment_id: paymentId,
+            referral_code: affiliate.code
+          };
+          await kv.set(commissionId, commission);
+          
+          partnerCommission = {
+            partner_name: affiliate.name,
+            commission_amount: commissionAmount,
+            commission_percentage: commissionPercentage
+          };
+          
+          console.log(`💰 Recurring commission: Partner ${affiliate.name} earned R${commissionAmount} (${commissionPercentage}% of R${amount})`);
+        }
+      }
+    }
+    
+    return c.json({
+      success: true,
+      payment: payment,
+      partner_commission: partnerCommission,
+      message: partnerCommission 
+        ? `Payment processed! Partner ${partnerCommission.partner_name} earned R${partnerCommission.commission_amount}`
+        : 'Payment processed successfully!'
+    });
+    
+  } catch (error: any) {
+    console.error('Payment processing error:', error);
+    return c.json({ error: `Payment failed: ${error.message}` }, 500);
   }
 });
 
@@ -3989,11 +4541,14 @@ app.post("/make-server-175b2872/check-in", async (c) => {
         return c.json({ error: 'Business not found' }, 404);
     }
 
+    // Get platform settings
+    const platformSettings = await getPlatformSettings();
+    
     // Check Cooldown (prevent spamming points)
     const lastCheckInKey = `last_checkin:${customerId}:${businessId}`;
     const lastCheckIn = await kv.get(lastCheckInKey);
     const nowTimestamp = Date.now();
-    const COOLDOWN = 3600 * 1000; // 1 hour
+    const COOLDOWN = platformSettings.rewards.checkin_cooldown_hours * 3600 * 1000;
     
     if (lastCheckIn && (nowTimestamp - lastCheckIn < COOLDOWN)) {
        const remainingMinutes = Math.ceil((COOLDOWN - (nowTimestamp - lastCheckIn)) / 60000);
@@ -4005,7 +4560,7 @@ app.post("/make-server-175b2872/check-in", async (c) => {
     // Also include customerId in key to allow fetching user's checkins easily if needed
     // checkin:BUSINESS_ID:TIMESTAMP_RANDOM
     
-    const POINTS_PER_CHECKIN = 10;
+    const POINTS_PER_CHECKIN = platformSettings.rewards.checkin_points;
     
     // Update Customer Points
     customer.loyalty_points = (customer.loyalty_points || 0) + POINTS_PER_CHECKIN;
@@ -4049,12 +4604,112 @@ app.post("/make-server-175b2872/check-in", async (c) => {
     stats.last_checkin = new Date().toISOString();
     await kv.set(leaderboardKey, stats);
 
+    // ✨ NEW: Check if customer is a partner/influencer visiting their referred business
+    let bonusMessage = null;
+    let bonusPoints = 0;
+    let thresholdReward = null;
+    
+    // Check if this customer referred this business
+    const referralCheck = await kv.get(`referral:B-${businessId}`);
+    if (referralCheck && referralCheck.affiliate_id) {
+      // Get the affiliate/partner record
+      const affiliate = await kv.get(referralCheck.affiliate_id);
+      
+      // Check if the customer checking in is the same person as the affiliate
+      if (affiliate && affiliate.email && customer.email && 
+          affiliate.email.toLowerCase() === customer.email.toLowerCase()) {
+        // Partner is visiting their own referred business!
+        const PARTNER_BONUS = platformSettings.rewards.partner_visit_bonus_points;
+        bonusPoints = PARTNER_BONUS;
+        
+        customer.loyalty_points = (customer.loyalty_points || 0) + PARTNER_BONUS;
+        await kv.set(storageKey, customer);
+        
+        bonusMessage = `🎉 Bonus! You referred this business. +${PARTNER_BONUS} extra points!`;
+        console.log(`🌟 Partner ${affiliate.name} visited their referred business ${business.name}. Bonus: +${PARTNER_BONUS} points!`);
+        
+        // Track partner visit to referred business
+        const visitKey = `partner_visit:${referralCheck.affiliate_id}:${businessId}:${nowTimestamp}`;
+        await kv.set(visitKey, {
+          id: visitKey,
+          affiliate_id: referralCheck.affiliate_id,
+          business_id: businessId,
+          business_name: business.name,
+          bonus_points: PARTNER_BONUS,
+          timestamp: new Date().toISOString()
+        });
+      }
+    }
+    
+    // ✨ NEW: Track check-ins for referred customers and award threshold rewards
+    if (customer.referred_by) {
+      // This customer was referred by a partner
+      const customerReferral = await kv.get(`referral:C-${customerId}`);
+      
+      if (customerReferral && customerReferral.affiliate_id) {
+        // Track check-in count for this referred customer
+        const checkinTrackingKey = `customer_checkins:${customerReferral.affiliate_id}:${customerId}`;
+        let checkinTracking = await kv.get(checkinTrackingKey) || {
+          affiliate_id: customerReferral.affiliate_id,
+          customer_id: customerId,
+          customer_name: customer.name,
+          total_checkins: 0,
+          rewards_earned: 0,
+          last_checkin: null
+        };
+        
+        checkinTracking.total_checkins += 1;
+        checkinTracking.last_checkin = new Date().toISOString();
+        
+        // Check if threshold reached
+        const threshold = platformSettings.rewards.customer_checkin_threshold;
+        const previousThresholds = Math.floor((checkinTracking.total_checkins - 1) / threshold);
+        const currentThresholds = Math.floor(checkinTracking.total_checkins / threshold);
+        
+        if (currentThresholds > previousThresholds) {
+          // Threshold reached! Award partner
+          const thresholdRewardAmount = platformSettings.rewards.customer_checkin_reward;
+          const affiliate = await kv.get(customerReferral.affiliate_id);
+          
+          if (affiliate) {
+            affiliate.pending_balance = (affiliate.pending_balance || 0) + thresholdRewardAmount;
+            affiliate.total_earnings = (affiliate.total_earnings || 0) + thresholdRewardAmount;
+            await kv.set(affiliate.id, affiliate);
+            
+            // Record commission
+            const commissionId = `comm:${Date.now()}_threshold`;
+            await kv.set(commissionId, {
+              id: commissionId,
+              affiliate_id: affiliate.id,
+              customer_id: customerId,
+              customer_name: customer.name,
+              business_name: `Customer Check-in Milestone (${checkinTracking.total_checkins} check-ins)`,
+              amount: thresholdRewardAmount,
+              status: 'pending',
+              date: new Date().toISOString(),
+              type: 'Customer Check-in Threshold',
+              referral_code: affiliate.code
+            });
+            
+            checkinTracking.rewards_earned += 1;
+            thresholdReward = { partner: affiliate.name, amount: thresholdRewardAmount };
+            
+            console.log(`🎯 Threshold reached! Partner ${affiliate.name} earned R${thresholdRewardAmount} (Customer ${customer.name} reached ${checkinTracking.total_checkins} check-ins)`);
+          }
+        }
+        
+        await kv.set(checkinTrackingKey, checkinTracking);
+      }
+    }
+
     console.log(`📍 User ${name} (${customerId}) checked in at ${business.name}. +${POINTS_PER_CHECKIN} points.`);
 
     return c.json({ 
         success: true, 
-        message: `Checked in at ${business.name}!`,
-        points_earned: POINTS_PER_CHECKIN,
+        message: bonusMessage || `Checked in at ${business.name}!`,
+        points_earned: POINTS_PER_CHECKIN + bonusPoints,
+        bonus_points: bonusPoints,
+        bonus_message: bonusMessage,
         total_points: customer.loyalty_points,
         check_in: checkInData
     });
