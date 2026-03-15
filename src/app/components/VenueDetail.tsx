@@ -425,7 +425,7 @@ export function VenueDetail({ venueId, onBack, onReserve, onGetDirections, dista
       )}
       
       {/* Header Image */}
-      <div className="relative h-48">
+      <div className="relative h-32">
         <img 
           src={business.cover_image_url || 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800'}
           alt={business.name}
@@ -433,20 +433,20 @@ export function VenueDetail({ venueId, onBack, onReserve, onGetDirections, dista
         />
         <button 
           onClick={onBack}
-          className="absolute top-4 left-4 w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-lg"
+          className="absolute top-3 left-3 w-9 h-9 bg-white rounded-full flex items-center justify-center shadow-lg"
         >
-          <ArrowLeft className="w-5 h-5" />
+          <ArrowLeft className="w-4 h-4" />
         </button>
-        <div className="absolute top-4 right-4 flex gap-2">
+        <div className="absolute top-3 right-3 flex gap-1.5">
           <button 
             onClick={handleManualRefresh}
             disabled={isRefreshing}
-            className={`w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-105 ${
+            className={`w-9 h-9 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-105 ${
               isRefreshing ? 'opacity-70' : ''
             }`}
             title="Refresh menu and details"
           >
-            <RefreshCw className={`w-5 h-5 text-gray-600 ${isRefreshing ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-4 h-4 text-gray-600 ${isRefreshing ? 'animate-spin' : ''}`} />
           </button>
           <button 
             onClick={(e) => {
@@ -455,13 +455,13 @@ export function VenueDetail({ venueId, onBack, onReserve, onGetDirections, dista
                 onToggleFavorite();
               }
             }}
-            className={`w-10 h-10 rounded-full flex items-center justify-center shadow-lg transition-all ${
+            className={`w-9 h-9 rounded-full flex items-center justify-center shadow-lg transition-all ${
               isFavorite 
                 ? 'bg-red-500 text-white scale-110' 
                 : 'bg-white text-gray-600 hover:scale-105'
             }`}
           >
-            <Heart className={`w-5 h-5 ${isFavorite ? 'fill-current' : ''}`} />
+            <Heart className={`w-4 h-4 ${isFavorite ? 'fill-current' : ''}`} />
           </button>
           <button 
             onClick={async () => {
@@ -491,15 +491,15 @@ export function VenueDetail({ venueId, onBack, onReserve, onGetDirections, dista
                 alert('Link copied to clipboard!');
               }
             }}
-            className="w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-lg hover:scale-105 transition-all"
+            className="w-9 h-9 bg-white rounded-full flex items-center justify-center shadow-lg hover:scale-105 transition-all"
           >
-            <Share2 className="w-5 h-5" />
+            <Share2 className="w-4 h-4" />
           </button>
         </div>
         
         {/* Logo Badge */}
-        <div className="absolute -bottom-8 left-6">
-          <div className="w-16 h-16 bg-gradient-to-br from-orange-500 to-purple-600 text-white rounded-full flex items-center justify-center text-2xl font-bold border-4 border-white shadow-lg overflow-hidden">
+        <div className="absolute -bottom-6 left-4">
+          <div className="w-12 h-12 bg-gradient-to-br from-orange-500 to-purple-600 text-white rounded-full flex items-center justify-center text-xl font-bold border-4 border-white shadow-lg overflow-hidden">
             {isLogoUrl ? (
               <img src={business.logo_url} alt={business.name} className="w-full h-full object-cover" />
             ) : (
@@ -510,12 +510,12 @@ export function VenueDetail({ venueId, onBack, onReserve, onGetDirections, dista
       </div>
 
       {/* Venue Info */}
-      <div className="px-6 pt-12 pb-4 border-b border-gray-100">
-        <div className="flex items-start justify-between mb-2">
+      <div className="px-4 pt-8 pb-2 border-b border-gray-100">
+        <div className="flex items-start justify-between mb-1">
           <div>
-            <h1 className="text-2xl font-bold mb-1">{business.name}</h1>
-            <div className="flex items-center gap-2 text-sm text-gray-600 mb-2">
-              <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
+            <h1 className="text-xl font-bold mb-1">{business.name}</h1>
+            <div className="flex items-center gap-1.5 text-xs text-gray-600 mb-1.5">
+              <Star className="w-3.5 h-3.5 fill-yellow-400 text-yellow-400" />
               <span className="font-semibold">{business.average_rating?.toFixed(1) || 'N/A'}</span>
               <span>({business.total_reviews || 0} reviews)</span>
             </div>
@@ -524,14 +524,14 @@ export function VenueDetail({ venueId, onBack, onReserve, onGetDirections, dista
         
         {/* Establishment Type & Cuisine Tags */}
         {(business.business_type || (business.cuisine_types && business.cuisine_types.length > 0) || displayAgeGroups.length > 0) && (
-          <div className="flex flex-wrap gap-2 mb-3">
+          <div className="flex flex-wrap gap-1.5 mb-2">
             {business.business_type && (
-              <span className="px-3 py-1 bg-gradient-to-r from-cyan-500 to-blue-600 text-white rounded-full text-xs font-semibold capitalize">
+              <span className="px-2.5 py-0.5 bg-gradient-to-r from-cyan-500 to-blue-600 text-white rounded-full text-xs font-semibold capitalize">
                 {business.business_type}
               </span>
             )}
             {displayAgeGroups.map((ageGroup) => (
-              <span key={ageGroup} className="px-3 py-1 bg-cyan-50 text-cyan-700 border border-cyan-200 rounded-full text-xs font-semibold">
+              <span key={ageGroup} className="px-2.5 py-0.5 bg-cyan-50 text-cyan-700 border border-cyan-200 rounded-full text-xs font-semibold">
                 {ageGroup === 'all-ages' && '👨‍👩‍👧‍👦 All Ages'}
                 {ageGroup === 'family-with-pets' && '🐕 Pet Friendly'}
                 {ageGroup === 'adults-18+' && '🔞 Adults 18+'}
@@ -541,46 +541,46 @@ export function VenueDetail({ venueId, onBack, onReserve, onGetDirections, dista
               </span>
             ))}
             {business.cuisine_types && business.cuisine_types.slice(0, 3).map((cuisine) => (
-              <span key={cuisine} className="px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-xs">
+              <span key={cuisine} className="px-2.5 py-0.5 bg-gray-100 text-gray-700 rounded-full text-xs">
                 {cuisine}
               </span>
             ))}
           </div>
         )}
         
-        <div className="flex items-center gap-2 text-sm text-gray-600 mb-2">
-          <MapPin className="w-4 h-4" />
+        <div className="flex items-center gap-1.5 text-xs text-gray-600 mb-1.5">
+          <MapPin className="w-3.5 h-3.5" />
           <span>{business.address}, {business.city}</span>
-          {distance && <span className="text-xs bg-gray-100 px-2 py-0.5 rounded-full">{distance.toFixed(1)} km</span>}
+          {distance && <span className="text-xs bg-gray-100 px-1.5 py-0.5 rounded-full">{distance.toFixed(1)} km</span>}
         </div>
         
-        <div className="flex items-center gap-2 text-sm text-gray-600">
-          <Clock className="w-4 h-4" />
+        <div className="flex items-center gap-1.5 text-xs text-gray-600">
+          <Clock className="w-3.5 h-3.5" />
           {formatOpeningHours()}
         </div>
       </div>
 
       {/* Action Buttons */}
-      <div className="px-6 py-3 border-b border-gray-100 flex flex-wrap gap-2">
+      <div className="px-4 py-2 border-b border-gray-100 flex flex-wrap gap-1.5">
         <Button 
           onClick={handleCheckIn}
-          className="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white"
+          className="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white h-9 text-xs"
         >
-          <CheckCircle className="w-4 h-4 mr-2" />
+          <CheckCircle className="w-3.5 h-3.5 mr-1.5" />
           Check In
         </Button>
         <Button 
           onClick={() => onReserve()}
-          className="flex-1 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white"
+          className="flex-1 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white h-9 text-xs"
         >
           Reserve Table
         </Button>
         <Button 
           onClick={onGetDirections}
           variant="outline"
-          className="flex-1"
+          className="flex-1 h-9 text-xs"
         >
-          <Navigation className="w-4 h-4 mr-2" />
+          <Navigation className="w-3.5 h-3.5 mr-1.5" />
           Directions
         </Button>
         {business.phone && (
@@ -588,8 +588,9 @@ export function VenueDetail({ venueId, onBack, onReserve, onGetDirections, dista
             variant="outline"
             size="icon"
             onClick={() => setShowPhoneModal(true)}
+            className="h-9 w-9"
           >
-            <Phone className="w-4 h-4" />
+            <Phone className="w-3.5 h-3.5" />
           </Button>
         )}
       </div>

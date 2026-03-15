@@ -8,7 +8,9 @@ interface CustomerAuthScreenProps {
 }
 
 export function CustomerAuthScreen({ onAuthenticated }: CustomerAuthScreenProps) {
-  const [step, setStep] = useState<'mobile' | 'register' | 'recovery'>('mobile');
+  // Check if user has ever logged in before to determine initial screen
+  const hasUsedAppBefore = localStorage.getItem('vibespot_has_used_app') === 'true';
+  const [step, setStep] = useState<'mobile' | 'register' | 'recovery'>(hasUsedAppBefore ? 'mobile' : 'register');
   const [mobile, setMobile] = useState('');
   const [name, setName] = useState('');
   const [affiliateCode, setAffiliateCode] = useState('');
@@ -49,17 +51,18 @@ export function CustomerAuthScreen({ onAuthenticated }: CustomerAuthScreenProps)
         // Login immediately
         const result = await loginCustomerByMobile(mobile);
         if (result.success && result.customer) {
-          // Save to localStorage
+          // Save to localStorage and mark that user has used app before
           localStorage.setItem('vibespot_customer_profile', JSON.stringify(result.customer));
           localStorage.setItem('vibespot_session_token', result.token);
+          localStorage.setItem('vibespot_has_used_app', 'true');
           
           onAuthenticated(result.customer, result.token);
         } else {
           setError('Login failed. Please try again.');
         }
       } else {
-        // New user - proceed to registration step
-        setStep('register');
+        // Mobile doesn't exist - show error
+        setError('Mobile number not found. Please check and try again.');
       }
     } catch (err) {
       console.error(err);
@@ -71,6 +74,14 @@ export function CustomerAuthScreen({ onAuthenticated }: CustomerAuthScreenProps)
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!mobile.trim()) {
+      setError('Mobile number is required');
+      return;
+    }
+    if (!validateMobile(mobile)) {
+      setError('Please enter a valid 10-digit mobile number');
+      return;
+    }
     if (!name.trim()) {
       setError('Name is required');
       return;
@@ -87,9 +98,10 @@ export function CustomerAuthScreen({ onAuthenticated }: CustomerAuthScreenProps)
       // Pass empty string if no affiliate code provided
       const result = await registerCustomer(username, name, mobile, affiliateCode || '');
       if (result.success && result.customer) {
-        // Save to localStorage
+        // Save to localStorage and mark that user has used app before
         localStorage.setItem('vibespot_customer_profile', JSON.stringify(result.customer));
         localStorage.setItem('vibespot_session_token', result.token);
+        localStorage.setItem('vibespot_has_used_app', 'true');
         
         onAuthenticated(result.customer, result.token);
       } else {
@@ -230,18 +242,29 @@ export function CustomerAuthScreen({ onAuthenticated }: CustomerAuthScreenProps)
               >
                 <div className="text-center mb-6">
                   <h2 className="text-xl font-bold text-gray-900 mb-1">Create Account</h2>
-                  <p className="text-gray-500 text-sm">Complete your registration</p>
+                  <p className="text-gray-500 text-sm">Join MYVIBES today</p>
                 </div>
 
                 <form onSubmit={handleRegister} className="space-y-4">
-                  <div className="bg-blue-50 p-3 rounded-lg mb-4 flex items-center gap-3">
-                    <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-bold text-xs">
-                      <Phone className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <div className="text-xs text-blue-400 font-medium">Mobile</div>
-                      <div className="font-bold text-blue-900">{mobile}</div>
-                    </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">
+                      Mobile Number <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="tel"
+                      value={mobile}
+                      onChange={(e) => {
+                        setMobile(e.target.value.replace(/[^0-9]/g, ''));
+                        setError(null);
+                      }}
+                      placeholder="0821234567"
+                      maxLength={10}
+                      className="w-full p-4 bg-gray-50 border-2 border-gray-100 rounded-xl focus:border-cyan-500 focus:ring-0 outline-none transition-colors font-medium text-lg"
+                      autoFocus
+                    />
+                    <p className="text-[10px] text-gray-400 mt-1">
+                      10-digit mobile number
+                    </p>
                   </div>
 
                   <div>
@@ -257,7 +280,6 @@ export function CustomerAuthScreen({ onAuthenticated }: CustomerAuthScreenProps)
                       }}
                       placeholder="e.g. John Doe"
                       className="w-full p-4 bg-gray-50 border-2 border-gray-100 rounded-xl focus:border-cyan-500 focus:ring-0 outline-none transition-colors font-medium text-lg"
-                      autoFocus
                     />
                   </div>
 
@@ -318,6 +340,20 @@ export function CustomerAuthScreen({ onAuthenticated }: CustomerAuthScreenProps)
                     </button>
                   </div>
                 </form>
+                
+                {/* Link to Sign In for existing users */}
+                <div className="text-center mt-4">
+                  <p className="text-sm text-gray-500">
+                    Already have an account?{' '}
+                    <button
+                      type="button"
+                      onClick={() => setStep('mobile')}
+                      className="font-semibold text-cyan-600 hover:text-cyan-700"
+                    >
+                      Sign In
+                    </button>
+                  </p>
+                </div>
               </motion.div>
             )}
 
