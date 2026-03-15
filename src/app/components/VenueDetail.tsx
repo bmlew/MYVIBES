@@ -104,12 +104,17 @@ export function VenueDetail({ venueId, onBack, onReserve, onGetDirections, dista
   const [eventInterests, setEventInterests] = useState<Record<string, 'interested' | 'going' | null>>({});
 
   const handleCheckIn = async () => {
+    console.log('🎯 Check-in button clicked for venue:', venueId);
     try {
       const token = localStorage.getItem('vibespot_session_token');
       const profileStr = localStorage.getItem('vibespot_customer_profile');
       
+      console.log('🔑 Session token:', token ? `${token.substring(0, 20)}...` : 'NONE');
+      console.log('👤 Profile:', profileStr ? 'EXISTS' : 'NONE');
+      
       // Guest Check: No token or profile ID starts with guest-
       if (!token) {
+        console.log('❌ No token found');
         toast.error("Please log in to check in", {
           description: "Guest users cannot check in. Please sign in or create an account."
         });
@@ -119,11 +124,14 @@ export function VenueDetail({ venueId, onBack, onReserve, onGetDirections, dista
       let profile;
       try {
         profile = profileStr ? JSON.parse(profileStr) : null;
+        console.log('👤 Parsed profile:', profile);
       } catch (e) {
+        console.error('❌ Failed to parse profile:', e);
         profile = null;
       }
 
       if (profile && (profile.id?.startsWith('guest-'))) {
+        console.log('❌ Guest user detected');
         toast.error("Guest Check-in Restricted", {
           description: "Please complete your profile setup to enable check-ins."
         });
@@ -131,32 +139,49 @@ export function VenueDetail({ venueId, onBack, onReserve, onGetDirections, dista
       }
 
       if (!profile || !profile.name || !profile.email || !profile.mobile) {
+        console.log('❌ Incomplete profile:', { 
+          hasProfile: !!profile,
+          hasName: !!profile?.name,
+          hasEmail: !!profile?.email,
+          hasMobile: !!profile?.mobile
+        });
         toast.error("Profile Incomplete", {
           description: "Please update your profile with Name, Email, and Mobile number to check in."
         });
         return;
       }
 
+      console.log('✅ All validations passed, getting location...');
+      
       // Call API
       const location = await new Promise<{latitude: number; longitude: number} | undefined>((resolve) => {
         if (navigator.geolocation) {
           navigator.geolocation.getCurrentPosition(
-            (pos) => resolve({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }),
-            () => resolve(undefined),
+            (pos) => {
+              console.log('📍 Location obtained:', pos.coords.latitude, pos.coords.longitude);
+              resolve({ latitude: pos.coords.latitude, longitude: pos.coords.longitude });
+            },
+            () => {
+              console.log('⚠️ Location denied or unavailable');
+              resolve(undefined);
+            },
             { timeout: 5000 }
           );
         } else {
+          console.log('⚠️ Geolocation not available');
           resolve(undefined);
         }
       });
 
+      console.log('🚀 Calling check-in API...');
       await api.checkIn(venueId, location);
+      console.log('✅ Check-in successful!');
       toast.success("Checked In!", {
         description: `Welcome to ${business?.name || 'the venue'}!`
       });
 
     } catch (error: any) {
-      console.error("Check-in failed:", error);
+      console.error("❌ Check-in failed:", error);
       // Extract error message from API response if possible
       let msg = "Failed to check in";
       if (error.message) msg = error.message;
