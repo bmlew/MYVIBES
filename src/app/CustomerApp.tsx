@@ -475,16 +475,14 @@ export function CustomerApp() {
     if (venueId.startsWith('special-') || venueId.startsWith('special:')) {
       console.warn('⚠️ Special ID detected in navigation:', venueId);
       
-      // Try to extract business ID (format: special:business-ID:timestamp)
-      // Look for the part that is "business-..."
-      // Some IDs might be like business-123 or business-1770649105228
-      const businessIdMatch = venueId.match(/(business-[\w-]+)/);
-      
-      if (businessIdMatch && businessIdMatch[1]) {
-        console.log(`✅ Recovered business ID from special ID: ${businessIdMatch[1]}`);
-        venueId = businessIdMatch[1];
+      // Try to extract business ID (format: special:business_id:timestamp)
+      const parts = venueId.split(':');
+      if (parts.length >= 2) {
+        const extractedBusinessId = parts[1];
+        console.log(`✅ Extracted business ID from special: ${extractedBusinessId}`);
+        venueId = extractedBusinessId;
       } else {
-        console.error('❌ Could not recover valid business ID from:', venueId);
+        console.error('❌ Could not extract business ID from special ID:', venueId);
         return;
       }
     }
@@ -537,13 +535,15 @@ export function CustomerApp() {
     // Check for special IDs and attempt to recover
     if (businessId.startsWith('special-') || businessId.startsWith('special:')) {
       console.warn('⚠️ Special ID detected in carousel item:', businessId);
-      const businessIdMatch = businessId.match(/(business-[\w-]+)/);
       
-      if (businessIdMatch && businessIdMatch[1]) {
-        console.log(`✅ Recovered business ID: ${businessIdMatch[1]}`);
-        businessId = businessIdMatch[1];
+      // Extract business ID from format: special:business_id:timestamp
+      const parts = businessId.split(':');
+      if (parts.length >= 2) {
+        const extractedBusinessId = parts[1];
+        console.log(`✅ Extracted business ID from carousel special: ${extractedBusinessId}`);
+        businessId = extractedBusinessId;
       } else {
-        console.error('❌ Invalid business ID in carousel (special ID detected):', businessId);
+        console.error('❌ Could not extract business ID from carousel special ID:', businessId);
         console.warn('⚠️ Item data:', item);
         return;
       }
@@ -558,8 +558,8 @@ export function CustomerApp() {
         'home'
       );
       
-      // Increment view count for specials (only if it's a real special ID, not a placeholder)
-      if (item.type === 'special' && item.id && !item.id.startsWith('special-') && !item.id.startsWith('special:')) {
+      // Increment view count for specials
+      if (item.type === 'special' && item.id && item.id.startsWith('special:')) {
         await incrementSpecialViewCount(item.id);
       }
       openVenueDetail(businessId);
@@ -1658,8 +1658,8 @@ export function CustomerApp() {
                                 return;
                               }
                               
-                              // Increment view count if special has a real ID (not a placeholder)
-                              if (special.id && !special.id.startsWith('special-') && !special.id.startsWith('special:')) {
+                              // Increment view count if special has a real ID
+                              if (special.id && special.id.startsWith('special:')) {
                                 incrementSpecialViewCount(special.id);
                               }
                               openVenueDetail(businessId);
@@ -1867,8 +1867,8 @@ export function CustomerApp() {
                                       return;
                                     }
                                     
-                                    // Increment view count if special has a real ID (not a placeholder)
-                                    if (special.id && !special.id.startsWith('special-') && !special.id.startsWith('special:')) {
+                                    // Increment view count if special has a real ID
+                                    if (special.id && special.id.startsWith('special:')) {
                                       incrementSpecialViewCount(special.id);
                                     }
                                     openVenueDetail(businessId);

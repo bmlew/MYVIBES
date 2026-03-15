@@ -1556,7 +1556,8 @@ app.post("/make-server-175b2872/kv/specials", async (c) => {
       return c.json({ error: e.message }, 403);
     }
 
-    const specialId = generateUUID();
+    const timestamp = Date.now();
+    const specialId = `special:${business_id}:${timestamp}`;
     const special = {
       ...body,
       id: specialId,
@@ -1658,9 +1659,8 @@ app.post("/make-server-175b2872/kv/events", async (c) => {
       return c.json({ error: e.message }, 403);
     }
 
-    const eventId = `event:${Date.now()}`; // Events might not be namespaced by business in ID in previous code, but let's check. 
-    // Previous code used `event:${id}` or something. Let's stick to simple IDs or namespaced.
-    // Dashboard expects `id` to be returned.
+    const timestamp = Date.now();
+    const eventId = `event:${business_id}:${timestamp}`;
     const event = {
       ...body,
       id: eventId,
