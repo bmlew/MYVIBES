@@ -52,7 +52,7 @@ export function getBusinessReferralLink(code: string): string {
  * Get a customer app download referral link for an affiliate code
  */
 export function getCustomerReferralLink(code: string): string {
-  return `${getAppUrl()}/?ref=${code}&type=customer`;
+  return `${getAppUrl()}/download?ref=${code}`;
 }
 
 /**

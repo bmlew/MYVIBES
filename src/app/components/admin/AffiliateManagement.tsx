@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Link, Copy, Check, Download, Edit2, RefreshCw, Search, DollarSign, Building, User, Send, Smartphone } from 'lucide-react';
+import { Users, Link, Copy, Check, Download, Edit2, RefreshCw, Search, DollarSign, Building, User, Send, Smartphone, Plus, Trash2, X, Save, Mail, Phone, CreditCard } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Card } from '../ui/card';
 import { toast } from 'sonner';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { getReferralLink, getBusinessReferralLink, getCustomerReferralLink } from '/src/config/app';
+import { CreateAffiliateModal, EditAffiliateModal, DeleteAffiliateModal } from './AffiliateModals';
 
 interface Affiliate {
   id: string;
@@ -41,8 +42,49 @@ export function AffiliateManagement() {
   const [copiedLinks, setCopiedLinks] = useState<CopiedState>({});
   const [selectedAffiliates, setSelectedAffiliates] = useState<Set<string>>(new Set());
   const [sending, setSending] = useState(false);
+  
+  // Debug panel state
+  const [showDebug, setShowDebug] = useState(false);
+  const [debugLogs, setDebugLogs] = useState<string[]>([]);
+  
+  // CREATE modal state
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [newAffiliate, setNewAffiliate] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    code: '',
+    bank_name: '',
+    account_number: '',
+    branch_code: ''
+  });
+  
+  // EDIT modal state
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingAffiliate, setEditingAffiliate] = useState<Affiliate | null>(null);
+  const [editForm, setEditForm] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    status: '',
+    bank_name: '',
+    account_number: '',
+    branch_code: ''
+  });
+  
+  // DELETE confirmation state
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deletingAffiliate, setDeletingAffiliate] = useState<Affiliate | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const API_URL = `https://${projectId}.supabase.co/functions/v1/make-server-175b2872`;
+
+  // Helper to add debug logs
+  const addDebugLog = (message: string) => {
+    const timestamp = new Date().toLocaleTimeString();
+    setDebugLogs(prev => [`[${timestamp}] ${message}`, ...prev.slice(0, 19)]);
+  };
 
   const fetchAffiliates = async () => {
     setLoading(true);
@@ -232,7 +274,7 @@ export function AffiliateManagement() {
     const messages = selectedAffiliatesList.map(affiliate => {
       const link = getReferralLink(affiliate.code);
       return `Hi ${affiliate.name}! Your MYVIBES partner referral link is: ${link}`;
-    }).join('\n\n---\n\n');
+    }).join('\\n\\n---\\n\\n');
 
     // Try modern clipboard API first, with fallback
     if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -256,6 +298,178 @@ export function AffiliateManagement() {
     }
   };
 
+  // CREATE new affiliate
+  const handleCreateAffiliate = async () => {
+    // Validation
+    if (!newAffiliate.name.trim() || !newAffiliate.email.trim() || !newAffiliate.phone.trim()) {
+      toast.error('Please fill in all required fields');
+      return;
+    }
+
+    const upperCode = newAffiliate.code.toUpperCase().trim();
+    
+    // Check if code already exists
+    if (affiliates.some(a => a.code === upperCode)) {
+      toast.error('This affiliate code is already in use');
+      return;
+    }
+
+    setCreating(true);
+    try {
+      const response = await fetch(`${API_URL}/affiliates/create`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${publicAnonKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          name: newAffiliate.name.trim(),
+          email: newAffiliate.email.trim(),
+          phone: newAffiliate.phone.trim(),
+          code: upperCode || undefined,
+          bank_details: (newAffiliate.bank_name && newAffiliate.account_number) ? {
+            bank_name: newAffiliate.bank_name,
+            account_number: newAffiliate.account_number,
+            branch_code: newAffiliate.branch_code
+          } : undefined
+        })
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to create affiliate');
+      }
+
+      const data = await response.json();
+      toast.success(`Affiliate ${newAffiliate.name} created successfully!`);
+      
+      // Reset form
+      setNewAffiliate({
+        name: '',
+        email: '',
+        phone: '',
+        code: '',
+        bank_name: '',
+        account_number: '',
+        branch_code: ''
+      });
+      setShowCreateModal(false);
+      await fetchAffiliates();
+    } catch (error: any) {
+      console.error('Error creating affiliate:', error);
+      toast.error(error.message || 'Failed to create affiliate');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  // UPDATE affiliate
+  const handleUpdateAffiliate = async () => {
+    if (!editingAffiliate) return;
+
+    // Validation
+    if (!editForm.name.trim() || !editForm.email.trim() || !editForm.phone.trim()) {
+      toast.error('Please fill in all required fields');
+      return;
+    }
+
+    setCreating(true);
+    try {
+      const response = await fetch(`${API_URL}/affiliates/update`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${publicAnonKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          affiliate_id: editingAffiliate.id,
+          name: editForm.name.trim(),
+          email: editForm.email.trim(),
+          phone: editForm.phone.trim(),
+          status: editForm.status,
+          bank_details: (editForm.bank_name && editForm.account_number) ? {
+            bank_name: editForm.bank_name,
+            account_number: editForm.account_number,
+            branch_code: editForm.branch_code
+          } : undefined
+        })
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to update affiliate');
+      }
+
+      toast.success(`Affiliate ${editForm.name} updated successfully!`);
+      setShowEditModal(false);
+      setEditingAffiliate(null);
+      await fetchAffiliates();
+    } catch (error: any) {
+      console.error('Error updating affiliate:', error);
+      toast.error(error.message || 'Failed to update affiliate');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  // DELETE affiliate
+  const handleDeleteAffiliate = async () => {
+    if (!deletingAffiliate) return;
+
+    setDeleting(true);
+    addDebugLog(`🗑️ Starting delete for: ${deletingAffiliate.name} (ID: ${deletingAffiliate.id})`);
+    
+    try {
+      addDebugLog(`📡 Sending DELETE request to server...`);
+      
+      const response = await fetch(`${API_URL}/affiliates/delete`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${publicAnonKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          affiliate_id: deletingAffiliate.id
+        })
+      });
+
+      const responseData = await response.json();
+      addDebugLog(`📥 Server response: ${JSON.stringify(responseData)}`);
+      
+      if (!response.ok) {
+        addDebugLog(`❌ Server returned error: ${responseData.error}`);
+        throw new Error(responseData.error || 'Failed to delete affiliate');
+      }
+
+      addDebugLog(`✅ Delete successful!`);
+      addDebugLog(`Current affiliates in state: ${affiliates.length}`);
+      addDebugLog(`Filtering out ID: ${deletingAffiliate.id}`);
+      
+      // Immediately remove from local state for instant UI update
+      setAffiliates(prev => {
+        const newAffiliates = prev.filter(a => a.id !== deletingAffiliate.id);
+        addDebugLog(`✨ New affiliates count: ${newAffiliates.length}`);
+        return newAffiliates;
+      });
+      
+      toast.success(`Affiliate ${deletingAffiliate.name} deleted successfully`);
+      setShowDeleteModal(false);
+      setDeletingAffiliate(null);
+      
+      // Refresh from server after a short delay to ensure backend consistency
+      addDebugLog(`🔄 Scheduling server refresh in 1 second...`);
+      setTimeout(() => {
+        addDebugLog(`🔄 Fetching updated list from server...`);
+        fetchAffiliates();
+      }, 1000);
+    } catch (error: any) {
+      addDebugLog(`❌ ERROR: ${error.message}`);
+      toast.error(error.message || 'Failed to delete affiliate');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   return (
     <div className="space-y-6 p-6">
       {/* Header */}
@@ -265,6 +479,13 @@ export function AffiliateManagement() {
           <p className="text-gray-600 mt-1">Manage partner referral codes and links</p>
         </div>
         <div className="flex gap-2">
+          <Button 
+            onClick={() => setShowCreateModal(true)}
+            className="bg-gradient-to-r from-purple-600 to-pink-500 hover:from-purple-700 hover:to-pink-600 text-white"
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            Add Affiliate
+          </Button>
           <Button onClick={fetchAffiliates} variant="outline">
             <RefreshCw className="w-4 h-4 mr-2" />
             Refresh
@@ -571,21 +792,33 @@ export function AffiliateManagement() {
                             size="sm"
                             variant="outline"
                             onClick={() => {
-                              const message = `Hi ${affiliate.name}! Your MYVIBES partner referral link is: ${link}`;
-                              if (navigator.clipboard && navigator.clipboard.writeText) {
-                                navigator.clipboard.writeText(message)
-                                  .then(() => toast.success('Message copied to clipboard'))
-                                  .catch(() => {
-                                    fallbackCopyTextToClipboard(message);
-                                    toast.success('Message copied to clipboard');
-                                  });
-                              } else {
-                                fallbackCopyTextToClipboard(message);
-                                toast.success('Message copied to clipboard');
-                              }
+                              setEditingAffiliate(affiliate);
+                              setEditForm({
+                                name: affiliate.name,
+                                email: affiliate.email,
+                                phone: affiliate.phone,
+                                status: affiliate.status,
+                                bank_name: affiliate.bank_details?.bank_name || '',
+                                account_number: affiliate.bank_details?.account_number || '',
+                                branch_code: affiliate.bank_details?.branch_code || ''
+                              });
+                              setShowEditModal(true);
                             }}
                           >
-                            Copy Message
+                            <Edit2 className="w-3 h-3 mr-1" />
+                            Edit
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-red-600 hover:bg-red-50 hover:text-red-700 border-red-200"
+                            onClick={() => {
+                              setDeletingAffiliate(affiliate);
+                              setShowDeleteModal(true);
+                            }}
+                          >
+                            <Trash2 className="w-3 h-3 mr-1" />
+                            Delete
                           </Button>
                         </div>
                       </td>
@@ -597,6 +830,113 @@ export function AffiliateManagement() {
           </div>
         </div>
       )}
+
+      {/* CRUD Modals */}
+      <CreateAffiliateModal
+        show={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        newAffiliate={newAffiliate}
+        setNewAffiliate={setNewAffiliate}
+        onCreate={handleCreateAffiliate}
+        creating={creating}
+      />
+
+      <EditAffiliateModal
+        show={showEditModal}
+        onClose={() => {
+          setShowEditModal(false);
+          setEditingAffiliate(null);
+        }}
+        editForm={editForm}
+        setEditForm={setEditForm}
+        onUpdate={handleUpdateAffiliate}
+        updating={creating}
+        affiliate={editingAffiliate}
+      />
+
+      <DeleteAffiliateModal
+        show={showDeleteModal}
+        onClose={() => {
+          setShowDeleteModal(false);
+          setDeletingAffiliate(null);
+        }}
+        onDelete={handleDeleteAffiliate}
+        deleting={deleting}
+        affiliate={deletingAffiliate}
+      />
+
+      {/* Debug Panel - Fixed at bottom right */}
+      <div className="fixed bottom-4 right-4 z-50">
+        {!showDebug ? (
+          <Button
+            onClick={() => setShowDebug(true)}
+            className="bg-gray-900 hover:bg-gray-800 text-white shadow-lg"
+          >
+            🐛 Show Debug
+          </Button>
+        ) : (
+          <Card className="w-[600px] max-h-[500px] shadow-2xl border-2 border-gray-900">
+            <div className="bg-gray-900 text-white p-3 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-lg">🐛</span>
+                <h3 className="font-bold">Debug Panel</h3>
+                <span className="text-xs bg-green-500 px-2 py-1 rounded">LIVE</span>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="text-white hover:bg-gray-800"
+                  onClick={() => setDebugLogs([])}
+                >
+                  Clear
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="text-white hover:bg-gray-800"
+                  onClick={() => setShowDebug(false)}
+                >
+                  <X className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+            <div className="p-4 bg-gray-50 max-h-[400px] overflow-y-auto">
+              {debugLogs.length === 0 ? (
+                <div className="text-center text-gray-500 py-8">
+                  <p className="text-sm">No debug logs yet</p>
+                  <p className="text-xs mt-1">Try deleting an affiliate to see live debugging</p>
+                </div>
+              ) : (
+                <div className="space-y-1 font-mono text-xs">
+                  {debugLogs.map((log, index) => (
+                    <div
+                      key={index}
+                      className={`p-2 rounded ${
+                        log.includes('❌') || log.includes('ERROR')
+                          ? 'bg-red-100 text-red-900'
+                          : log.includes('✅') || log.includes('successful')
+                          ? 'bg-green-100 text-green-900'
+                          : log.includes('📡') || log.includes('🔄')
+                          ? 'bg-blue-100 text-blue-900'
+                          : 'bg-gray-100 text-gray-900'
+                      }`}
+                    >
+                      {log}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="bg-gray-100 p-2 border-t">
+              <div className="flex justify-between text-xs text-gray-600">
+                <span>Affiliates in state: {affiliates.length}</span>
+                <span>Logs: {debugLogs.length}/20</span>
+              </div>
+            </div>
+          </Card>
+        )}
+      </div>
     </div>
   );
 }

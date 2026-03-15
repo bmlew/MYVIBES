@@ -2579,6 +2579,164 @@ app.post("/make-server-175b2872/affiliates/update-code", async (c) => {
   }
 });
 
+// CREATE new affiliate (Admin)
+app.post("/make-server-175b2872/affiliates/create", async (c) => {
+  try {
+    const body = await c.req.json();
+    const { name, email, phone, code, bank_details } = body;
+
+    if (!name || !email || !phone) {
+      return c.json({ error: 'Name, email, and phone are required' }, 400);
+    }
+
+    const existingAffiliates = await kv.getByPrefix('affiliate:');
+    const emailExists = existingAffiliates.some((aff: any) => aff.email === email);
+    
+    if (emailExists) {
+      return c.json({ error: 'Email already registered as affiliate' }, 400);
+    }
+
+    // Generate code if not provided
+    let affiliateCode = code;
+    if (!affiliateCode) {
+      const namePrefix = name.replace(/[^a-zA-Z]/g, '').substring(0, 4).toUpperCase();
+      const year = new Date().getFullYear();
+      affiliateCode = `${namePrefix}${year}`;
+      
+      let codeExists = existingAffiliates.some((aff: any) => aff.code === affiliateCode);
+      let counter = 1;
+      while (codeExists) {
+        affiliateCode = `${namePrefix}${year}${counter}`;
+        codeExists = existingAffiliates.some((aff: any) => aff.code === affiliateCode);
+        counter++;
+      }
+    } else {
+      // Check if provided code already exists
+      const codeExists = existingAffiliates.some((aff: any) => aff.code === code.toUpperCase());
+      if (codeExists) {
+        return c.json({ error: 'This affiliate code is already in use' }, 400);
+      }
+      affiliateCode = code.toUpperCase();
+    }
+
+    const affiliateId = `AFF${Date.now()}`;
+    const affiliate = {
+      id: affiliateId,
+      code: affiliateCode,
+      name,
+      email,
+      phone,
+      status: 'approved', // Default to approved for admin-created affiliates
+      total_referrals: 0,
+      total_customer_referrals: 0,
+      total_business_referrals: 0,
+      total_earnings: 0,
+      pending_balance: 0,
+      paid_earnings: 0,
+      joined_at: new Date().toISOString(),
+      bank_details: bank_details || null
+    };
+
+    await kv.set(`affiliate:${affiliateId}`, affiliate);
+
+    console.log(`✅ Affiliate created by admin: ${name} (${affiliateCode})`);
+
+    return c.json({
+      success: true,
+      message: 'Affiliate created successfully!',
+      affiliate_id: affiliateId,
+      code: affiliateCode
+    });
+  } catch (error) {
+    console.error('Error creating affiliate:', error);
+    return c.json({ error: 'Failed to create affiliate' }, 500);
+  }
+});
+
+// UPDATE affiliate (Admin)
+app.post("/make-server-175b2872/affiliates/update", async (c) => {
+  try {
+    const body = await c.req.json();
+    const { affiliate_id, name, email, phone, status, bank_details } = body;
+
+    if (!affiliate_id) {
+      return c.json({ error: 'Affiliate ID is required' }, 400);
+    }
+
+    console.log(`🔍 Attempting to update affiliate: ${affiliate_id}`);
+
+    // Try to find the affiliate first
+    const allAffiliates = await kv.getByPrefix('affiliate:');
+    const affiliate = allAffiliates.find((a: any) => a.id === affiliate_id);
+    
+    if (!affiliate) {
+      console.error(`❌ Affiliate not found: ${affiliate_id}`);
+      return c.json({ error: 'Affiliate not found' }, 404);
+    }
+
+    // Update fields
+    if (name) affiliate.name = name;
+    if (email) affiliate.email = email;
+    if (phone) affiliate.phone = phone;
+    if (status) affiliate.status = status;
+    if (bank_details) affiliate.bank_details = bank_details;
+    
+    affiliate.updated_at = new Date().toISOString();
+
+    await kv.set(`affiliate:${affiliate_id}`, affiliate);
+
+    console.log(`✅ Affiliate updated: ${affiliate.name} (${affiliate.code})`);
+
+    return c.json({
+      success: true,
+      message: 'Affiliate updated successfully',
+      affiliate
+    });
+  } catch (error) {
+    console.error('Error updating affiliate:', error);
+    return c.json({ error: 'Failed to update affiliate' }, 500);
+  }
+});
+
+// DELETE affiliate (Admin)
+app.delete("/make-server-175b2872/affiliates/delete", async (c) => {
+  try {
+    const body = await c.req.json();
+    const { affiliate_id } = body;
+
+    if (!affiliate_id) {
+      return c.json({ error: 'Affiliate ID is required' }, 400);
+    }
+
+    console.log(`🔍 Attempting to delete affiliate: ${affiliate_id}`);
+
+    // Try to find the affiliate first
+    const allAffiliates = await kv.getByPrefix('affiliate:');
+    const affiliate = allAffiliates.find((a: any) => a.id === affiliate_id);
+    
+    if (!affiliate) {
+      console.error(`❌ Affiliate not found: ${affiliate_id}`);
+      console.log(`Available affiliates: ${allAffiliates.map((a: any) => a.id).join(', ')}`);
+      return c.json({ error: 'Affiliate not found' }, 404);
+    }
+
+    console.log(`📋 Found affiliate to delete: ${affiliate.name} with stored ID: ${affiliate.id}`);
+
+    // Delete using the affiliate's actual stored ID (which already has the prefix)
+    await kv.del(affiliate.id);
+
+    console.log(`✅ Affiliate deleted: ${affiliate.name} (${affiliate.code})`);
+
+    return c.json({
+      success: true,
+      message: 'Affiliate deleted successfully'
+    });
+  } catch (error) {
+    console.error('Error deleting affiliate:', error);
+    return c.json({ error: 'Failed to delete affiliate' }, 500);
+  }
+});
+
 // ============================================
 // ADS MANAGEMENT ROUTES
 // ============================================

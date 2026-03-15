@@ -52,6 +52,7 @@ const POPIAPage = lazy(() => import('./components/POPIAPage').then(m => ({ defau
 const DisclaimersPage = lazy(() => import('./components/DisclaimersPage').then(m => ({ default: m.DisclaimersPage })));
 const AffiliatePortal = lazy(() => import('./components/AffiliatePortal').then(m => ({ default: m.AffiliatePortal })));
 const InvestorDeck = lazy(() => import('./components/InvestorDeck').then(m => ({ default: m.InvestorDeck })));
+const DownloadApp = lazy(() => import('./DownloadApp'));
 
 // Loading fallback component
 const LoadingFallback = () => {
@@ -85,7 +86,7 @@ export default function App() {
   console.log('🟦 Main App component rendered');
   console.log('🔍 Current view will be: landing');
   
-  const [currentView, setCurrentView] = useState<'landing' | 'customer-app' | 'business-dashboard' | 'business-auth' | 'platform-admin' | 'whatsapp-review' | 'faq' | 'popia' | 'disclaimers' | 'affiliate-portal' | 'investor-deck'>('landing');
+  const [currentView, setCurrentView] = useState<'landing' | 'customer-app' | 'business-dashboard' | 'business-auth' | 'platform-admin' | 'whatsapp-review' | 'faq' | 'popia' | 'disclaimers' | 'affiliate-portal' | 'investor-deck' | 'download'>('landing');
   const [reviewData, setReviewData] = useState<{ businessId?: string; customerName?: string; customerPhone?: string }>({});
   
   // Check if URL is for WhatsApp review
@@ -109,6 +110,13 @@ export default function App() {
         localStorage.setItem('myvibes_affiliate_code_prefill', refCode.toUpperCase());
       }
       setCurrentView('business-auth');
+      return;
+    }
+
+    // Check if URL is /download (smart app download redirect)
+    if (path === '/download' || path === '/download/') {
+      console.log('📱 Download app URL detected, showing smart redirect');
+      setCurrentView('download');
       return;
     }
 
@@ -267,6 +275,10 @@ export default function App() {
             <AdminDashboard onNavigate={setCurrentView} />
           </Suspense>
         </ErrorBoundary>
+      ) : currentView === 'download' ? (
+        <Suspense fallback={<LoadingFallback />}>
+          <DownloadApp />
+        </Suspense>
       ) : (
         <Suspense fallback={<LoadingFallback />}>
           <LandingPage 

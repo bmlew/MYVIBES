@@ -1295,14 +1295,25 @@ export function CustomerApp() {
              // If not found, try Register (auto-create shadow account)
              if (authResp.status === 404 && currentProfile.name) {
                  console.log('👤 User not found, registering shadow account...');
+                 
+                 // Get referral code from localStorage
+                 const referralCode = localStorage.getItem('myvibes_referral_code');
+                 
                  authResp = await fetch(`${authUrl}/register`, {
                      method: 'POST',
                      headers,
                      body: JSON.stringify({ 
                          username: currentProfile.username,
-                         name: currentProfile.name
+                         name: currentProfile.name,
+                         referral_code: referralCode || undefined
                      })
                  });
+                 
+                 // Clear referral code after use
+                 if (referralCode) {
+                     console.log('🎁 Referral code applied:', referralCode);
+                     localStorage.removeItem('myvibes_referral_code');
+                 }
              }
 
              if (authResp.ok) {
