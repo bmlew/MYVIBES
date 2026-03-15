@@ -29,6 +29,7 @@ export function BusinessAuth({ onAuthenticated, onAuthSuccess, onBack }: Busines
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
   const [city, setCity] = useState('');
+  const [postalCode, setPostalCode] = useState('');
   const [affiliateCode, setAffiliateCode] = useState('');
 
   // Auto-fill affiliate code if coming from referral link
@@ -101,6 +102,7 @@ export function BusinessAuth({ onAuthenticated, onAuthSuccess, onBack }: Busines
           phone,
           address,
           city,
+          postal_code: postalCode,
           password,
           affiliate_code: affiliateCode,
           plan: 'standard' 
@@ -367,13 +369,26 @@ export function BusinessAuth({ onAuthenticated, onAuthSuccess, onBack }: Busines
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Full Address</label>
-                  <textarea
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Street Address</label>
+                  <input
+                    type="text"
                     required
                     value={address}
                     onChange={(e) => setAddress(e.target.value)}
-                    className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-cyan-500 outline-none text-sm h-20 resize-none"
-                    placeholder="Street address, suburb, code"
+                    className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-cyan-500 outline-none text-sm"
+                    placeholder="13 Andrew Murray Rd, Bryanston"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Postal Code</label>
+                  <input
+                    type="text"
+                    required
+                    value={postalCode}
+                    onChange={(e) => setPostalCode(e.target.value)}
+                    className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-cyan-500 outline-none text-sm"
+                    placeholder="2191"
                   />
                 </div>
 
