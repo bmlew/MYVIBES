@@ -1481,7 +1481,9 @@ export function CustomerApp() {
               <div className="flex items-center justify-between mb-3">
                 <div>
                   <div className="flex items-center gap-2 mb-1">
-                    <MyVibesLogo className="h-10" />
+                    <div className="bg-white/10 backdrop-blur-sm rounded-lg px-3 py-2 shadow-lg border border-white/20">
+                      <MyVibesLogo variant="white" className="h-10" />
+                    </div>
                     <span className="text-[8px] opacity-50 font-mono">v2.1</span>
                   </div>
                   {/* Customer Name */}

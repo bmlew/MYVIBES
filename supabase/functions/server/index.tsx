@@ -1217,7 +1217,7 @@ app.post("/make-server-175b2872/admin/seed-content", async (c) => {
        }
        
        for (const item of items) {
-          const specialId = item.id || generateUUID();
+          const specialId = item.id || `special:${businessId}:${generateUUID()}`;
           await kv.set(specialId, {
             id: specialId,
             business_id: businessId,
@@ -4058,31 +4058,50 @@ async function getPlatformSettings() {
   let settings = await kv.get('platform:settings');
   
   if (!settings) {
-    // Default configuration
+    // Default configuration with email templates
     settings = {
+      subscriptionPrice: 499,
+      appVersion: '2.1.3',
+      buildNumber: '20250313',
       rewards: {
-        // Customer Referral Settings
-        customer_download_bounty: 20, // R20 per download (immediate)
-        customer_checkin_threshold: 100, // Every 100 check-ins = 1 customer reward
-        customer_checkin_reward: 200, // R200 reward per threshold reached
-        
-        // Business Referral Settings
-        business_subscription_commission_percentage: 15, // 15% of subscription price
-        business_recurring_commission: true, // Pay partner every time business pays
-        
-        // Partner Visit Bonuses
-        partner_visit_bonus_points: 50, // Points when visiting referred business
-        
-        // General Settings
-        checkin_points: 10, // Points per check-in
-        checkin_cooldown_hours: 1 // Hours before next check-in allowed
+        customer_download_bounty: 20,
+        customer_checkin_threshold: 100,
+        customer_checkin_reward: 200,
+        business_subscription_commission_percentage: 15,
+        business_recurring_commission: true,
+        partner_visit_bonus_points: 50,
+        checkin_points: 10,
+        checkin_cooldown_hours: 1
       },
+      subscriptionRenewalEmail: {
+        enabled: true,
+        subject: 'MYVIBES Subscription Renewal Reminder',
+        body: 'Hi {{business_name}},\n\nThis is a friendly reminder that your MYVIBES subscription will renew in {{days_remaining}} days.\n\nPlan: {{plan_type}}\nAmount: R{{amount}}\nRenewal Date: {{renewal_date}}\n\nYour subscription includes:\n✅ Premium listing on MYVIBES\n✅ AI-powered insights & analytics\n✅ Event & special management\n✅ Table reservation system\n✅ Customer engagement tools\n\nIf you have any questions or need to update your payment details, please contact us.\n\nThank you for being part of MYVIBES!\n\nBest regards,\nThe MYVIBES Team',
+        daysBeforeRenewal: 7
+      },
+      subscriptionExpiryEmail: {
+        enabled: true,
+        subject: 'MYVIBES Subscription Expired - Action Required',
+        body: 'Hi {{business_name}},\n\nYour MYVIBES subscription has expired.\n\nYour business listing is currently inactive and will not be visible to customers until your subscription is renewed.\n\nTo reactivate your subscription:\n1. Log in to your MYVIBES dashboard\n2. Navigate to Settings → Subscription\n3. Update your payment details and renew\n\nWe would love to continue helping you grow your business!\n\nFor assistance, contact: support@myvibes.co.za\n\nBest regards,\nThe MYVIBES Team'
+      },
+      welcomeEmail: {
+        enabled: true,
+        subject: 'Welcome to MYVIBES! 🎉',
+        body: 'Hi {{business_name}},\n\nWelcome to MYVIBES! We are thrilled to have you on board.\n\nYour subscription is now active:\nPlan: {{plan_type}}\nAmount: R{{amount}}/month\n\nGetting Started:\n1. Complete your business profile\n2. Upload photos and menus\n3. Create your first special or event\n4. Start accepting table reservations\n\nNeed help? Our team is here for you:\n📧 support@myvibes.co.za\n📱 Check out our Business Guide\n\nLet us make some magic happen! ✨\n\nBest regards,\nThe MYVIBES Team'
+      },
+      paymentFailedEmail: {
+        enabled: true,
+        subject: 'MYVIBES Payment Failed - Update Required',
+        body: 'Hi {{business_name}},\n\nWe attempted to process your MYVIBES subscription payment but it was unsuccessful.\n\nPlan: {{plan_type}}\nAmount: R{{amount}}\n\nTo avoid service interruption:\n1. Log in to your dashboard\n2. Update your payment method\n3. Retry payment\n\nYour listing will remain active for 3 days while we attempt to process payment.\n\nFor assistance: billing@myvibes.co.za\n\nBest regards,\nThe MYVIBES Team'
+      },
+      supportEmail: 'support@myvibes.co.za',
+      billingEmail: 'billing@myvibes.co.za',
       updated_at: new Date().toISOString()
     };
     
     // Save defaults
     await kv.set('platform:settings', settings);
-    console.log('✅ Created default platform settings');
+    console.log('✅ Created default platform settings with email templates');
   }
   
   return settings;

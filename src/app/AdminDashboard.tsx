@@ -24,7 +24,8 @@ import {
   Eye,
   EyeOff,
   BarChart3,
-  Link2
+  Link2,
+  Database
 } from 'lucide-react';
 import { motion } from 'motion/react';
 
@@ -39,12 +40,13 @@ import { MyVibesLogo } from '@/app/components/MyVibesLogo';
 import { PlatformSettings } from './components/admin/PlatformSettings';
 import { AnalyticsDashboard } from './components/admin/AnalyticsDashboard';
 import { AffiliateManagement } from './components/admin/AffiliateManagement';
+import { DataSeeder } from '@/app/components/debug/DataSeeder';
 
 interface AdminDashboardProps {
   onNavigate: (view: 'landing' | 'customer-app' | 'business-dashboard' | 'roi' | 'platform-admin') => void;
 }
 
-type Tab = 'dashboard' | 'users' | 'businesses' | 'banking' | 'subscriptions' | 'social' | 'settings' | 'analytics' | 'affiliates';
+type Tab = 'dashboard' | 'users' | 'businesses' | 'banking' | 'subscriptions' | 'social' | 'settings' | 'analytics' | 'affiliates' | 'debug';
 
 // Admin credentials
 const ADMIN_USERNAME = 'admin';
@@ -293,6 +295,17 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
           >
             <Award className="w-5 h-5" /> Affiliates
           </button>
+
+          <div className="text-xs font-bold text-slate-500 uppercase tracking-wider px-3 mb-2 mt-6">Debug</div>
+          
+          <button 
+            onClick={() => setActiveTab('debug')}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-sm font-medium ${
+              activeTab === 'debug' ? 'bg-cyan-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'
+            }`}
+          >
+            <Link2 className="w-5 h-5" /> Data Seeder
+          </button>
         </nav>
 
         {/* User Profile */}
@@ -377,8 +390,11 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
           {activeTab === 'users' && <UserManagement />}
           {activeTab === 'settings' && <PlatformSettings />}
           {activeTab === 'affiliates' && <AffiliateManagement />}
+          {activeTab === 'debug' && <DataSeeder />}
         </main>
       </div>
     </div>
   );
 }
+
+export { AdminDashboard };

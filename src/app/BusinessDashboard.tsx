@@ -34,13 +34,11 @@ import {
   Clock,
   Trash2,
   Image as ImageIcon,
-  Video,
-  Database
+  Video
 } from 'lucide-react';
 import { PerformanceOverview } from '@/app/components/PerformanceOverview';
 import { RecentCheckIns } from '@/app/components/RecentCheckIns';
 import { Leaderboard } from '@/app/components/Leaderboard';
-import { DataSeeder } from '@/app/components/debug/DataSeeder';
 import { AIInsights } from '@/app/components/AIInsights';
 import { AnalyticsCharts } from '@/app/components/AnalyticsCharts';
 import { BusinessProfileChecklist } from '@/app/components/BusinessProfileChecklist';
@@ -2327,15 +2325,7 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
             <Video className="w-5 h-5" />
             <span>Social Media Ads</span>
           </button>
-          <button
-            onClick={() => setCurrentView('debug')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
-              currentView === 'debug' ? 'bg-white/20' : 'hover:bg-white/10'
-            }`}
-          >
-            <Database className="w-5 h-5" />
-            <span>Debug Tools</span>
-          </button>
+
           <button
             onClick={() => setCurrentView('settings')}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
@@ -2348,11 +2338,6 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
         </nav>
 
         <div className="absolute bottom-6 left-6 right-6">
-          <div className="bg-white/10 rounded-lg p-4 mb-4">
-            <p className="text-xs font-semibold mb-1">Subscription Status</p>
-            <p className="font-bold">Active</p>
-            <p className="text-xs opacity-75 mt-1">{subscriptionPrice}/month</p>
-          </div>
           <button 
             onClick={onLogout}
             className="w-full flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-white/10 transition-colors"
@@ -2377,7 +2362,6 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
             {currentView === 'reviews' && 'Reviews & Ratings'}
             {currentView === 'reservations' && 'Reservations'}
             {currentView === 'ads' && 'Social Media Ads'}
-            {currentView === 'debug' && 'Debug Tools'}
             {currentView === 'settings' && 'Business Settings'}
           </h2>
           <p className="text-gray-600">{businessName || settingsFormData.name}</p>
@@ -4681,13 +4665,6 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
             businessId={businessId}
             businessName={businessName || settingsFormData.name}
           />
-        )}
-
-        {/* Debug Tools */}
-        {currentView === 'debug' && (
-          <div className="space-y-6">
-            <DataSeeder />
-          </div>
         )}
 
         {/* Settings */}
