@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { User, Mail, Phone, ArrowLeft, Check, Calendar, Heart, MapPin, Hash, LogOut, Trophy, Gift } from 'lucide-react';
+import { User, Mail, Phone, ArrowLeft, Check, Calendar, Heart, MapPin, Hash, LogOut, Trophy, Gift, Home } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Achievements } from './Achievements';
@@ -26,9 +26,10 @@ interface CustomerProfileProps {
   onBack: () => void;
   onUpdate: (data: Partial<UserProfile>) => Promise<void>;
   onLogout: () => void;
+  onExit?: () => void;
 }
 
-export function CustomerProfile({ user, onBack, onUpdate, onLogout }: CustomerProfileProps) {
+export function CustomerProfile({ user, onBack, onUpdate, onLogout, onExit }: CustomerProfileProps) {
   const [formData, setFormData] = useState<Partial<UserProfile>>(user);
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -336,7 +337,7 @@ export function CustomerProfile({ user, onBack, onUpdate, onLogout }: CustomerPr
         </div>
 
         {/* Info Card */}
-        <div className="bg-blue-50 border border-blue-200 rounded-2xl p-6">
+        <div className="bg-blue-50 border border-blue-200 rounded-2xl p-6 mb-6">
           <h3 className="font-semibold text-blue-900 mb-2 flex items-center gap-2">
             <Heart className="w-4 h-4" />
             Complete your profile
@@ -349,6 +350,18 @@ export function CustomerProfile({ user, onBack, onUpdate, onLogout }: CustomerPr
             <li>• Add mobile number for reservations</li>
           </ul>
         </div>
+
+        {/* Exit to Landing Button */}
+        {onExit && (
+          <Button
+            onClick={onExit}
+            variant="outline"
+            className="w-full h-12 text-gray-600 hover:text-gray-900 hover:bg-gray-100 border-2 border-gray-200 flex items-center justify-center gap-2"
+          >
+            <Home className="w-5 h-5" />
+            Exit to Home
+          </Button>
+        )}
       </div>
     </div>
   );

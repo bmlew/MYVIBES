@@ -83,6 +83,15 @@ async function apiCall(endpoint: string, options: RequestInit = {}) {
           errorData = { error: errorText };
         }
         
+        // Handle 429 (rate limit) differently - it's not really an error, it's expected behavior
+        if (response.status === 429) {
+          console.log(`[API] ⏰ Rate Limited (429):`, errorData.error || errorText);
+          const error = new Error(errorData.error || errorText);
+          (error as any).status = 429;
+          (error as any).isRateLimit = true;
+          throw error;
+        }
+        
         console.error(`[API] Error ${response.status}:`, errorData);
         console.error(`[API] Headers sent:`, {
           'Content-Type': 'application/json',
@@ -785,6 +794,20 @@ export async function checkUsername(username: string) {
   }
 }
 
+// Check if mobile number exists
+export async function checkMobile(mobile: string) {
+  try {
+    const data = await apiCall('/auth/customer/check-mobile', {
+      method: 'POST',
+      body: JSON.stringify({ mobile })
+    });
+    return data.exists;
+  } catch (error) {
+    console.error('Check mobile failed:', error);
+    return false;
+  }
+}
+
 export async function loginCustomer(username: string) {
   try {
     const data = await apiCall('/auth/customer/login', {
@@ -798,15 +821,41 @@ export async function loginCustomer(username: string) {
   }
 }
 
-export async function registerCustomer(username: string, name: string) {
+// Login with mobile number
+export async function loginCustomerByMobile(mobile: string) {
   try {
-    // Check for referral code
-    const referralCode = localStorage.getItem('myvibes_referral_code');
+    const data = await apiCall('/auth/customer/login-mobile', {
+      method: 'POST',
+      body: JSON.stringify({ mobile })
+    });
+    return data;
+  } catch (error) {
+    console.error('Login by mobile failed:', error);
+    throw error;
+  }
+}
+
+export async function registerCustomer(username: string, name: string, mobile?: string, affiliateCode?: string) {
+  try {
+    // Use provided affiliate code or check for referral code in localStorage
+    const referralCode = affiliateCode || localStorage.getItem('myvibes_referral_code');
     
     const data = await apiCall('/auth/customer/register', {
       method: 'POST',
-      body: JSON.stringify({ username, name, referral_code: referralCode })
+      body: JSON.stringify({ 
+        username, 
+        name, 
+        mobile,
+        referral_code: referralCode 
+      })
     });
+    
+    // Clear referral code from localStorage after successful registration
+    if (referralCode && localStorage.getItem('myvibes_referral_code')) {
+      localStorage.removeItem('myvibes_referral_code');
+      console.log('🎁 Referral code applied and cleared from localStorage');
+    }
+    
     return data;
   } catch (error) {
     console.error('Registration failed:', error);

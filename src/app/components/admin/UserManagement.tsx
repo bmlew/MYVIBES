@@ -27,6 +27,7 @@ interface User {
   lastActive: string;
   mobile?: string;
   city?: string;
+  affiliateCode?: string;
 }
 
 // Custom Dropdown Component
@@ -117,7 +118,7 @@ export function UserManagement() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Edit Form State
-  const [editForm, setEditForm] = useState({ name: '', email: '', mobile: '', city: '', status: '' });
+  const [editForm, setEditForm] = useState({ name: '', email: '', mobile: '', city: '', status: '', affiliateCode: '' });
 
   const API_URL = `https://${projectId}.supabase.co/functions/v1/make-server-175b2872`;
 
@@ -148,7 +149,8 @@ export function UserManagement() {
         spend: c.total_spend || 0,
         lastActive: c.last_active ? new Date(c.last_active).toLocaleString() : 'Never',
         mobile: c.mobile,
-        city: c.city
+        city: c.city,
+        affiliateCode: c.referral_code || c.affiliate_code
       }));
       
       setUsers(mappedUsers);
@@ -195,7 +197,8 @@ export function UserManagement() {
       email: user.email,
       mobile: user.mobile || '',
       city: user.city || '',
-      status: user.status.toLowerCase()
+      status: user.status.toLowerCase(),
+      affiliateCode: user.affiliateCode || ''
     });
     setIsEditOpen(true);
   };
@@ -518,6 +521,19 @@ export function UserManagement() {
                   onChange={(e) => setEditForm({ ...editForm, city: e.target.value })} 
                 />
               </div>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="affiliateCode">Affiliate Code</Label>
+              <Input 
+                id="affiliateCode" 
+                value={editForm.affiliateCode} 
+                onChange={(e) => setEditForm({ ...editForm, affiliateCode: e.target.value.toUpperCase() })} 
+                placeholder="Enter affiliate code if missing"
+                className="uppercase"
+              />
+              <p className="text-xs text-gray-500">
+                Use this field to add or update the customer's affiliate code if they forgot to enter it during registration.
+              </p>
             </div>
             <div className="grid gap-2">
                <Label htmlFor="status">Status</Label>

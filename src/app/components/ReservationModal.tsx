@@ -255,3 +255,5 @@ export function ReservationModal({ business, onClose, userProfile, initialData }
     </div>
   );
 }
+
+export default ReservationModal;

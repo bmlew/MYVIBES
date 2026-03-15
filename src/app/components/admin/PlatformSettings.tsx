@@ -1,26 +1,25 @@
 import { useState, useEffect } from 'react';
+import { AdminDebugPanel } from './AdminDebugPanel';
+import { EmailTest } from '../EmailTest';
+import { MigrationPanel } from '../MigrationPanel';
+import { Button } from '../ui/button';
+import { Card } from '../ui/card';
+import { toast } from "sonner";
+import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { 
   Settings, 
   DollarSign, 
-  Mail, 
+  Save, 
+  RefreshCw, 
+  CheckCircle2, 
+  AlertCircle, 
+  Info, 
   Code, 
-  Save,
-  RefreshCw,
-  CheckCircle2,
-  AlertCircle,
+  Mail, 
   Bell,
-  CreditCard,
-  Info,
-  Trash2,
   AlertTriangle,
-  TrendingUp
+  Trash2
 } from 'lucide-react';
-import { Card } from '../ui/card';
-import { Button } from '../ui/button';
-import * as api from '@/utils/api';
-import { AdminDebugPanel } from './AdminDebugPanel';
-import { toast } from "sonner";
-import { projectId, publicAnonKey } from '/utils/supabase/info';
 
 interface PlatformSettingsConfig {
   // Subscription Pricing
@@ -204,10 +203,23 @@ export function PlatformSettings() {
     try {
       setLoading(true);
       setError('');
-      const response = await api.get('/settings');
       
-      if (response.config) {
-        setConfig({ ...DEFAULT_CONFIG, ...response.config });
+      const response = await fetch(`${API_URL}/settings`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${publicAnonKey}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to load settings');
+      }
+      
+      const data = await response.json();
+      
+      if (data.config) {
+        setConfig({ ...DEFAULT_CONFIG, ...data.config });
       }
     } catch (err: any) {
       console.error('Error loading settings:', err);
@@ -225,7 +237,18 @@ export function PlatformSettings() {
       setError('');
       setSaveSuccess(false);
 
-      await api.post('/settings', { config });
+      const response = await fetch(`${API_URL}/settings`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${publicAnonKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ config })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to save settings');
+      }
 
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
@@ -961,6 +984,9 @@ export function PlatformSettings() {
         </Button>
       </div>
 
+      {/* Email Test */}
+      <EmailTest />
+
       {/* Danger Zone - Reset System */}
       <Card className="p-6 border-2 border-red-200 bg-red-50/30">
         <h3 className="text-xl font-bold mb-4 flex items-center gap-2 text-red-600">
@@ -1009,6 +1035,7 @@ export function PlatformSettings() {
       </Card>
 
       {/* Admin Debug Panel - Only visible in Settings */}
+      <MigrationPanel />
       <AdminDebugPanel />
     </div>
   );

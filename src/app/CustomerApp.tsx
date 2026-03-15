@@ -9,7 +9,14 @@ import {
   Home, 
   Calendar, 
   Heart, 
-  User 
+  User,
+  Settings,
+  Info,
+  ArrowLeft,
+  Shield,
+  HelpCircle,
+  Mail,
+  Globe
 } from 'lucide-react';
 import { CustomerAuthScreen } from './components/CustomerAuthScreen';
 import { UserProfileModal } from './components/UserProfileModal';
@@ -26,12 +33,12 @@ import { MyVibesLogo } from './components/MyVibesLogo';
 
 // Import customer app components
 // Lazy load heavy components for code splitting
-const VenueDetail = lazy(() => import('./components/VenueDetail').then(m => ({ default: m.VenueDetail })));
-const NotificationCenter = lazy(() => import('./components/NotificationCenter').then(m => ({ default: m.NotificationCenter })));
-const SearchFilters = lazy(() => import('./components/SearchFilters').then(m => ({ default: m.SearchFilters })));
-const ReservationModal = lazy(() => import('./components/ReservationModal').then(m => ({ default: m.ReservationModal })));
-const DirectionsModal = lazy(() => import('./components/DirectionsModal').then(m => ({ default: m.DirectionsModal })));
-const MyReservations = lazy(() => import('./components/MyReservations').then(m => ({ default: m.MyReservations })));
+const VenueDetail = lazy(() => import('./components/VenueDetail'));
+const NotificationCenter = lazy(() => import('./components/NotificationCenter'));
+const SearchFilters = lazy(() => import('./components/SearchFilters'));
+const ReservationModal = lazy(() => import('./components/ReservationModal'));
+const DirectionsModal = lazy(() => import('./components/DirectionsModal'));
+const MyReservations = lazy(() => import('./components/MyReservations'));
 
 // Import frequently used components
 import { FilterChip } from './components/FilterChip';
@@ -46,7 +53,7 @@ import { PremiumCarousel } from './components/PremiumCarousel';
 // Constants
 const PLACEHOLDER_IMAGE = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="150" height="150"%3E%3Crect width="150" height="150" fill="%23e5e7eb"/%3E%3C/svg%3E';
 
-type View = 'home' | 'search' | 'events' | 'favorites' | 'profile' | 'venue-detail' | 'notifications' | 'reservations';
+type View = 'home' | 'search' | 'events' | 'favorites' | 'profile' | 'venue-detail' | 'notifications' | 'reservations' | 'settings' | 'about';
 
 interface UserLocation {
   latitude: number;
@@ -114,7 +121,11 @@ const ComponentLoader = () => (
   </div>
 );
 
-export function CustomerApp() {
+interface CustomerAppProps {
+  onExit?: () => void;
+}
+
+export function CustomerApp({ onExit }: CustomerAppProps = {}) {
   // Performance: Only log in development
   if (import.meta.env.DEV) {
     console.log('🔵 CustomerApp component rendered');
@@ -178,6 +189,7 @@ export function CustomerApp() {
   });
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [showProfileSetup, setShowProfileSetup] = useState(false);
+  const [pendingAuthData, setPendingAuthData] = useState<{ mobile?: string; name?: string } | null>(null);
   // Only show loading if we DON'T have a local profile
   const [authLoading, setAuthLoading] = useState(() => {
     return !localStorage.getItem('vibespot_customer_profile');
@@ -313,7 +325,16 @@ export function CustomerApp() {
     setUserProfile(null);
     localStorage.removeItem('vibespot_session_token');
     localStorage.removeItem('vibespot_customer_profile'); // Ensure complete cleanup
+    localStorage.removeItem('vibespot_customer_logged_in');
     setCurrentView('home');
+  };
+
+  // Exit to landing page WITHOUT logging out (keeps session)
+  const handleExit = () => {
+    console.log('👋 Exiting to landing page (session preserved)');
+    if (onExit) {
+      onExit();
+    }
   };
   const [unreadCount, setUnreadCount] = useState(0);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
@@ -1437,10 +1458,11 @@ export function CustomerApp() {
         
         {/* Venue Detail View - Full Screen */}
         {currentView === 'venue-detail' ? (
-          <Suspense fallback={<ComponentLoader />}>
-            <VenueDetail 
-              venueId={selectedVenueId}
-              onBack={() => setCurrentView('home')}
+          selectedVenueId ? (
+            <Suspense fallback={<ComponentLoader />}>
+              <VenueDetail 
+                venueId={selectedVenueId}
+                onBack={() => setCurrentView('home')}
               onReserve={(event) => {
                 if (event) {
                   setReservationInitialData({
@@ -1461,6 +1483,19 @@ export function CustomerApp() {
               locationName={locationName}
             />
           </Suspense>
+          ) : (
+            <div className="h-full flex items-center justify-center bg-white">
+              <div className="text-center p-6">
+                <p className="text-gray-600 mb-4">Invalid venue ID</p>
+                <button 
+                  onClick={() => setCurrentView('home')}
+                  className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 text-white rounded-lg"
+                >
+                  Go Home
+                </button>
+              </div>
+            </div>
+          )
         ) : (
           <>
             {/* Status Bar - Hide on profile view */}
@@ -1652,6 +1687,11 @@ export function CustomerApp() {
                           <div 
                             key={stableKey} 
                             onClick={() => {
+                              console.log('🎨 Special card clicked!');
+                              console.log('📋 Special data:', special);
+                              console.log('🏢 Extracted businessId:', businessId);
+                              console.log('✅ isValidBusinessId:', isValidBusinessId);
+                              
                               if (!isValidBusinessId) {
                                 console.error('❌ Invalid business ID for special:', businessId);
                                 console.warn('⚠️ Special data:', special);
@@ -1660,8 +1700,11 @@ export function CustomerApp() {
                               
                               // Increment view count if special has a real ID
                               if (special.id && special.id.startsWith('special:')) {
+                                console.log('📊 Incrementing view count for special:', special.id);
                                 incrementSpecialViewCount(special.id);
                               }
+                              
+                              console.log('🚀 Calling openVenueDetail with businessId:', businessId);
                               openVenueDetail(businessId);
                             }}
                             className="cursor-pointer flex-shrink-0 w-40"
@@ -2137,6 +2180,7 @@ export function CustomerApp() {
                       onBack={() => setCurrentView('home')}
                       onUpdate={handleUpdateProfile}
                       onLogout={handleLogout}
+                      onExit={handleExit}
                     />
                   ) : (
                         <div className="p-4">
@@ -2163,7 +2207,10 @@ export function CustomerApp() {
 
                           {/* Guest Options */}
                           <div className="space-y-2">
-                            <button className="w-full bg-white rounded-lg p-4 flex items-center justify-between text-left">
+                            <button 
+                              onClick={() => setCurrentView('settings')}
+                              className="w-full bg-white rounded-lg p-4 flex items-center justify-between text-left hover:bg-gray-50 transition-colors"
+                            >
                               <span className="text-sm font-medium">Settings</span>
                               <ChevronRight className="w-4 h-4 text-gray-400" />
                             </button>
@@ -2171,19 +2218,22 @@ export function CustomerApp() {
                               href="https://wa.me/27821234567?text=Hi%20MYVIBES%20Support,%20I%20need%20help%20with..."
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="w-full bg-white rounded-lg p-4 flex items-center justify-between"
+                              className="w-full bg-white rounded-lg p-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
                             >
                               <span className="text-sm font-medium">WhatsApp Support</span>
                               <ChevronRight className="w-4 h-4 text-gray-400" />
                             </a>
                             <a 
                               href="mailto:help@myvibes.co.za"
-                              className="w-full bg-white rounded-lg p-4 flex items-center justify-between"
+                              className="w-full bg-white rounded-lg p-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
                             >
                               <span className="text-sm font-medium">Email Support</span>
                               <ChevronRight className="w-4 h-4 text-gray-400" />
                             </a>
-                            <button className="w-full bg-white rounded-lg p-4 flex items-center justify-between text-left">
+                            <button 
+                              onClick={() => setCurrentView('about')}
+                              className="w-full bg-white rounded-lg p-4 flex items-center justify-between text-left hover:bg-gray-50 transition-colors"
+                            >
                               <span className="text-sm font-medium">About MYVIBES</span>
                               <ChevronRight className="w-4 h-4 text-gray-400" />
                             </button>
@@ -2223,6 +2273,233 @@ export function CustomerApp() {
                       }}
                     />
                   </Suspense>
+                </div>
+              )}
+
+              {/* Settings View */}
+              {currentView === 'settings' && (
+                <div className="h-full bg-gray-50">
+                  {/* Header */}
+                  <div className="bg-white border-b border-gray-200 px-4 py-4 flex items-center gap-3">
+                    <button
+                      onClick={() => setCurrentView('profile')}
+                      className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                    >
+                      <ArrowLeft className="w-5 h-5 text-gray-700" />
+                    </button>
+                    <h1 className="text-xl font-bold text-gray-900">Settings</h1>
+                  </div>
+
+                  {/* Settings Content */}
+                  <div className="p-4 space-y-6">
+                    {/* Account Section */}
+                    <div className="bg-white rounded-xl p-4 space-y-1">
+                      <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Account</h2>
+                      <button className="w-full flex items-center justify-between py-3 border-b border-gray-100 last:border-0">
+                        <div className="flex items-center gap-3">
+                          <User className="w-5 h-5 text-gray-600" />
+                          <span className="text-sm font-medium text-gray-900">Edit Profile</span>
+                        </div>
+                        <ChevronRight className="w-4 h-4 text-gray-400" />
+                      </button>
+                      <button className="w-full flex items-center justify-between py-3 border-b border-gray-100 last:border-0">
+                        <div className="flex items-center gap-3">
+                          <Bell className="w-5 h-5 text-gray-600" />
+                          <span className="text-sm font-medium text-gray-900">Notifications</span>
+                        </div>
+                        <ChevronRight className="w-4 h-4 text-gray-400" />
+                      </button>
+                      <button className="w-full flex items-center justify-between py-3">
+                        <div className="flex items-center gap-3">
+                          <Shield className="w-5 h-5 text-gray-600" />
+                          <span className="text-sm font-medium text-gray-900">Privacy & Security</span>
+                        </div>
+                        <ChevronRight className="w-4 h-4 text-gray-400" />
+                      </button>
+                    </div>
+
+                    {/* Preferences Section */}
+                    <div className="bg-white rounded-xl p-4 space-y-1">
+                      <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Preferences</h2>
+                      <button className="w-full flex items-center justify-between py-3 border-b border-gray-100 last:border-0">
+                        <div className="flex items-center gap-3">
+                          <MapPin className="w-5 h-5 text-gray-600" />
+                          <span className="text-sm font-medium text-gray-900">Location Settings</span>
+                        </div>
+                        <ChevronRight className="w-4 h-4 text-gray-400" />
+                      </button>
+                      <button className="w-full flex items-center justify-between py-3">
+                        <div className="flex items-center gap-3">
+                          <Globe className="w-5 h-5 text-gray-600" />
+                          <span className="text-sm font-medium text-gray-900">Language</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm text-gray-500">English</span>
+                          <ChevronRight className="w-4 h-4 text-gray-400" />
+                        </div>
+                      </button>
+                    </div>
+
+                    {/* Support Section */}
+                    <div className="bg-white rounded-xl p-4 space-y-1">
+                      <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Support</h2>
+                      <a 
+                        href="https://wa.me/27821234567?text=Hi%20MYVIBES%20Support,%20I%20need%20help%20with..."
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full flex items-center justify-between py-3 border-b border-gray-100 last:border-0"
+                      >
+                        <div className="flex items-center gap-3">
+                          <HelpCircle className="w-5 h-5 text-gray-600" />
+                          <span className="text-sm font-medium text-gray-900">Help Center</span>
+                        </div>
+                        <ChevronRight className="w-4 h-4 text-gray-400" />
+                      </a>
+                      <a 
+                        href="mailto:help@myvibes.co.za"
+                        className="w-full flex items-center justify-between py-3 border-b border-gray-100 last:border-0"
+                      >
+                        <div className="flex items-center gap-3">
+                          <Mail className="w-5 h-5 text-gray-600" />
+                          <span className="text-sm font-medium text-gray-900">Contact Support</span>
+                        </div>
+                        <ChevronRight className="w-4 h-4 text-gray-400" />
+                      </a>
+                      <button 
+                        onClick={() => setCurrentView('about')}
+                        className="w-full flex items-center justify-between py-3"
+                      >
+                        <div className="flex items-center gap-3">
+                          <Info className="w-5 h-5 text-gray-600" />
+                          <span className="text-sm font-medium text-gray-900">About MYVIBES</span>
+                        </div>
+                        <ChevronRight className="w-4 h-4 text-gray-400" />
+                      </button>
+                    </div>
+
+                    {/* App Info */}
+                    <div className="text-center py-4">
+                      <p className="text-xs text-gray-500">Version 2.0.0</p>
+                      <p className="text-xs text-gray-400 mt-1">© 2026 MYVIBES. All rights reserved.</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* About MYVIBES View */}
+              {currentView === 'about' && (
+                <div className="h-full bg-gray-50">
+                  {/* Header */}
+                  <div className="bg-white border-b border-gray-200 px-4 py-4 flex items-center gap-3">
+                    <button
+                      onClick={() => setCurrentView('profile')}
+                      className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                    >
+                      <ArrowLeft className="w-5 h-5 text-gray-700" />
+                    </button>
+                    <h1 className="text-xl font-bold text-gray-900">About MYVIBES</h1>
+                  </div>
+
+                  {/* About Content */}
+                  <div className="p-4 space-y-6 overflow-y-auto" style={{ height: 'calc(100vh - 140px)' }}>
+                    {/* Logo & Brand */}
+                    <div className="bg-gradient-to-br from-cyan-500 to-blue-600 rounded-2xl p-8 text-center text-white">
+                      <div className="mb-4">
+                        <MyVibesLogo />
+                      </div>
+                      <h2 className="text-2xl font-bold mb-2">MYVIBES</h2>
+                      <p className="text-cyan-100 text-sm">Your Hospitality Companion</p>
+                      <p className="text-cyan-200 text-xs mt-1">Version 2.0.0</p>
+                    </div>
+
+                    {/* Mission */}
+                    <div className="bg-white rounded-xl p-6">
+                      <h3 className="text-lg font-bold text-gray-900 mb-3">Our Mission</h3>
+                      <p className="text-sm text-gray-700 leading-relaxed">
+                        MYVIBES is revolutionizing the hospitality industry by connecting customers with their favorite venues 
+                        through seamless check-ins, exclusive rewards, and personalized experiences. We believe in creating 
+                        lasting connections between businesses and their valued patrons.
+                      </p>
+                    </div>
+
+                    {/* Key Features */}
+                    <div className="bg-white rounded-xl p-6">
+                      <h3 className="text-lg font-bold text-gray-900 mb-4">Key Features</h3>
+                      <div className="space-y-3">
+                        <div className="flex items-start gap-3">
+                          <div className="w-8 h-8 rounded-lg bg-cyan-100 flex items-center justify-center flex-shrink-0">
+                            <MapPin className="w-4 h-4 text-cyan-600" />
+                          </div>
+                          <div>
+                            <h4 className="text-sm font-semibold text-gray-900">Smart Check-Ins</h4>
+                            <p className="text-xs text-gray-600 mt-1">Earn 10 loyalty points with every visit</p>
+                          </div>
+                        </div>
+                        <div className="flex items-start gap-3">
+                          <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center flex-shrink-0">
+                            <Heart className="w-4 h-4 text-amber-600" />
+                          </div>
+                          <div>
+                            <h4 className="text-sm font-semibold text-gray-900">Rewards Program</h4>
+                            <p className="text-xs text-gray-600 mt-1">Redeem points for exclusive perks and discounts</p>
+                          </div>
+                        </div>
+                        <div className="flex items-start gap-3">
+                          <div className="w-8 h-8 rounded-lg bg-purple-100 flex items-center justify-center flex-shrink-0">
+                            <Calendar className="w-4 h-4 text-purple-600" />
+                          </div>
+                          <div>
+                            <h4 className="text-sm font-semibold text-gray-900">Events & Specials</h4>
+                            <p className="text-xs text-gray-600 mt-1">Discover exclusive deals and upcoming events</p>
+                          </div>
+                        </div>
+                        <div className="flex items-start gap-3">
+                          <div className="w-8 h-8 rounded-lg bg-green-100 flex items-center justify-center flex-shrink-0">
+                            <Search className="w-4 h-4 text-green-600" />
+                          </div>
+                          <div>
+                            <h4 className="text-sm font-semibold text-gray-900">Venue Discovery</h4>
+                            <p className="text-xs text-gray-600 mt-1">Find and explore top venues in your area</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Contact Info */}
+                    <div className="bg-white rounded-xl p-6">
+                      <h3 className="text-lg font-bold text-gray-900 mb-4">Get In Touch</h3>
+                      <div className="space-y-3">
+                        <a 
+                          href="mailto:help@myvibes.co.za"
+                          className="flex items-center gap-3 text-sm text-gray-700 hover:text-cyan-600 transition-colors"
+                        >
+                          <Mail className="w-5 h-5" />
+                          <span>help@myvibes.co.za</span>
+                        </a>
+                        <a 
+                          href="https://wa.me/27821234567"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-3 text-sm text-gray-700 hover:text-cyan-600 transition-colors"
+                        >
+                          <HelpCircle className="w-5 h-5" />
+                          <span>WhatsApp Support</span>
+                        </a>
+                      </div>
+                    </div>
+
+                    {/* Legal */}
+                    <div className="bg-white rounded-xl p-6">
+                      <div className="space-y-2">
+                        <button className="text-sm text-cyan-600 font-medium hover:underline">Terms of Service</button>
+                        <span className="text-gray-300 mx-2">•</span>
+                        <button className="text-sm text-cyan-600 font-medium hover:underline">Privacy Policy</button>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-4">
+                        © 2026 MYVIBES. All rights reserved.
+                      </p>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
@@ -2328,9 +2605,12 @@ export function CustomerApp() {
       {/* Customer Profile Setup - First Time */}
       {showProfileSetup && (
         <CustomerProfileSetup
+          initialMobile={pendingAuthData?.mobile || ''}
+          initialName={pendingAuthData?.name || ''}
           onComplete={() => {
             console.log('🎉 CustomerProfileSetup onComplete called');
             setShowProfileSetup(false);
+            setPendingAuthData(null); // Clear pending data
             // Reload profile from localStorage
             const storedProfile = localStorage.getItem('vibespot_customer_profile');
             const isLoggedIn = localStorage.getItem('vibespot_customer_logged_in');
@@ -2344,6 +2624,7 @@ export function CustomerApp() {
               console.warn('⚠️ No profile found in localStorage after setup');
             }
           }}
+          onExit={handleExit}
         />
       )}
     </div>

@@ -296,3 +296,5 @@ export function NotificationCenter({ userId, onClose, onNotificationClick }: Not
     </div>
   );
 }
+
+export default NotificationCenter;

@@ -71,27 +71,38 @@ export function ReservationsManager({ businessId, businessName }: ReservationsMa
     try {
       setProcessing(reservation.id);
 
+      const url = `https://${projectId}.supabase.co/functions/v1/make-server-175b2872/kv/reservation/${reservation.id}/confirm`;
+      console.log('✅ Confirming reservation:', { url, reservationId: reservation.id, businessName });
+
       // Update reservation status
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-175b2872/kv/reservation/${reservation.id}/confirm`,
-        {
-          method: 'PATCH',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            business_name: businessName
-          })
-        }
-      );
+      const response = await fetch(url, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${publicAnonKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          business_name: businessName
+        })
+      });
+
+      console.log('📡 Response status:', response.status, response.statusText);
 
       if (response.ok) {
+        const data = await response.json();
+        console.log('✅ Confirmation successful:', data);
+        alert('Reservation confirmed successfully!');
         loadReservations();
+      } else {
+        const errorText = await response.text();
+        console.error('❌ Server error:', response.status, errorText);
+        alert(`Failed to confirm reservation: ${response.status} ${response.statusText}`);
       }
     } catch (error) {
-      console.error('Error confirming reservation:', error);
-      alert('Failed to confirm reservation');
+      console.error('❌ Error confirming reservation:', error);
+      console.error('❌ Error type:', error.constructor.name);
+      console.error('❌ Error message:', error.message);
+      alert(`Failed to confirm reservation: ${error.message}`);
     } finally {
       setProcessing(null);
     }
@@ -106,33 +117,41 @@ export function ReservationsManager({ businessId, businessName }: ReservationsMa
     try {
       setProcessing(reservation.id);
 
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-175b2872/kv/reservation/${reservation.id}/reject`,
-        {
-          method: 'PATCH',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            business_name: businessName,
-            reason: rejectionReason
-          })
-        }
-      );
+      const url = `https://${projectId}.supabase.co/functions/v1/make-server-175b2872/kv/reservation/${reservation.id}/reject`;
+      console.log('🔄 Rejecting reservation:', { url, reservationId: reservation.id, businessName });
+
+      const response = await fetch(url, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${publicAnonKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          business_name: businessName,
+          reason: rejectionReason
+        })
+      });
+
+      console.log('📡 Response status:', response.status, response.statusText);
 
       if (response.ok) {
+        const data = await response.json();
+        console.log('✅ Rejection successful:', data);
         alert('Reservation rejected successfully');
         setShowRejectModal(false);
         setRejectionReason('');
         setSelectedReservation(null);
         loadReservations();
       } else {
-        alert('Failed to reject reservation');
+        const errorText = await response.text();
+        console.error('❌ Server error:', response.status, errorText);
+        alert(`Failed to reject reservation: ${response.status} ${response.statusText}`);
       }
     } catch (error) {
-      console.error('Error rejecting reservation:', error);
-      alert('Failed to reject reservation');
+      console.error('❌ Error rejecting reservation:', error);
+      console.error('❌ Error type:', error.constructor.name);
+      console.error('❌ Error message:', error.message);
+      alert(`Failed to reject reservation: ${error.message}`);
     } finally {
       setProcessing(null);
     }
@@ -336,11 +355,11 @@ export function ReservationsManager({ businessId, businessName }: ReservationsMa
                     </div>
                     <div className="flex items-center gap-2 text-gray-600">
                       <Mail className="w-4 h-4 text-cyan-500" />
-                      <span>{reservation.user_email}</span>
+                      <span>{reservation.user_email || reservation.customerEmail}</span>
                     </div>
                     <div className="flex items-center gap-2 text-gray-600">
                       <Phone className="w-4 h-4 text-cyan-500" />
-                      <span>{reservation.user_mobile}</span>
+                      <span>{reservation.user_mobile || reservation.customerPhone || reservation.customer_phone || 'Not provided'}</span>
                     </div>
                   </div>
 
@@ -412,17 +431,17 @@ export function ReservationsManager({ businessId, businessName }: ReservationsMa
 
       {/* Reject Modal */}
       {showRejectModal && selectedReservation && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
-          <Card className="p-6 w-96">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <Card className="p-6 w-96 max-w-md mx-4">
             <h3 className="text-xl font-bold text-gray-900 mb-4">Reject Reservation</h3>
             <p className="text-sm text-gray-600 mb-4">
               Enter the reason for rejecting the reservation:
             </p>
             <textarea
-              className="w-full p-2 border border-gray-300 rounded mb-4"
+              className="w-full p-2 border border-gray-300 rounded mb-4 min-h-[100px]"
               value={rejectionReason}
               onChange={(e) => setRejectionReason(e.target.value)}
-              placeholder="Reason for rejection"
+              placeholder="e.g., Fully booked for that time slot"
             />
             <div className="flex gap-3">
               <Button
@@ -434,9 +453,14 @@ export function ReservationsManager({ businessId, businessName }: ReservationsMa
                 {processing === selectedReservation.id ? 'Rejecting...' : 'Reject'}
               </Button>
               <Button
-                onClick={() => setShowRejectModal(false)}
+                onClick={() => {
+                  setShowRejectModal(false);
+                  setRejectionReason('');
+                  setSelectedReservation(null);
+                }}
                 variant="outline"
                 className="flex-1 border-gray-300 text-gray-600 hover:bg-gray-50"
+                disabled={processing === selectedReservation.id}
               >
                 Cancel
               </Button>

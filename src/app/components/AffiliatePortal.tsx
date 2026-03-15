@@ -5,7 +5,7 @@ import { Input } from './ui/input';
 import { Card } from './ui/card';
 import { toast } from "sonner";
 import { projectId, publicAnonKey } from '/utils/supabase/info';
-import { getReferralLink, getBusinessReferralLink, getCustomerReferralLink } from '/src/config/app';
+import { getReferralLink, getBusinessReferralLink, getCustomerReferralLink } from '../../config/app';
 
 interface AffiliatePortalProps {
   onBack?: () => void;

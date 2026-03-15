@@ -83,16 +83,17 @@ const LoadingFallback = () => {
 type AppMode = 'landing' | 'customer' | 'business' | 'roi' | 'admin';
 
 export default function App() {
-  console.log('🟦 Main App component rendered');
-  console.log('🔍 Current view will be: landing');
-  
   const [currentView, setCurrentView] = useState<'landing' | 'customer-app' | 'business-dashboard' | 'business-auth' | 'platform-admin' | 'whatsapp-review' | 'faq' | 'popia' | 'disclaimers' | 'affiliate-portal' | 'investor-deck' | 'download'>('landing');
+  
+  console.log('🟦 Main App component rendered, currentView:', currentView);
   const [reviewData, setReviewData] = useState<{ businessId?: string; customerName?: string; customerPhone?: string }>({});
   
   // Check if URL is for WhatsApp review
   useEffect(() => {
     const path = window.location.pathname;
     const params = new URLSearchParams(window.location.search);
+    
+    console.log('🌐 URL path detected:', path);
     
     // Check for referral code
     const refCode = params.get('ref') || params.get('referral');
@@ -120,9 +121,9 @@ export default function App() {
       return;
     }
 
-    // Check if URL is /app (customer PWA entry point)
-    if (path === '/app' || path === '/app/') {
-      console.log('🎯 Customer app URL detected, showing customer app');
+    // Check if URL is /app (customer PWA entry point) OR root
+    if (path === '/app' || path === '/app/' || path === '/' || path === '') {
+      console.log('🎯 Customer app URL detected (or root), showing customer app');
       setCurrentView('customer-app');
       return;
     }
@@ -224,7 +225,7 @@ export default function App() {
         </Suspense>
       ) : currentView === 'customer-app' ? (
         <Suspense fallback={<LoadingFallback />}>
-          <CustomerApp />
+          <CustomerApp onExit={() => setCurrentView('landing')} />
         </Suspense>
       ) : currentView === 'business-auth' ? (
         <Suspense fallback={<LoadingFallback />}>

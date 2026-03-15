@@ -1,4 +1,6 @@
 -- VIBESPOT Database Schema
+-- Version: 1.0
+-- Idempotent: Uses IF NOT EXISTS for safe re-runs
 
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
@@ -8,7 +10,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- ============================================
 
 -- Platform configuration table
-CREATE TABLE platform_config (
+CREATE TABLE IF NOT EXISTS platform_config (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   subscription_price DECIMAL(10, 2) NOT NULL DEFAULT 299.00,
   currency VARCHAR(3) NOT NULL DEFAULT 'ZAR',
@@ -20,12 +22,13 @@ CREATE TABLE platform_config (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Insert default configuration
+-- Insert default configuration (only if not exists)
 INSERT INTO platform_config (subscription_price, currency, trial_days) 
-VALUES (299.00, 'ZAR', 14);
+SELECT 299.00, 'ZAR', 14
+WHERE NOT EXISTS (SELECT 1 FROM platform_config LIMIT 1);
 
 -- Platform admin users
-CREATE TABLE platform_admins (
+CREATE TABLE IF NOT EXISTS platform_admins (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   email VARCHAR(255) UNIQUE NOT NULL,
   password_hash TEXT NOT NULL,
@@ -38,11 +41,56 @@ CREATE TABLE platform_admins (
 );
 
 -- ============================================
+-- UNIFIED USERS TABLE
+-- ============================================
+
+-- Unified users table (supports both customers and business owners)
+-- Must be created before businesses table due to foreign key reference
+CREATE TABLE IF NOT EXISTS users (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  email VARCHAR(255) UNIQUE,
+  username VARCHAR(100) UNIQUE,
+  full_name VARCHAR(255) NOT NULL,
+  mobile VARCHAR(50),
+  city VARCHAR(100),
+  
+  -- User type and status
+  role VARCHAR(50) NOT NULL DEFAULT 'customer', -- customer, business_owner, admin
+  status VARCHAR(50) DEFAULT 'active', -- active, suspended, deleted
+  
+  -- Customer-specific fields
+  total_orders INTEGER DEFAULT 0,
+  total_spend DECIMAL(10, 2) DEFAULT 0,
+  loyalty_points INTEGER DEFAULT 0,
+  notification_preference VARCHAR(50) DEFAULT 'email',
+  
+  -- Preferences
+  favorite_cuisines TEXT[],
+  dietary_preferences TEXT[],
+  
+  -- Location
+  last_latitude DECIMAL(10, 8),
+  last_longitude DECIMAL(11, 8),
+  
+  -- Timestamps
+  last_active TIMESTAMP WITH TIME ZONE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Create indexes for users
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
+CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
+CREATE INDEX IF NOT EXISTS idx_users_status ON users(status, role);
+CREATE INDEX IF NOT EXISTS idx_users_city ON users(city) WHERE role = 'customer';
+
+-- ============================================
 -- BUSINESS/VENUE MANAGEMENT
 -- ============================================
 
 -- Business accounts (restaurants/hotels)
-CREATE TABLE businesses (
+CREATE TABLE IF NOT EXISTS businesses (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   name VARCHAR(255) NOT NULL,
   slug VARCHAR(255) UNIQUE NOT NULL,
@@ -72,9 +120,19 @@ CREATE TABLE businesses (
   trial_ends_at TIMESTAMP WITH TIME ZONE,
   
   -- Contact person
+  owner_id UUID REFERENCES users(id) ON DELETE SET NULL,
   owner_name VARCHAR(255),
   owner_email VARCHAR(255),
   owner_phone VARCHAR(50),
+  
+  -- Migration and business metrics
+  category VARCHAR(100),
+  status VARCHAR(50) DEFAULT 'active',
+  plan VARCHAR(50) DEFAULT 'standard',
+  average_rating DECIMAL(3, 2) DEFAULT 0,
+  total_reviews INTEGER DEFAULT 0,
+  total_checkins INTEGER DEFAULT 0,
+  total_revenue DECIMAL(10, 2) DEFAULT 0,
   
   -- Metadata
   is_active BOOLEAN DEFAULT true,
@@ -86,23 +144,56 @@ CREATE TABLE businesses (
 );
 
 -- Create indexes for businesses
-CREATE INDEX idx_businesses_location ON businesses USING GIST (
+CREATE INDEX IF NOT EXISTS idx_businesses_location ON businesses USING GIST (
   ll_to_earth(latitude, longitude)
 );
-CREATE INDEX idx_businesses_status ON businesses(subscription_status);
-CREATE INDEX idx_businesses_city ON businesses(city);
+CREATE INDEX IF NOT EXISTS idx_businesses_status ON businesses(subscription_status);
+CREATE INDEX IF NOT EXISTS idx_businesses_city ON businesses(city);
 
 -- Additional performance indexes for 5000+ records
-CREATE INDEX idx_businesses_status_active ON businesses(subscription_status, is_active) 
+CREATE INDEX IF NOT EXISTS idx_businesses_status_active ON businesses(subscription_status, is_active) 
 WHERE subscription_status IN ('trial', 'active') AND is_active = true;
 
-CREATE INDEX idx_businesses_city_type ON businesses(city, business_type) 
+CREATE INDEX IF NOT EXISTS idx_businesses_city_type ON businesses(city, business_type) 
 WHERE is_active = true;
 
-CREATE INDEX idx_businesses_search ON businesses 
+CREATE INDEX IF NOT EXISTS idx_businesses_search ON businesses 
 USING GIN (to_tsvector('english', name || ' ' || COALESCE(description, '')));
 
-CREATE INDEX idx_businesses_created ON businesses(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_businesses_created ON businesses(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_businesses_owner ON businesses(owner_id);
+
+-- Business locations
+CREATE TABLE IF NOT EXISTS business_locations (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  business_id UUID REFERENCES businesses(id) ON DELETE CASCADE,
+  address TEXT NOT NULL,
+  city VARCHAR(100),
+  province VARCHAR(100),
+  postal_code VARCHAR(20),
+  latitude DECIMAL(10, 8),
+  longitude DECIMAL(11, 8),
+  is_primary BOOLEAN DEFAULT false,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_business_locations_business ON business_locations(business_id);
+CREATE INDEX IF NOT EXISTS idx_business_locations_primary ON business_locations(business_id, is_primary);
+
+-- Business media (images, videos)
+CREATE TABLE IF NOT EXISTS business_media (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  business_id UUID REFERENCES businesses(id) ON DELETE CASCADE,
+  media_type VARCHAR(50) NOT NULL, -- image, video
+  media_url TEXT NOT NULL,
+  is_primary BOOLEAN DEFAULT false,
+  sort_order INTEGER DEFAULT 0,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_business_media_business ON business_media(business_id);
+CREATE INDEX IF NOT EXISTS idx_business_media_primary ON business_media(business_id, is_primary);
 
 -- Enable PostGIS earthdistance for fast geolocation
 CREATE EXTENSION IF NOT EXISTS cube;
@@ -113,7 +204,7 @@ CREATE EXTENSION IF NOT EXISTS earthdistance;
 -- ============================================
 
 -- Subscription plans
-CREATE TABLE subscription_plans (
+CREATE TABLE IF NOT EXISTS subscription_plans (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   name VARCHAR(100) NOT NULL,
   price DECIMAL(10, 2) NOT NULL,
@@ -123,17 +214,19 @@ CREATE TABLE subscription_plans (
   max_events INTEGER,
   is_active BOOLEAN DEFAULT true,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  UNIQUE(name, billing_period)
 );
 
--- Insert default plans
+-- Insert default plans (only if they don't exist)
 INSERT INTO subscription_plans (name, price, billing_period, max_specials, max_events, features) VALUES
 ('Basic', 299.00, 'monthly', 10, 5, '{"analytics": true, "support": "email"}'),
 ('Pro', 499.00, 'monthly', 999, 999, '{"analytics": true, "support": "priority", "featured": true}'),
-('Enterprise', 999.00, 'monthly', 999, 999, '{"analytics": true, "support": "dedicated", "featured": true, "api_access": true}');
+('Enterprise', 999.00, 'monthly', 999, 999, '{"analytics": true, "support": "dedicated", "featured": true, "api_access": true}')
+ON CONFLICT (name, billing_period) DO NOTHING;
 
 -- Payment transactions
-CREATE TABLE payments (
+CREATE TABLE IF NOT EXISTS payments (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   business_id UUID REFERENCES businesses(id) ON DELETE CASCADE,
   
@@ -168,16 +261,16 @@ CREATE TABLE payments (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE INDEX idx_payments_business ON payments(business_id);
-CREATE INDEX idx_payments_status ON payments(status);
-CREATE INDEX idx_payments_date ON payments(created_at);
+CREATE INDEX IF NOT EXISTS idx_payments_business ON payments(business_id);
+CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status);
+CREATE INDEX IF NOT EXISTS idx_payments_date ON payments(created_at);
 
 -- ============================================
 -- MENUS, SPECIALS & EVENTS
 -- ============================================
 
 -- Menu items
-CREATE TABLE menu_items (
+CREATE TABLE IF NOT EXISTS menu_items (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   business_id UUID REFERENCES businesses(id) ON DELETE CASCADE,
   name VARCHAR(255) NOT NULL,
@@ -192,10 +285,10 @@ CREATE TABLE menu_items (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE INDEX idx_menu_items_business ON menu_items(business_id);
+CREATE INDEX IF NOT EXISTS idx_menu_items_business ON menu_items(business_id);
 
 -- Daily specials
-CREATE TABLE specials (
+CREATE TABLE IF NOT EXISTS specials (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   business_id UUID REFERENCES businesses(id) ON DELETE CASCADE,
   title VARCHAR(255) NOT NULL,
@@ -223,11 +316,11 @@ CREATE TABLE specials (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE INDEX idx_specials_business ON specials(business_id);
-CREATE INDEX idx_specials_dates ON specials(start_date, end_date);
+CREATE INDEX IF NOT EXISTS idx_specials_business ON specials(business_id);
+CREATE INDEX IF NOT EXISTS idx_specials_dates ON specials(start_date, end_date);
 
 -- Events
-CREATE TABLE events (
+CREATE TABLE IF NOT EXISTS events (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   business_id UUID REFERENCES businesses(id) ON DELETE CASCADE,
   title VARCHAR(255) NOT NULL,
@@ -259,15 +352,29 @@ CREATE TABLE events (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE INDEX idx_events_business ON events(business_id);
-CREATE INDEX idx_events_date ON events(event_date);
+CREATE INDEX IF NOT EXISTS idx_events_business ON events(business_id);
+CREATE INDEX IF NOT EXISTS idx_events_date ON events(event_date);
 
 -- ============================================
 -- CUSTOMER MANAGEMENT
 -- ============================================
 
+-- Loyalty points ledger for tracking all point transactions
+CREATE TABLE IF NOT EXISTS loyalty_points_ledger (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  points INTEGER NOT NULL,
+  transaction_type VARCHAR(50) NOT NULL, -- earned, redeemed, expired, bonus, migration
+  description TEXT,
+  business_id UUID REFERENCES businesses(id) ON DELETE SET NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_loyalty_ledger_user ON loyalty_points_ledger(user_id);
+CREATE INDEX IF NOT EXISTS idx_loyalty_ledger_date ON loyalty_points_ledger(created_at DESC);
+
 -- Customers (app users)
-CREATE TABLE customers (
+CREATE TABLE IF NOT EXISTS customers (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   email VARCHAR(255) UNIQUE,
   phone VARCHAR(50),
@@ -290,7 +397,7 @@ CREATE TABLE customers (
 );
 
 -- Customer favorites
-CREATE TABLE customer_favorites (
+CREATE TABLE IF NOT EXISTS customer_favorites (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   customer_id UUID REFERENCES customers(id) ON DELETE CASCADE,
   business_id UUID REFERENCES businesses(id) ON DELETE CASCADE,
@@ -299,7 +406,7 @@ CREATE TABLE customer_favorites (
 );
 
 -- Customer event interests
-CREATE TABLE customer_event_interests (
+CREATE TABLE IF NOT EXISTS customer_event_interests (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   customer_id UUID REFERENCES customers(id) ON DELETE CASCADE,
   event_id UUID REFERENCES events(id) ON DELETE CASCADE,
@@ -308,11 +415,136 @@ CREATE TABLE customer_event_interests (
 );
 
 -- ============================================
+-- RESERVATIONS & CHECK-INS
+-- ============================================
+
+-- Reservations
+CREATE TABLE IF NOT EXISTS reservations (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  business_id UUID REFERENCES businesses(id) ON DELETE CASCADE,
+  party_size INTEGER NOT NULL,
+  reservation_date DATE NOT NULL,
+  reservation_time TIME NOT NULL,
+  status VARCHAR(50) DEFAULT 'pending', -- pending, confirmed, cancelled, completed
+  special_requests TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_reservations_user ON reservations(user_id);
+CREATE INDEX IF NOT EXISTS idx_reservations_business ON reservations(business_id);
+CREATE INDEX IF NOT EXISTS idx_reservations_date ON reservations(reservation_date);
+CREATE INDEX IF NOT EXISTS idx_reservations_status ON reservations(status);
+
+-- Check-ins
+CREATE TABLE IF NOT EXISTS check_ins (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  business_id UUID REFERENCES businesses(id) ON DELETE CASCADE,
+  check_in_time TIMESTAMP WITH TIME ZONE NOT NULL,
+  points_earned INTEGER DEFAULT 10,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_check_ins_user ON check_ins(user_id);
+CREATE INDEX IF NOT EXISTS idx_check_ins_business ON check_ins(business_id);
+CREATE INDEX IF NOT EXISTS idx_check_ins_time ON check_ins(check_in_time DESC);
+
+-- ============================================
+-- PARTNERS & REFERRALS
+-- ============================================
+
+-- Partners (affiliates/influencers)
+CREATE TABLE IF NOT EXISTS partners (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name VARCHAR(255) NOT NULL,
+  email VARCHAR(255) UNIQUE,
+  phone VARCHAR(50),
+  status VARCHAR(50) DEFAULT 'active', -- active, suspended, inactive
+  total_earnings DECIMAL(10, 2) DEFAULT 0,
+  available_balance DECIMAL(10, 2) DEFAULT 0,
+  pending_balance DECIMAL(10, 2) DEFAULT 0,
+  total_referrals INTEGER DEFAULT 0,
+  total_business_referrals INTEGER DEFAULT 0,
+  total_customer_referrals INTEGER DEFAULT 0,
+  app_downloads INTEGER DEFAULT 0,
+  joined_at TIMESTAMP WITH TIME ZONE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_partners_email ON partners(email);
+CREATE INDEX IF NOT EXISTS idx_partners_status ON partners(status);
+
+-- Referral codes
+CREATE TABLE IF NOT EXISTS referral_codes (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  partner_id UUID REFERENCES partners(id) ON DELETE CASCADE,
+  code VARCHAR(50) UNIQUE NOT NULL,
+  is_active BOOLEAN DEFAULT true,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_referral_codes_partner ON referral_codes(partner_id);
+CREATE INDEX IF NOT EXISTS idx_referral_codes_code ON referral_codes(code);
+
+-- Partner commissions
+CREATE TABLE IF NOT EXISTS partner_commissions (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  partner_id UUID REFERENCES partners(id) ON DELETE CASCADE,
+  amount DECIMAL(10, 2) NOT NULL,
+  commission_type VARCHAR(50) NOT NULL, -- customer_download, business_referral, visit_bonus
+  description TEXT,
+  status VARCHAR(50) DEFAULT 'pending', -- pending, paid, cancelled
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_partner_commissions_partner ON partner_commissions(partner_id);
+CREATE INDEX IF NOT EXISTS idx_partner_commissions_status ON partner_commissions(status);
+CREATE INDEX IF NOT EXISTS idx_partner_commissions_date ON partner_commissions(created_at DESC);
+
+-- ============================================
+-- NOTIFICATIONS
+-- ============================================
+
+-- Notifications
+CREATE TABLE IF NOT EXISTS notifications (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  title VARCHAR(255) NOT NULL,
+  message TEXT NOT NULL,
+  type VARCHAR(50) DEFAULT 'info', -- info, success, warning, error, promo
+  is_read BOOLEAN DEFAULT false,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications(user_id, is_read);
+CREATE INDEX IF NOT EXISTS idx_notifications_date ON notifications(created_at DESC);
+
+-- ============================================
+-- SPECIAL TRACKING
+-- ============================================
+
+-- Special clicks tracking
+CREATE TABLE IF NOT EXISTS special_clicks (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  business_id UUID REFERENCES businesses(id) ON DELETE CASCADE,
+  click_type VARCHAR(50) NOT NULL, -- call, directions, website, menu
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_special_clicks_business ON special_clicks(business_id);
+CREATE INDEX IF NOT EXISTS idx_special_clicks_type ON special_clicks(business_id, click_type);
+CREATE INDEX IF NOT EXISTS idx_special_clicks_date ON special_clicks(created_at DESC);
+
+-- ============================================
 -- ANALYTICS & TRACKING
 -- ============================================
 
 -- Business analytics
-CREATE TABLE business_analytics (
+CREATE TABLE IF NOT EXISTS business_analytics (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   business_id UUID REFERENCES businesses(id) ON DELETE CASCADE,
   date DATE NOT NULL,
@@ -332,7 +564,7 @@ CREATE TABLE business_analytics (
 );
 
 -- Platform-wide analytics
-CREATE TABLE platform_analytics (
+CREATE TABLE IF NOT EXISTS platform_analytics (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   date DATE NOT NULL UNIQUE,
   
@@ -360,7 +592,7 @@ CREATE TABLE platform_analytics (
 -- ============================================
 
 -- Audit log for admin actions
-CREATE TABLE audit_logs (
+CREATE TABLE IF NOT EXISTS audit_logs (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   admin_id UUID REFERENCES platform_admins(id),
   action VARCHAR(100) NOT NULL,
@@ -373,8 +605,8 @@ CREATE TABLE audit_logs (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE INDEX idx_audit_logs_admin ON audit_logs(admin_id);
-CREATE INDEX idx_audit_logs_date ON audit_logs(created_at);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_admin ON audit_logs(admin_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_date ON audit_logs(created_at);
 
 -- ============================================
 -- FUNCTIONS & TRIGGERS

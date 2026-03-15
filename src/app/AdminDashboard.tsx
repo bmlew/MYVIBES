@@ -41,12 +41,14 @@ import { PlatformSettings } from './components/admin/PlatformSettings';
 import { AnalyticsDashboard } from './components/admin/AnalyticsDashboard';
 import { AffiliateManagement } from './components/admin/AffiliateManagement';
 import { DataSeeder } from '@/app/components/debug/DataSeeder';
+import { RewardsManagement } from './components/admin/RewardsManagement';
+import { AchievementsManagement } from './components/admin/AchievementsManagement';
 
 interface AdminDashboardProps {
   onNavigate: (view: 'landing' | 'customer-app' | 'business-dashboard' | 'roi' | 'platform-admin') => void;
 }
 
-type Tab = 'dashboard' | 'users' | 'businesses' | 'banking' | 'subscriptions' | 'social' | 'settings' | 'analytics' | 'affiliates' | 'debug';
+type Tab = 'dashboard' | 'users' | 'businesses' | 'banking' | 'subscriptions' | 'social' | 'settings' | 'analytics' | 'affiliates' | 'rewards' | 'achievements' | 'debug';
 
 // Admin credentials
 const ADMIN_USERNAME = 'admin';
@@ -296,6 +298,28 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
             <Award className="w-5 h-5" /> Affiliates
           </button>
 
+          <div className="text-xs font-bold text-slate-500 uppercase tracking-wider px-3 mb-2 mt-6">Rewards</div>
+          
+          <button 
+            onClick={() => setActiveTab('rewards')}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-sm font-medium ${
+              activeTab === 'rewards' ? 'bg-cyan-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'
+            }`}
+          >
+            <Award className="w-5 h-5" /> Rewards
+          </button>
+
+          <div className="text-xs font-bold text-slate-500 uppercase tracking-wider px-3 mb-2 mt-6">Achievements</div>
+          
+          <button 
+            onClick={() => setActiveTab('achievements')}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-sm font-medium ${
+              activeTab === 'achievements' ? 'bg-cyan-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'
+            }`}
+          >
+            <Award className="w-5 h-5" /> Achievements
+          </button>
+
           <div className="text-xs font-bold text-slate-500 uppercase tracking-wider px-3 mb-2 mt-6">Debug</div>
           
           <button 
@@ -390,6 +414,8 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
           {activeTab === 'users' && <UserManagement />}
           {activeTab === 'settings' && <PlatformSettings />}
           {activeTab === 'affiliates' && <AffiliateManagement />}
+          {activeTab === 'rewards' && <RewardsManagement />}
+          {activeTab === 'achievements' && <AchievementsManagement />}
           {activeTab === 'debug' && <DataSeeder />}
         </main>
       </div>

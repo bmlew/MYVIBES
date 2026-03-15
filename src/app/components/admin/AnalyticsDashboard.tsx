@@ -164,10 +164,14 @@ function getViewTitle(view: ViewType): string {
 // ============================================
 function OverviewView({ analytics, onDrillDown, loading }: any) {
   // Memoize chart data to prevent duplicate key errors
-  const revenueData = React.useMemo(() => 
-    analytics?.revenue?.sources || generateMockRevenueData(),
-    [analytics?.revenue?.sources]
-  );
+  const revenueData = React.useMemo(() => {
+    const sources = analytics?.revenue?.sources || generateMockRevenueData();
+    // Ensure unique keys by adding index if names are duplicated
+    return sources.map((item: any, idx: number) => ({
+      ...item,
+      uniqueId: `${item.name}-${idx}-${item.value}`
+    }));
+  }, [analytics?.revenue?.sources]);
 
   const metrics: MetricCard[] = [
     {
@@ -325,7 +329,7 @@ function OverviewView({ analytics, onDrillDown, loading }: any) {
                   dataKey="value"
                 >
                   {revenueData.map((entry: any, index: number) => (
-                    <Cell key={`revenue-cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    <Cell key={entry.uniqueId || `revenue-cell-${index}`} fill={COLORS[index % COLORS.length]} />
                   ))}
                 </Pie>
                 <Tooltip />
@@ -334,7 +338,7 @@ function OverviewView({ analytics, onDrillDown, loading }: any) {
           </div>
           <div className="mt-4 grid grid-cols-2 gap-2">
             {revenueData.map((item: any, index: number) => (
-              <div key={`revenue-legend-${index}`} className="flex items-center gap-2">
+              <div key={item.uniqueId || `revenue-legend-${index}`} className="flex items-center gap-2">
                 <div 
                   className="w-3 h-3 rounded-full" 
                   style={{ backgroundColor: COLORS[index % COLORS.length] }}

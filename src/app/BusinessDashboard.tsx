@@ -2210,6 +2210,14 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
         </button>
       </div>
 
+      {/* Mobile Menu Backdrop Overlay */}
+      {isMobileMenuOpen && (
+        <div 
+          className="lg:hidden fixed inset-0 bg-black/50 z-30 transition-opacity duration-300"
+          onClick={() => setIsMobileMenuOpen(false)}
+        />
+      )}
+
       {/* Sidebar - Desktop & Mobile Overlay */}
       <div className={`
         fixed left-0 top-0 h-full w-64 bg-gradient-to-b from-cyan-500 via-cyan-600 to-blue-600 text-white p-6 z-40 transition-transform duration-300
@@ -2240,7 +2248,10 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
 
         <nav className="space-y-2 overflow-y-auto pb-48 max-h-[calc(100vh-200px)]">
           <button
-            onClick={() => setCurrentView('overview')}
+            onClick={() => {
+              setCurrentView('overview');
+              setIsMobileMenuOpen(false);
+            }}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
               currentView === 'overview' ? 'bg-white/20' : 'hover:bg-white/10'
             }`}
@@ -2249,7 +2260,10 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
             <span>Overview</span>
           </button>
           <button
-            onClick={() => setCurrentView('menu')}
+            onClick={() => {
+              setCurrentView('menu');
+              setIsMobileMenuOpen(false);
+            }}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
               currentView === 'menu' ? 'bg-white/20' : 'hover:bg-white/10'
             }`}
@@ -2258,7 +2272,10 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
             <span>Menu</span>
           </button>
           <button
-            onClick={() => setCurrentView('specials')}
+            onClick={() => {
+              setCurrentView('specials');
+              setIsMobileMenuOpen(false);
+            }}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
               currentView === 'specials' ? 'bg-white/20' : 'hover:bg-white/10'
             }`}
@@ -2267,7 +2284,10 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
             <span>Specials & Deals</span>
           </button>
           <button
-            onClick={() => setCurrentView('events')}
+            onClick={() => {
+              setCurrentView('events');
+              setIsMobileMenuOpen(false);
+            }}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
               currentView === 'events' ? 'bg-white/20' : 'hover:bg-white/10'
             }`}
@@ -2276,7 +2296,10 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
             <span>Events</span>
           </button>
           <button
-            onClick={() => setCurrentView('analytics')}
+            onClick={() => {
+              setCurrentView('analytics');
+              setIsMobileMenuOpen(false);
+            }}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
               currentView === 'analytics' ? 'bg-white/20' : 'hover:bg-white/10'
             }`}
@@ -2285,7 +2308,10 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
             <span>Analytics</span>
           </button>
           <button
-            onClick={() => setCurrentView('ml-insights')}
+            onClick={() => {
+              setCurrentView('ml-insights');
+              setIsMobileMenuOpen(false);
+            }}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
               currentView === 'ml-insights' ? 'bg-white/20' : 'hover:bg-white/10'
             }`}
@@ -2299,7 +2325,10 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
             )}
           </button>
           <button
-            onClick={() => setCurrentView('reviews')}
+            onClick={() => {
+              setCurrentView('reviews');
+              setIsMobileMenuOpen(false);
+            }}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
               currentView === 'reviews' ? 'bg-white/20' : 'hover:bg-white/10'
             }`}
@@ -2308,7 +2337,10 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
             <span>Reviews</span>
           </button>
           <button
-            onClick={() => setCurrentView('reservations')}
+            onClick={() => {
+              setCurrentView('reservations');
+              setIsMobileMenuOpen(false);
+            }}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
               currentView === 'reservations' ? 'bg-white/20' : 'hover:bg-white/10'
             }`}
@@ -2317,7 +2349,10 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
             <span>Reservations</span>
           </button>
           <button
-            onClick={() => setCurrentView('ads')}
+            onClick={() => {
+              setCurrentView('ads');
+              setIsMobileMenuOpen(false);
+            }}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
               currentView === 'ads' ? 'bg-white/20' : 'hover:bg-white/10'
             }`}
@@ -2327,7 +2362,10 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
           </button>
 
           <button
-            onClick={() => setCurrentView('settings')}
+            onClick={() => {
+              setCurrentView('settings');
+              setIsMobileMenuOpen(false);
+            }}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
               currentView === 'settings' ? 'bg-white/20' : 'hover:bg-white/10'
             }`}
@@ -2339,7 +2377,10 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
 
         <div className="absolute bottom-6 left-6 right-6">
           <button 
-            onClick={onLogout}
+            onClick={() => {
+              setIsMobileMenuOpen(false);
+              onLogout();
+            }}
             className="w-full flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-white/10 transition-colors"
           >
             <LogOut className="w-5 h-5" />

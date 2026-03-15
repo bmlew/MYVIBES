@@ -182,6 +182,16 @@ export function VenueDetail({ venueId, onBack, onReserve, onGetDirections, dista
 
     } catch (error: any) {
       console.error("❌ Check-in failed:", error);
+      
+      // Check if this is a rate limit error (expected behavior)
+      if (error.status === 429 || error.isRateLimit) {
+        console.log('⏰ Check-in on cooldown (this is normal)');
+        toast.info("Already Checked In", {
+          description: error.message || "You've already checked in recently. Try again later!"
+        });
+        return;
+      }
+      
       // Extract error message from API response if possible
       let msg = "Failed to check in";
       if (error.message) msg = error.message;
@@ -194,6 +204,7 @@ export function VenueDetail({ venueId, onBack, onReserve, onGetDirections, dista
 
   // Memoize fetchVenueData to prevent recreation on every render
   const fetchVenueData = useCallback(async (forceRefresh = false) => {
+    console.log('🔍 [VenueDetail] Fetching data for venueId:', venueId);
     try {
       if (forceRefresh) {
         setIsRefreshing(true);
@@ -201,9 +212,12 @@ export function VenueDetail({ venueId, onBack, onReserve, onGetDirections, dista
         setLoading(true);
       }
 
+      console.log('📡 [VenueDetail] Calling API getBusinessById...');
       const data = await api.getBusinessById(venueId, forceRefresh);
+      console.log('📦 [VenueDetail] API response:', data);
       
       if (data?.business) {
+        console.log('✅ [VenueDetail] Business data received:', data.business.name);
         // Merge separate data arrays into the business object for easy access in UI
         const fullBusinessData = {
           ...data.business,
@@ -219,10 +233,17 @@ export function VenueDetail({ venueId, onBack, onReserve, onGetDirections, dista
           onVenueDataLoaded(fullBusinessData);
         }
       } else {
-        console.error('No business data returned');
+        console.error('❌ [VenueDetail] No business data returned for venueId:', venueId);
+        console.error('❌ [VenueDetail] Full response:', data);
+        setBusiness(null);
       }
     } catch (error) {
-      console.error('Error fetching venue data:', error);
+      console.error('❌ [VenueDetail] Error fetching venue data:', error);
+      console.error('❌ [VenueDetail] Error details:', {
+        venueId,
+        error: error instanceof Error ? error.message : String(error)
+      });
+      setBusiness(null);
     } finally {
       setLoading(false);
       setIsRefreshing(false);
@@ -574,7 +595,7 @@ export function VenueDetail({ venueId, onBack, onReserve, onGetDirections, dista
       </div>
 
       {/* Tabs */}
-      <Tabs defaultValue="menu" className="flex-1 flex flex-col overflow-hidden">
+      <Tabs defaultValue="menu" className="flex-1 flex flex-col min-h-0">
         <TabsList className="w-full justify-start rounded-none border-b border-gray-100 bg-white px-6">
           <TabsTrigger value="menu" className="data-[state=active]:border-purple-600 data-[state=active]:text-purple-600">
             Menu
@@ -648,7 +669,7 @@ export function VenueDetail({ venueId, onBack, onReserve, onGetDirections, dista
           )}
         </TabsContent>
 
-        <TabsContent value="specials" className="p-6 mt-0 pb-24">
+        <TabsContent value="specials" className="flex-1 overflow-y-auto p-6 mt-0 pb-24">
           <h3 className="font-bold text-lg mb-4">Today's Specials</h3>
           {business.specials.length === 0 ? (
             <div className="text-center py-8 text-gray-500">
@@ -670,7 +691,7 @@ export function VenueDetail({ venueId, onBack, onReserve, onGetDirections, dista
           )}
         </TabsContent>
 
-        <TabsContent value="events" className="p-6 mt-0 pb-24">
+        <TabsContent value="events" className="flex-1 overflow-y-auto p-6 mt-0 pb-24">
           <h3 className="font-bold text-lg mb-4">Upcoming Events</h3>
           {business.events.length === 0 ? (
             <div className="text-center py-8 text-gray-500">
@@ -753,15 +774,15 @@ export function VenueDetail({ venueId, onBack, onReserve, onGetDirections, dista
           )}
         </TabsContent>
 
-        <TabsContent value="leaderboard" className="p-6 mt-0 pb-24">
+        <TabsContent value="leaderboard" className="flex-1 overflow-y-auto p-6 mt-0 pb-24">
           <Leaderboard businessId={venueId} />
         </TabsContent>
 
-        <TabsContent value="reviews" className="p-6 mt-0 pb-24 h-full overflow-y-auto">
+        <TabsContent value="reviews" className="flex-1 overflow-y-auto p-6 mt-0 pb-24">
           <RatingReview businessId={venueId} />
         </TabsContent>
 
-        <TabsContent value="about" className="p-6 mt-0 pb-24">
+        <TabsContent value="about" className="flex-1 overflow-y-auto p-6 mt-0 pb-24">
           <h3 className="font-bold text-lg mb-4">About {business.name}</h3>
           <p className="text-sm text-gray-600 mb-6">
             {business.description}
@@ -859,3 +880,5 @@ export function VenueDetail({ venueId, onBack, onReserve, onGetDirections, dista
     </div>
   );
 }
+
+export default VenueDetail;

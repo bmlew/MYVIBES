@@ -4,8 +4,9 @@ import { logger } from "npm:hono/logger";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import * as kv from './kv_store.tsx';
 import { seedDatabase } from './seed_data.tsx';
-import { sendReservationConfirmation, sendBusinessNotification, sendEmail } from './notifications.tsx';
+import { sendReservationConfirmation, sendReservationRejection, sendBusinessNotification, sendEmail } from './notifications.tsx';
 import { runMigration } from './migrate-kv-to-postgres.tsx';
+// import * as dualWrite from './dual_write.tsx'; // Disabled for now
 
 const app = new Hono();
 
@@ -15,7 +16,7 @@ const app = new Hono();
 
 app.use('*', cors({
   origin: '*',
-  allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowHeaders: ['Content-Type', 'Authorization', 'X-Session-Token'],
   exposeHeaders: ['Content-Length'],
   maxAge: 86400,
@@ -1408,6 +1409,74 @@ app.get("/make-server-175b2872/kv/businesses", async (c) => {
   }
 });
 
+// Alias: Get all businesses without /kv prefix (for compatibility)
+app.get("/make-server-175b2872/businesses", async (c) => {
+  try {
+    c.header('Cache-Control', 'public, max-age=60, stale-while-revalidate=120');
+    
+    const page = parseInt(c.req.query('page') || '1');
+    const limit = parseInt(c.req.query('limit') || '20');
+    const offset = (page - 1) * limit;
+    
+    const allBusinesses = await kv.getByPrefix('business:');
+    
+    const isAdmin = c.req.query('admin') === 'true';
+
+    const businessesToReturn = isAdmin ? allBusinesses : allBusinesses.filter((b: any) => 
+      b.is_active === true && 
+      (b.payment_status === 'paid' || b.payment_status === 'grace' || 
+       b.subscription_status === 'active' || b.subscription_status === 'grace')
+    );
+    
+    const lat = c.req.query('lat');
+    const lng = c.req.query('lng');
+    const radius = parseFloat(c.req.query('radius') || '0');
+    
+    const businessesWithDistance = businessesToReturn.map((b: any) => {
+      if (lat && lng && b.latitude && b.longitude) {
+        const distance = calculateDistance(
+          parseFloat(lat),
+          parseFloat(lng),
+          b.latitude,
+          b.longitude
+        );
+        return { ...b, distance };
+      }
+      return b;
+    });
+    
+    // Filter by radius if provided
+    let filteredByDistance = businessesWithDistance;
+    if (lat && lng && radius > 0) {
+        filteredByDistance = businessesWithDistance.filter((b: any) => (b.distance || 0) <= radius);
+    }
+
+    if (lat && lng) {
+      filteredByDistance.sort((a: any, b: any) => (a.distance || 999) - (b.distance || 999));
+    }
+    
+    const total = filteredByDistance.length;
+    const paginatedData = filteredByDistance.slice(offset, offset + limit);
+    
+    // Sign URLs for the paginated subset
+    const signedData = await Promise.all(paginatedData.map(async (b: any) => await signBusinessUrls(b)));
+
+    return c.json({
+      data: signedData,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+        hasMore: offset + limit < total
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching businesses:', error);
+    return c.json({ error: 'Failed to fetch businesses' }, 500);
+  }
+});
+
 // Get business by ID (Public)
 app.get("/make-server-175b2872/kv/businesses/:id", async (c) => {
   try {
@@ -1634,6 +1703,38 @@ app.delete("/make-server-175b2872/kv/specials/:id", async (c) => {
   }
 });
 
+// Increment special view count (public endpoint - no auth required)
+app.post("/make-server-175b2872/kv/specials/:id/increment-view", async (c) => {
+  try {
+    const id = c.req.param('id');
+    
+    // Validate ID format
+    if (!id || !id.startsWith('special:')) {
+      return c.json({ error: 'Invalid special ID format' }, 400);
+    }
+    
+    const existing = await kv.get(id);
+    if (!existing) {
+      return c.json({ error: 'Special not found' }, 404);
+    }
+    
+    // Increment view count
+    const updated = { 
+      ...existing, 
+      view_count: (existing.view_count || 0) + 1,
+      last_viewed_at: new Date().toISOString()
+    };
+    
+    await kv.set(id, updated);
+    console.log(`✅ View count incremented for special ${id}: ${updated.view_count}`);
+    
+    return c.json({ success: true, view_count: updated.view_count });
+  } catch (error) {
+    console.error('Error incrementing special view count:', error);
+    return c.json({ error: 'Failed to increment view count' }, 500);
+  }
+});
+
 // --- EVENTS ---
 
 // Get all events
@@ -1722,6 +1823,38 @@ app.delete("/make-server-175b2872/kv/events/:id", async (c) => {
   } catch (error) {
     console.error('Error deleting event:', error);
     return c.json({ error: 'Failed to delete event' }, 500);
+  }
+});
+
+// Increment event view count (public endpoint - no auth required)
+app.post("/make-server-175b2872/kv/events/:id/increment-view", async (c) => {
+  try {
+    const id = c.req.param('id');
+    
+    // Validate ID format
+    if (!id || !id.startsWith('event:')) {
+      return c.json({ error: 'Invalid event ID format' }, 400);
+    }
+    
+    const existing = await kv.get(id);
+    if (!existing) {
+      return c.json({ error: 'Event not found' }, 404);
+    }
+    
+    // Increment view count
+    const updated = { 
+      ...existing, 
+      view_count: (existing.view_count || 0) + 1,
+      last_viewed_at: new Date().toISOString()
+    };
+    
+    await kv.set(id, updated);
+    console.log(`✅ View count incremented for event ${id}: ${updated.view_count}`);
+    
+    return c.json({ success: true, view_count: updated.view_count });
+  } catch (error) {
+    console.error('Error incrementing event view count:', error);
+    return c.json({ error: 'Failed to increment view count' }, 500);
   }
 });
 
@@ -3395,19 +3528,29 @@ app.post("/make-server-175b2872/auth/customer/continue-with-email", async (c) =>
 // Register Customer
 app.post("/make-server-175b2872/auth/customer/register", async (c) => {
   try {
-    const { username, name, referral_code } = await c.req.json();
+    const { username, name, mobile, referral_code } = await c.req.json();
     
     if (!username || !name) {
       return c.json({ error: 'Username and Name are required' }, 400);
     }
 
     const cleanUsername = username.toLowerCase().trim();
+    const cleanMobile = mobile ? mobile.trim() : '';
     const lookupKey = `customer_lookup:username:${cleanUsername}`;
     
     // Check uniqueness
     const existingId = await kv.get(lookupKey);
     if (existingId) {
       return c.json({ error: 'Username is already taken' }, 400);
+    }
+
+    // Check mobile uniqueness if provided
+    if (cleanMobile) {
+      const mobileLookupKey = `customer_lookup:mobile:${cleanMobile}`;
+      const existingMobile = await kv.get(mobileLookupKey);
+      if (existingMobile) {
+        return c.json({ error: 'Mobile number already registered' }, 400);
+      }
     }
     
     // ✨ Handle Referral / Influencer Code (universal code)
@@ -3433,7 +3576,7 @@ app.post("/make-server-175b2872/auth/customer/register", async (c) => {
       username: cleanUsername,
       name,
       email: '', // Optional details filled later
-      mobile: '',
+      mobile: cleanMobile,
       city: 'Johannesburg',
       notificationPreference: 'email',
       joined_at: now,
@@ -3449,6 +3592,12 @@ app.post("/make-server-175b2872/auth/customer/register", async (c) => {
     // Store customer and lookup
     await kv.set(customerId, customer);
     await kv.set(lookupKey, { id: customerId });
+    
+    // Store mobile lookup if provided
+    if (cleanMobile) {
+      const mobileLookupKey = `customer_lookup:mobile:${cleanMobile}`;
+      await kv.set(mobileLookupKey, { id: customerId });
+    }
     
     // ✨ Increment Influencer Stats (Customer Referral)
     if (validAffiliate) {
@@ -3554,6 +3703,72 @@ app.post("/make-server-175b2872/auth/customer/login", async (c) => {
 
   } catch (error) {
     console.error('Login error:', error);
+    return c.json({ error: 'Login failed' }, 500);
+  }
+});
+
+// Check if mobile number exists
+app.post("/make-server-175b2872/auth/customer/check-mobile", async (c) => {
+  try {
+    const { mobile } = await c.req.json();
+    
+    if (!mobile) {
+      return c.json({ error: 'Mobile number is required' }, 400);
+    }
+
+    const cleanMobile = mobile.trim();
+    const lookupKey = `customer_lookup:mobile:${cleanMobile}`;
+    
+    const lookup = await kv.get(lookupKey);
+    
+    return c.json({ exists: !!lookup });
+  } catch (error) {
+    console.error('Check mobile error:', error);
+    return c.json({ exists: false });
+  }
+});
+
+// Login Customer by Mobile
+app.post("/make-server-175b2872/auth/customer/login-mobile", async (c) => {
+  try {
+    const { mobile } = await c.req.json();
+    
+    if (!mobile) {
+      return c.json({ error: 'Mobile number is required' }, 400);
+    }
+
+    const cleanMobile = mobile.trim();
+    const lookupKey = `customer_lookup:mobile:${cleanMobile}`;
+    
+    const lookup = await kv.get(lookupKey);
+    if (!lookup || !lookup.id) {
+      return c.json({ error: 'Mobile number not found' }, 404);
+    }
+
+    const customer = await kv.get(lookup.id);
+    if (!customer) {
+      return c.json({ error: 'Customer record missing' }, 404);
+    }
+
+    // Generate Session
+    const now = new Date().toISOString();
+    const token = `sess_${Date.now()}_${Math.random().toString(36).substring(2)}`;
+    await kv.set(`session:${token}`, { userId: customer.id, type: 'customer', created_at: now });
+
+    // Update last active
+    customer.last_active = now;
+    await kv.set(customer.id, customer);
+
+    console.log(`👤 Customer logged in via mobile: ${cleanMobile}`);
+
+    return c.json({ 
+      success: true, 
+      token, 
+      customer 
+    });
+
+  } catch (error) {
+    console.error('Mobile login error:', error);
     return c.json({ error: 'Login failed' }, 500);
   }
 });
@@ -3728,6 +3943,18 @@ app.put("/make-server-175b2872/admin/customers/:id", async (c) => {
       return c.json({ error: 'Customer not found' }, 404);
     }
 
+    // Update mobile lookup if mobile changed
+    if (body.mobile && body.mobile !== customer.mobile) {
+      // Remove old mobile lookup
+      if (customer.mobile) {
+        const oldMobileLookup = `customer_lookup:mobile:${customer.mobile}`;
+        await kv.del(oldMobileLookup);
+      }
+      // Add new mobile lookup
+      const newMobileLookup = `customer_lookup:mobile:${body.mobile}`;
+      await kv.set(newMobileLookup, { id });
+    }
+
     const updatedCustomer = {
       ...customer,
       name: body.name || customer.name,
@@ -3735,6 +3962,7 @@ app.put("/make-server-175b2872/admin/customers/:id", async (c) => {
       mobile: body.mobile || customer.mobile,
       city: body.city || customer.city,
       status: body.status || customer.status,
+      referral_code: body.affiliateCode || customer.referral_code,
       updated_at: new Date().toISOString()
     };
 
@@ -3859,9 +4087,11 @@ app.post("/make-server-175b2872/analytics/track-reservation", async (c) => {
     const userId = body.user_id || body.userId;
     const customerName = body.customer_name || body.customerName;
     const customerEmail = body.customer_email || body.customerEmail;
+    const customerPhone = body.customer_phone || body.customerPhone || body.mobile || '';
     const partySize = body.party_size || body.partySize || body.pax;
     const reservationDate = body.reservation_date || body.reservationDate || body.date;
     const reservationTime = body.reservation_time || body.reservationTime;
+    const specialRequests = body.special_requests || body.specialRequests || '';
     
     if (!businessId || !customerName) {
          return c.json({ error: 'Missing required fields' }, 400);
@@ -3874,9 +4104,11 @@ app.post("/make-server-175b2872/analytics/track-reservation", async (c) => {
       userId,
       customerName,
       customerEmail,
+      customerPhone,
       partySize,
       reservationDate,
       reservationTime,
+      specialRequests,
       timestamp: new Date().toISOString(),
       status: 'pending' // pending, confirmed, cancelled
     };
@@ -3929,6 +4161,39 @@ app.post("/make-server-175b2872/analytics/track-special-click", async (c) => {
   } catch (error) {
     console.error('Special click track error:', error);
     return c.json({ error: 'Failed to track special click' }, 500);
+  }
+});
+
+// Get all reservations for businesses (used by ReservationsManager)
+app.get("/make-server-175b2872/analytics/reservations", async (c) => {
+  try {
+    // Get all reservations (using rsv: prefix)
+    const allReservations = await kv.getByPrefix('rsv:');
+    
+    // Transform to match frontend interface
+    const formattedReservations = allReservations.map((rsv: any) => ({
+      id: rsv.id,
+      business_id: rsv.businessId,
+      user_id: rsv.userId,
+      customer_name: rsv.customerName,
+      user_email: rsv.customerEmail,
+      party_size: rsv.partySize,
+      reservation_date: rsv.reservationDate,
+      reservation_time: rsv.reservationTime,
+      special_requests: rsv.specialRequests || '',
+      status: rsv.status || 'pending',
+      created_at: rsv.timestamp,
+      confirmed_at: rsv.confirmed_at,
+      rejected_at: rsv.rejected_at,
+      rejection_reason: rsv.rejection_reason,
+      updated_at: rsv.updated_at,
+      estimated_value: rsv.estimated_value || 0
+    }));
+
+    return c.json({ reservations: formattedReservations });
+  } catch (error) {
+    console.error('❌ Error fetching reservations:', error);
+    return c.json({ error: 'Failed to fetch reservations' }, 500);
   }
 });
 
@@ -5058,6 +5323,444 @@ app.get("/make-server-175b2872/rewards/my-rewards", async (c) => {
     
   } catch (error) {
     return c.json({ error: 'Failed to fetch rewards' }, 500);
+  }
+});
+
+// ============================================
+// REWARDS CONFIGURATION MANAGEMENT (Admin)
+// ============================================
+
+// Get all reward configurations
+app.get('/make-server-175b2872/admin/rewards', async (c) => {
+  try {
+    const rewards = await kv.getByPrefix('reward_config:');
+    return c.json({ rewards: rewards || [] });
+  } catch (error) {
+    console.error('❌ Error fetching reward configs:', error);
+    return c.json({ error: 'Failed to fetch rewards' }, 500);
+  }
+});
+
+// Create new reward configuration
+app.post('/make-server-175b2872/admin/rewards', async (c) => {
+  try {
+    const body = await c.req.json();
+    const { title, description, pointsCost, category, iconName, participatingBusinesses } = body;
+    
+    const rewardId = `reward_${Date.now()}_${generateUUID().substring(0, 8)}`;
+    const reward = {
+      id: rewardId,
+      title,
+      description,
+      pointsCost: parseInt(pointsCost),
+      category,
+      iconName,
+      participatingBusinesses: participatingBusinesses || [],
+      available: true,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+    
+    await kv.set(`reward_config:${rewardId}`, reward);
+    return c.json({ success: true, reward });
+  } catch (error) {
+    console.error('❌ Error creating reward:', error);
+    return c.json({ error: 'Failed to create reward' }, 500);
+  }
+});
+
+// Update reward configuration
+app.put('/make-server-175b2872/admin/rewards/:id', async (c) => {
+  try {
+    const rewardId = c.req.param('id');
+    const body = await c.req.json();
+    const { title, description, pointsCost, category, iconName, participatingBusinesses, available } = body;
+    
+    const existingReward = await kv.get(`reward_config:${rewardId}`);
+    if (!existingReward) {
+      return c.json({ error: 'Reward not found' }, 404);
+    }
+    
+    const updatedReward = {
+      ...existingReward,
+      title,
+      description,
+      pointsCost: parseInt(pointsCost),
+      category,
+      iconName,
+      participatingBusinesses: participatingBusinesses || [],
+      available: available !== undefined ? available : existingReward.available,
+      updated_at: new Date().toISOString()
+    };
+    
+    await kv.set(`reward_config:${rewardId}`, updatedReward);
+    return c.json({ success: true, reward: updatedReward });
+  } catch (error) {
+    console.error('❌ Error updating reward:', error);
+    return c.json({ error: 'Failed to update reward' }, 500);
+  }
+});
+
+// Delete reward configuration
+app.delete('/make-server-175b2872/admin/rewards/:id', async (c) => {
+  try {
+    const rewardId = c.req.param('id');
+    await kv.del(`reward_config:${rewardId}`);
+    return c.json({ success: true });
+  } catch (error) {
+    console.error('❌ Error deleting reward:', error);
+    return c.json({ error: 'Failed to delete reward' }, 500);
+  }
+});
+
+// ============================================
+// ACHIEVEMENTS CONFIGURATION MANAGEMENT (Admin)
+// ============================================
+
+// Get all achievement configurations
+app.get('/make-server-175b2872/admin/achievements', async (c) => {
+  try {
+    const achievements = await kv.getByPrefix('achievement_config:');
+    return c.json({ achievements: achievements || [] });
+  } catch (error) {
+    console.error('❌ Error fetching achievement configs:', error);
+    return c.json({ error: 'Failed to fetch achievements' }, 500);
+  }
+});
+
+// Create new achievement configuration
+app.post('/make-server-175b2872/admin/achievements', async (c) => {
+  try {
+    const body = await c.req.json();
+    const { title, description, iconName, rarity, requirementType, requirementValue } = body;
+    
+    const achievementId = `achievement_${Date.now()}_${generateUUID().substring(0, 8)}`;
+    const achievement = {
+      id: achievementId,
+      title,
+      description,
+      iconName,
+      rarity,
+      requirementType, // 'checkins' or 'points'
+      requirementValue: parseInt(requirementValue),
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+    
+    await kv.set(`achievement_config:${achievementId}`, achievement);
+    return c.json({ success: true, achievement });
+  } catch (error) {
+    console.error('❌ Error creating achievement:', error);
+    return c.json({ error: 'Failed to create achievement' }, 500);
+  }
+});
+
+// Update achievement configuration
+app.put('/make-server-175b2872/admin/achievements/:id', async (c) => {
+  try {
+    const achievementId = c.req.param('id');
+    const body = await c.req.json();
+    const { title, description, iconName, rarity, requirementType, requirementValue } = body;
+    
+    const existingAchievement = await kv.get(`achievement_config:${achievementId}`);
+    if (!existingAchievement) {
+      return c.json({ error: 'Achievement not found' }, 404);
+    }
+    
+    const updatedAchievement = {
+      ...existingAchievement,
+      title,
+      description,
+      iconName,
+      rarity,
+      requirementType,
+      requirementValue: parseInt(requirementValue),
+      updated_at: new Date().toISOString()
+    };
+    
+    await kv.set(`achievement_config:${achievementId}`, updatedAchievement);
+    return c.json({ success: true, achievement: updatedAchievement });
+  } catch (error) {
+    console.error('❌ Error updating achievement:', error);
+    return c.json({ error: 'Failed to update achievement' }, 500);
+  }
+});
+
+// Delete achievement configuration
+app.delete('/make-server-175b2872/admin/achievements/:id', async (c) => {
+  try {
+    const achievementId = c.req.param('id');
+    await kv.del(`achievement_config:${achievementId}`);
+    return c.json({ success: true });
+  } catch (error) {
+    console.error('❌ Error deleting achievement:', error);
+    return c.json({ error: 'Failed to delete achievement' }, 500);
+  }
+});
+
+// ============================================
+// RESERVATION MANAGEMENT (Business)
+// ============================================
+
+// OPTIONS handlers for CORS preflight
+app.options('/make-server-175b2872/kv/reservation/:id/confirm', (c) => {
+  return c.text('', 204);
+});
+
+app.options('/make-server-175b2872/kv/reservation/:id/reject', (c) => {
+  return c.text('', 204);
+});
+
+// Confirm reservation and send email
+app.patch('/make-server-175b2872/kv/reservation/:id/confirm', async (c) => {
+  try {
+    console.log('✅ Confirm reservation endpoint called');
+    const reservationId = c.req.param('id');
+    console.log('✅ Reservation ID:', reservationId);
+    
+    const body = await c.req.json();
+    const { business_name } = body;
+    console.log('✅ Request body:', { business_name });
+
+    // Get reservation (using the actual key which is the full rsv:timestamp ID)
+    console.log('✅ Fetching reservation with key:', reservationId);
+    const reservation = await kv.get(reservationId);
+    
+    if (!reservation) {
+      console.error('❌ Reservation not found:', reservationId);
+      return c.json({ error: 'Reservation not found' }, 404);
+    }
+    
+    console.log('✅ Reservation found:', reservation);
+
+    // Update reservation status
+    const updatedReservation = {
+      ...reservation,
+      status: 'confirmed',
+      confirmed_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    console.log('✅ Updating reservation status...');
+    await kv.set(reservationId, updatedReservation);
+    console.log('✅ Reservation status updated');
+
+    // Send confirmation email to customer
+    const customerEmail = reservation.customerEmail || reservation.user_email;
+    const customerName = reservation.customerName || reservation.user_name || 'Valued Customer';
+    const reservationDate = reservation.reservationDate || reservation.reservation_date;
+    const reservationTime = reservation.reservationTime || reservation.reservation_time;
+    const partySize = reservation.partySize || reservation.party_size;
+    const specialRequests = reservation.specialRequests || reservation.special_requests;
+    
+    console.log('📧 Email preparation:', {
+      customerEmail,
+      customerName,
+      reservationDate,
+      reservationTime,
+      partySize,
+      specialRequests,
+      businessName: business_name
+    });
+    
+    if (customerEmail) {
+      try {
+        console.log('📧 Calling sendReservationConfirmation function...');
+        const emailResult = await sendReservationConfirmation({
+          to: customerEmail,
+          customerName: customerName,
+          businessName: business_name,
+          date: reservationDate,
+          time: reservationTime,
+          partySize: partySize,
+          specialRequests: specialRequests
+        });
+        console.log(`✅ Confirmation email result:`, emailResult);
+      } catch (emailError) {
+        console.error('❌ Failed to send confirmation email:', {
+          error: emailError.message,
+          stack: emailError.stack,
+          customerEmail,
+          businessName: business_name
+        });
+        // Don't fail the request if email fails
+      }
+    } else {
+      console.log('⚠️ No customer email found in reservation:', {
+        reservation: reservation,
+        checkedFields: ['customerEmail', 'user_email']
+      });
+    }
+
+    console.log('✅ Confirmation complete, returning success');
+    return c.json({ success: true, reservation: updatedReservation });
+  } catch (error) {
+    console.error('❌ Error confirming reservation:', error);
+    console.error('❌ Error details:', error.message, error.stack);
+    return c.json({ error: 'Failed to confirm reservation', details: error.message }, 500);
+  }
+});
+
+// Reject reservation and send email
+app.patch('/make-server-175b2872/kv/reservation/:id/reject', async (c) => {
+  try {
+    console.log('📝 Reject reservation endpoint called');
+    const reservationId = c.req.param('id');
+    console.log('📝 Reservation ID:', reservationId);
+    
+    const body = await c.req.json();
+    const { business_name, reason } = body;
+    console.log('📝 Request body:', { business_name, reason });
+
+    // Get reservation (using the actual key which is the full rsv:timestamp ID)
+    console.log('📝 Fetching reservation with key:', reservationId);
+    const reservation = await kv.get(reservationId);
+    
+    if (!reservation) {
+      console.error('❌ Reservation not found:', reservationId);
+      return c.json({ error: 'Reservation not found' }, 404);
+    }
+    
+    console.log('✅ Reservation found:', reservation);
+
+    // Update reservation status
+    const updatedReservation = {
+      ...reservation,
+      status: 'cancelled',
+      rejected_at: new Date().toISOString(),
+      rejection_reason: reason,
+      updated_at: new Date().toISOString()
+    };
+
+    console.log('📝 Updating reservation status...');
+    await kv.set(reservationId, updatedReservation);
+    console.log('✅ Reservation status updated');
+
+    // Send rejection email to customer
+    const customerEmail = reservation.customerEmail || reservation.user_email;
+    const customerName = reservation.customerName || reservation.user_name || 'Valued Customer';
+    const reservationDate = reservation.reservationDate || reservation.reservation_date;
+    const reservationTime = reservation.reservationTime || reservation.reservation_time;
+    const partySize = reservation.partySize || reservation.party_size;
+    
+    console.log('📧 Email preparation:', {
+      customerEmail,
+      customerName,
+      reservationDate,
+      reservationTime,
+      partySize,
+      businessName: business_name,
+      reason
+    });
+    
+    if (customerEmail) {
+      try {
+        console.log('📧 Calling sendReservationRejection function...');
+        const emailResult = await sendReservationRejection({
+          to: customerEmail,
+          customerName: customerName,
+          businessName: business_name,
+          date: reservationDate,
+          time: reservationTime,
+          partySize: partySize,
+          reason: reason || 'Not available'
+        });
+        console.log(`✅ Rejection email result:`, emailResult);
+      } catch (emailError) {
+        console.error('❌ Failed to send rejection email:', {
+          error: emailError.message,
+          stack: emailError.stack,
+          customerEmail,
+          businessName: business_name
+        });
+        // Don't fail the request if email fails
+      }
+    } else {
+      console.log('⚠️ No customer email found in reservation:', {
+        reservation: reservation,
+        checkedFields: ['customerEmail', 'user_email']
+      });
+    }
+
+    console.log('✅ Rejection complete, returning success');
+    return c.json({ success: true, reservation: updatedReservation });
+  } catch (error) {
+    console.error('❌ Error rejecting reservation:', error);
+    console.error('❌ Error details:', error.message, error.stack);
+    return c.json({ error: 'Failed to reject reservation', details: error.message }, 500);
+  }
+});
+
+// ============================================
+// EMAIL TEST ENDPOINT
+// ============================================
+
+app.post('/make-server-175b2872/test-email', async (c) => {
+  try {
+    const body = await c.req.json();
+    const { to } = body;
+    
+    if (!to) {
+      return c.json({ error: 'Email address required' }, 400);
+    }
+    
+    console.log('🧪 Testing email send to:', to);
+    console.log('🧪 SMTP2GO_API_KEY present:', !!Deno.env.get('SMTP2GO_API_KEY'));
+    
+    const result = await sendEmail({
+      to: to,
+      subject: 'MYVIBES Email Test',
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #10b981;">Email Test Successful! ✅</h2>
+          <p>This is a test email from MYVIBES platform.</p>
+          <p>If you received this, your email configuration is working correctly.</p>
+          <p>Test sent at: ${new Date().toISOString()}</p>
+        </div>
+      `
+    });
+    
+    console.log('🧪 Test email result:', result);
+    
+    return c.json({ 
+      success: true, 
+      result: result,
+      message: 'Test email sent. Check server logs for details.'
+    });
+  } catch (error) {
+    console.error('🧪 Test email error:', error);
+    return c.json({ 
+      error: 'Test email failed', 
+      details: error.message,
+      stack: error.stack
+    }, 500);
+  }
+});
+
+// ============================================
+// CUSTOMER-FACING ENDPOINTS
+// ============================================
+
+// Get all active rewards (for customers)
+app.get('/make-server-175b2872/rewards', async (c) => {
+  try {
+    const allRewards = await kv.getByPrefix('reward_config:');
+    const activeRewards = allRewards.filter((r: any) => r.available);
+    return c.json({ rewards: activeRewards });
+  } catch (error) {
+    console.error('❌ Error fetching rewards:', error);
+    return c.json({ error: 'Failed to fetch rewards' }, 500);
+  }
+});
+
+// Get all achievements (for customers)
+app.get('/make-server-175b2872/achievements', async (c) => {
+  try {
+    const achievements = await kv.getByPrefix('achievement_config:');
+    return c.json({ achievements: achievements || [] });
+  } catch (error) {
+    console.error('❌ Error fetching achievements:', error);
+    return c.json({ error: 'Failed to fetch achievements' }, 500);
   }
 });
 

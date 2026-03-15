@@ -50,6 +50,8 @@ CREATE TABLE IF NOT EXISTS businesses (
   -- Visibility Controls
   is_active BOOLEAN DEFAULT false,
   is_verified BOOLEAN DEFAULT false,
+  is_featured BOOLEAN DEFAULT false,
+  featured_until TIMESTAMP WITH TIME ZONE,
   visibility_override TEXT, -- 'force_visible', 'force_hidden', null
   override_reason TEXT,
   grace_period_until TIMESTAMP,

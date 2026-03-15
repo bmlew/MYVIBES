@@ -189,3 +189,5 @@ export function SearchFilters({ onClose, onApply }: SearchFiltersProps) {
     </div>
   );
 }
+
+export default SearchFilters;

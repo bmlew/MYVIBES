@@ -82,3 +82,5 @@ export function DirectionsModal({ onClose, venueName, address }: DirectionsModal
     </div>
   );
 }
+
+export default DirectionsModal;

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Trophy, Star, Award, Flame, Target, Medal, Crown, Zap } from 'lucide-react';
+import { Trophy, Star, Award, Flame, Target, Medal, Crown, Zap, Sparkles } from 'lucide-react';
+import * as api from '@/utils/api';
 
 interface AchievementsProps {
   userId: string;
@@ -12,6 +13,7 @@ interface Achievement {
   title: string;
   description: string;
   icon: React.ReactNode;
+  iconName?: string;
   unlocked: boolean;
   progress?: number;
   maxProgress?: number;
@@ -20,9 +22,47 @@ interface Achievement {
 
 export function Achievements({ userId, totalPoints, totalCheckIns = 0 }: AchievementsProps) {
   const [achievements, setAchievements] = useState<Achievement[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Calculate achievements based on user stats
+    loadAchievements();
+  }, [totalPoints, totalCheckIns, userId]);
+
+  const loadAchievements = async () => {
+    try {
+      const data = await api.get('/achievements');
+      const configuredAchievements = data.achievements || [];
+
+      // Map configured achievements with user progress
+      const achievementsWithProgress = configuredAchievements.map((config: any) => {
+        const currentValue = config.requirementType === 'checkins' ? totalCheckIns : totalPoints;
+        const unlocked = currentValue >= config.requirementValue;
+        
+        return {
+          id: config.id,
+          title: config.title,
+          description: config.description,
+          icon: getIconComponent(config.iconName),
+          iconName: config.iconName,
+          unlocked,
+          progress: Math.min(currentValue, config.requirementValue),
+          maxProgress: config.requirementValue,
+          rarity: config.rarity
+        };
+      });
+
+      setAchievements(achievementsWithProgress);
+    } catch (error) {
+      console.error('Failed to load achievements:', error);
+      // Fallback to default achievements if backend fails
+      loadDefaultAchievements();
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadDefaultAchievements = () => {
+    // Default achievements as fallback
     const achievementList: Achievement[] = [
       {
         id: 'first-checkin',
@@ -107,99 +147,134 @@ export function Achievements({ userId, totalPoints, totalCheckIns = 0 }: Achieve
     ];
 
     setAchievements(achievementList);
-  }, [totalPoints, totalCheckIns, userId]);
+  };
+
+  const getIconComponent = (iconName: string) => {
+    const icons: Record<string, any> = {
+      Trophy, Star, Award, Flame, Target, Medal, Crown, Zap
+    };
+    const Icon = icons[iconName] || Trophy;
+    return <Icon className="w-6 h-6" />;
+  };
 
   const getRarityColor = (rarity: string) => {
     switch (rarity) {
       case 'common':
-        return 'from-gray-400 to-gray-600';
+        return 'from-slate-500 to-gray-600';
       case 'rare':
-        return 'from-blue-400 to-blue-600';
+        return 'from-blue-500 to-cyan-600';
       case 'epic':
-        return 'from-purple-400 to-purple-600';
+        return 'from-purple-500 to-pink-600';
       case 'legendary':
-        return 'from-amber-400 to-yellow-600';
+        return 'from-amber-400 to-orange-500';
       default:
         return 'from-gray-400 to-gray-600';
     }
   };
 
-  const getRarityBorder = (rarity: string) => {
+  const getRarityBgColor = (rarity: string) => {
     switch (rarity) {
       case 'common':
-        return 'border-gray-300';
+        return 'from-slate-50 to-gray-50';
       case 'rare':
-        return 'border-blue-400';
+        return 'from-blue-50 to-cyan-50';
       case 'epic':
-        return 'border-purple-400';
+        return 'from-purple-50 to-pink-50';
       case 'legendary':
-        return 'border-amber-400';
+        return 'from-amber-50 to-orange-50';
       default:
-        return 'border-gray-300';
+        return 'from-gray-50 to-gray-50';
     }
   };
 
   const unlockedCount = achievements.filter(a => a.unlocked).length;
+  const progressPercentage = achievements.length > 0 ? (unlockedCount / achievements.length) * 100 : 0;
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <div className="w-8 h-8 border-4 border-purple-500 border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-4">
-      {/* Progress Summary */}
-      <div className="bg-gradient-to-r from-cyan-50 to-blue-50 rounded-lg p-4 border border-cyan-200">
-        <div className="flex items-center justify-between mb-2">
-          <h3 className="font-bold text-gray-900">Achievement Progress</h3>
-          <span className="text-sm font-semibold text-cyan-600">
-            {unlockedCount}/{achievements.length}
-          </span>
+    <div className="space-y-6">
+      {/* Progress Summary - Redesigned */}
+      <div className="bg-gradient-to-br from-purple-500 via-pink-500 to-orange-500 rounded-2xl p-6 text-white shadow-xl">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="font-bold text-white text-lg mb-1 flex items-center gap-2">
+              <Sparkles className="w-5 h-5" />
+              Your Achievements
+            </h3>
+            <p className="text-white/90 text-sm">
+              {unlockedCount} of {achievements.length} unlocked
+            </p>
+          </div>
+          <div className="w-16 h-16 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center">
+            <Trophy className="w-8 h-8 text-white" />
+          </div>
         </div>
-        <div className="w-full bg-gray-200 rounded-full h-2">
+        <div className="w-full bg-white/20 rounded-full h-3 overflow-hidden">
           <div
-            className="bg-gradient-to-r from-cyan-500 to-blue-600 h-2 rounded-full transition-all duration-500"
-            style={{ width: `${(unlockedCount / achievements.length) * 100}%` }}
+            className="bg-white h-3 rounded-full transition-all duration-500 shadow-lg"
+            style={{ width: `${progressPercentage}%` }}
           />
+        </div>
+        <div className="mt-2 text-right">
+          <span className="text-white font-bold text-lg">{Math.round(progressPercentage)}%</span>
         </div>
       </div>
 
-      {/* Achievements Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {/* Achievements Grid - Redesigned */}
+      <div className="grid grid-cols-1 gap-3">
         {achievements.map((achievement) => (
           <div
             key={achievement.id}
-            className={`rounded-lg p-4 border-2 transition-all ${
+            className={`rounded-2xl p-5 border-2 transition-all ${
               achievement.unlocked
-                ? `bg-gradient-to-br ${getRarityColor(achievement.rarity)} text-white ${getRarityBorder(achievement.rarity)} shadow-lg`
-                : 'bg-gray-50 border-gray-200 opacity-60'
+                ? `bg-gradient-to-br ${getRarityBgColor(achievement.rarity)} border-transparent shadow-lg hover:shadow-xl`
+                : 'bg-gray-50 border-gray-200'
             }`}
           >
-            <div className="flex items-start gap-3">
+            <div className="flex items-start gap-4">
               <div
-                className={`w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 ${
+                className={`w-16 h-16 rounded-2xl flex items-center justify-center flex-shrink-0 shadow-lg ${
                   achievement.unlocked
-                    ? 'bg-white/20 backdrop-blur-sm'
-                    : 'bg-gray-200'
+                    ? `bg-gradient-to-br ${getRarityColor(achievement.rarity)} text-white`
+                    : 'bg-gray-200 text-gray-400'
                 }`}
               >
-                <div className={achievement.unlocked ? 'text-white' : 'text-gray-400'}>
-                  {achievement.icon}
-                </div>
+                {achievement.icon}
               </div>
               <div className="flex-1 min-w-0">
-                <h4 className={`font-bold mb-1 ${achievement.unlocked ? 'text-white' : 'text-gray-700'}`}>
-                  {achievement.title}
-                </h4>
-                <p className={`text-sm mb-2 ${achievement.unlocked ? 'text-white/90' : 'text-gray-600'}`}>
-                  {achievement.description}
-                </p>
-                {!achievement.unlocked && achievement.maxProgress && (
+                <div className="flex items-start justify-between mb-2">
                   <div>
-                    <div className="flex justify-between text-xs text-gray-600 mb-1">
-                      <span>Progress</span>
-                      <span>
+                    <h4 className={`font-bold text-base mb-1 ${achievement.unlocked ? 'text-gray-900' : 'text-gray-500'}`}>
+                      {achievement.title}
+                    </h4>
+                    <p className={`text-sm ${achievement.unlocked ? 'text-gray-600' : 'text-gray-400'}`}>
+                      {achievement.description}
+                    </p>
+                  </div>
+                  {achievement.unlocked && (
+                    <div className={`ml-2 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide bg-gradient-to-r ${getRarityColor(achievement.rarity)} text-white shadow-md`}>
+                      {achievement.rarity}
+                    </div>
+                  )}
+                </div>
+                {!achievement.unlocked && achievement.maxProgress && (
+                  <div className="mt-3">
+                    <div className="flex justify-between text-xs text-gray-600 mb-2">
+                      <span className="font-medium">Progress</span>
+                      <span className="font-bold">
                         {achievement.progress}/{achievement.maxProgress}
                       </span>
                     </div>
-                    <div className="w-full bg-gray-200 rounded-full h-1.5">
+                    <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
                       <div
-                        className="bg-gradient-to-r from-cyan-500 to-blue-600 h-1.5 rounded-full transition-all"
+                        className="bg-gradient-to-r from-cyan-500 to-blue-600 h-2 rounded-full transition-all duration-300"
                         style={{
                           width: `${((achievement.progress || 0) / achievement.maxProgress) * 100}%`
                         }}
@@ -208,11 +283,11 @@ export function Achievements({ userId, totalPoints, totalCheckIns = 0 }: Achieve
                   </div>
                 )}
                 {achievement.unlocked && (
-                  <div className="flex items-center gap-1 text-xs text-white/90">
-                    <Trophy className="w-3 h-3" />
-                    <span className="uppercase font-semibold tracking-wide">
-                      {achievement.rarity}
-                    </span>
+                  <div className="flex items-center gap-2 mt-2">
+                    <div className="flex items-center gap-1 text-xs font-semibold text-green-600 bg-green-50 px-3 py-1 rounded-full">
+                      <Trophy className="w-3 h-3" />
+                      Unlocked
+                    </div>
                   </div>
                 )}
               </div>

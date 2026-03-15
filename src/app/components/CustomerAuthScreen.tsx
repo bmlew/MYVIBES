@@ -1,31 +1,41 @@
 import React, { useState, useEffect } from 'react';
-import { User, ArrowRight, Loader2, AlertCircle, Check } from 'lucide-react';
+import { User, ArrowRight, Loader2, AlertCircle, Check, Phone, Users } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { checkUsername, loginCustomer, registerCustomer, recoverUsername } from '@/utils/api';
+import { checkMobile, loginCustomerByMobile, registerCustomer, recoverUsername } from '@/utils/api';
 
 interface CustomerAuthScreenProps {
   onAuthenticated: (userProfile: any, token: string) => void;
 }
 
 export function CustomerAuthScreen({ onAuthenticated }: CustomerAuthScreenProps) {
-  const [step, setStep] = useState<'username' | 'name' | 'recovery'>('username');
-  const [username, setUsername] = useState('');
+  const [step, setStep] = useState<'mobile' | 'register' | 'recovery'>('mobile');
+  const [mobile, setMobile] = useState('');
   const [name, setName] = useState('');
+  const [affiliateCode, setAffiliateCode] = useState('');
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [recoverySent, setRecoverySent] = useState(false);
 
-  const validateUsername = (val: string) => /^[a-z0-9_]+$/.test(val);
+  // Auto-fill affiliate code from referral link when component loads
+  useEffect(() => {
+    const referralCode = localStorage.getItem('myvibes_referral_code');
+    if (referralCode) {
+      setAffiliateCode(referralCode.toUpperCase());
+      console.log('🎁 Auto-filled affiliate code from referral link:', referralCode);
+    }
+  }, []);
 
-  const handleUsernameSubmit = async (e: React.FormEvent) => {
+  const validateMobile = (val: string) => /^[0-9]{10}$/.test(val);
+
+  const handleMobileSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!username.trim()) {
-      setError('Username is required');
+    if (!mobile.trim()) {
+      setError('Mobile number is required');
       return;
     }
-    if (!validateUsername(username)) {
-      setError('Lowercase letters, numbers, and underscores only');
+    if (!validateMobile(mobile)) {
+      setError('Please enter a valid 10-digit mobile number');
       return;
     }
 
@@ -33,11 +43,11 @@ export function CustomerAuthScreen({ onAuthenticated }: CustomerAuthScreenProps)
     setError(null);
 
     try {
-      const exists = await checkUsername(username);
+      const exists = await checkMobile(mobile);
       
       if (exists) {
         // Login immediately
-        const result = await loginCustomer(username);
+        const result = await loginCustomerByMobile(mobile);
         if (result.success && result.customer) {
           // Save to localStorage
           localStorage.setItem('vibespot_customer_profile', JSON.stringify(result.customer));
@@ -48,8 +58,8 @@ export function CustomerAuthScreen({ onAuthenticated }: CustomerAuthScreenProps)
           setError('Login failed. Please try again.');
         }
       } else {
-        // New user - proceed to name step
-        setStep('name');
+        // New user - proceed to registration step
+        setStep('register');
       }
     } catch (err) {
       console.error(err);
@@ -65,12 +75,17 @@ export function CustomerAuthScreen({ onAuthenticated }: CustomerAuthScreenProps)
       setError('Name is required');
       return;
     }
+    // Removed affiliate code validation - it's now optional
 
     setLoading(true);
     setError(null);
 
     try {
-      const result = await registerCustomer(username, name);
+      // Generate a username from mobile number
+      const username = `user${mobile}`;
+      
+      // Pass empty string if no affiliate code provided
+      const result = await registerCustomer(username, name, mobile, affiliateCode || '');
       if (result.success && result.customer) {
         // Save to localStorage
         localStorage.setItem('vibespot_customer_profile', JSON.stringify(result.customer));
@@ -102,7 +117,7 @@ export function CustomerAuthScreen({ onAuthenticated }: CustomerAuthScreenProps)
       await recoverUsername(email);
       setRecoverySent(true);
       setTimeout(() => {
-        setStep('username');
+        setStep('mobile');
         setRecoverySent(false);
         setEmail('');
       }, 3000);
@@ -128,7 +143,7 @@ export function CustomerAuthScreen({ onAuthenticated }: CustomerAuthScreenProps)
             animate={{ y: 0, opacity: 1 }}
             transition={{ delay: 0.1 }}
           >
-            <User className="w-16 h-16 mx-auto mb-4 stroke-[1.5]" />
+            <Phone className="w-16 h-16 mx-auto mb-4 stroke-[1.5]" />
             <h1 className="text-2xl font-bold mb-1">Welcome to MYVIBES</h1>
             <p className="text-cyan-100 text-sm">Your gateway to the best spots</p>
           </motion.div>
@@ -137,46 +152,47 @@ export function CustomerAuthScreen({ onAuthenticated }: CustomerAuthScreenProps)
         {/* Content */}
         <div className="p-8">
           <AnimatePresence mode="wait">
-            {step === 'username' && (
+            {step === 'mobile' && (
               <motion.div 
-                key="username"
+                key="mobile"
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
               >
                 <div className="text-center mb-6">
-                  <h2 className="text-xl font-bold text-gray-900 mb-1">Who goes there?</h2>
-                  <p className="text-gray-500 text-sm">Enter your username to sign in or join</p>
+                  <h2 className="text-xl font-bold text-gray-900 mb-1">Sign In</h2>
+                  <p className="text-gray-500 text-sm">Enter your mobile number to continue</p>
                 </div>
 
-                <form onSubmit={handleUsernameSubmit} className="space-y-4">
+                <form onSubmit={handleMobileSubmit} className="space-y-4">
                   <div>
                     <div className="flex justify-between items-center mb-1">
                       <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">
-                        Username
+                        Mobile Number
                       </label>
                     </div>
                     <input
-                      type="text"
-                      value={username}
+                      type="tel"
+                      value={mobile}
                       onChange={(e) => {
-                        setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''));
+                        setMobile(e.target.value.replace(/[^0-9]/g, ''));
                         setError(null);
                       }}
-                      placeholder="e.g. vibemaster2024"
+                      placeholder="0821234567"
+                      maxLength={10}
                       className="w-full p-4 bg-gray-50 border-2 border-gray-100 rounded-xl focus:border-cyan-500 focus:ring-0 outline-none transition-colors font-medium text-lg"
                       autoFocus
                     />
                     <div className="flex justify-between mt-2">
                       <p className="text-[10px] text-gray-400">
-                        Lowercase letters, numbers, and underscores only
+                        10-digit mobile number
                       </p>
                       <button 
                         type="button"
                         onClick={() => setStep('recovery')}
                         className="text-xs font-semibold text-cyan-600 hover:text-cyan-700"
                       >
-                        Forgot username?
+                        Need help?
                       </button>
                     </div>
                   </div>
@@ -205,41 +221,71 @@ export function CustomerAuthScreen({ onAuthenticated }: CustomerAuthScreenProps)
               </motion.div>
             )}
 
-            {step === 'name' && (
+            {step === 'register' && (
               <motion.div 
-                key="name"
+                key="register"
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
               >
                 <div className="text-center mb-6">
-                  <h2 className="text-xl font-bold text-gray-900 mb-1">Nice to meet you!</h2>
-                  <p className="text-gray-500 text-sm">What should we call you?</p>
+                  <h2 className="text-xl font-bold text-gray-900 mb-1">Create Account</h2>
+                  <p className="text-gray-500 text-sm">Complete your registration</p>
                 </div>
 
                 <form onSubmit={handleRegister} className="space-y-4">
                   <div className="bg-blue-50 p-3 rounded-lg mb-4 flex items-center gap-3">
                     <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-bold text-xs">
-                      <User className="w-4 h-4" />
+                      <Phone className="w-4 h-4" />
                     </div>
                     <div>
-                      <div className="text-xs text-blue-400 font-medium">Username</div>
-                      <div className="font-bold text-blue-900">@{username}</div>
+                      <div className="text-xs text-blue-400 font-medium">Mobile</div>
+                      <div className="font-bold text-blue-900">{mobile}</div>
                     </div>
                   </div>
 
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">
-                      Full Name
+                      Full Name <span className="text-red-500">*</span>
                     </label>
                     <input
                       type="text"
                       value={name}
-                      onChange={(e) => setName(e.target.value)}
+                      onChange={(e) => {
+                        setName(e.target.value);
+                        setError(null);
+                      }}
                       placeholder="e.g. John Doe"
                       className="w-full p-4 bg-gray-50 border-2 border-gray-100 rounded-xl focus:border-cyan-500 focus:ring-0 outline-none transition-colors font-medium text-lg"
                       autoFocus
                     />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">
+                      Affiliate Code <span className="text-gray-400">(Optional)</span>
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={affiliateCode}
+                        onChange={(e) => {
+                          setAffiliateCode(e.target.value.toUpperCase());
+                          setError(null);
+                        }}
+                        placeholder="e.g. ABC123"
+                        className="w-full p-4 bg-gray-50 border-2 border-gray-100 rounded-xl focus:border-cyan-500 focus:ring-0 outline-none transition-colors font-medium text-lg uppercase"
+                      />
+                      {affiliateCode && (
+                        <div className="absolute right-4 top-1/2 -translate-y-1/2">
+                          <Check className="w-5 h-5 text-green-500" />
+                        </div>
+                      )}
+                    </div>
+                    <p className="text-[10px] text-gray-400 mt-1">
+                      <Users className="w-3 h-3 inline mr-1" />
+                      Have an affiliate code? Enter it here to earn bonus rewards
+                    </p>
                   </div>
 
                   {error && (
@@ -252,7 +298,7 @@ export function CustomerAuthScreen({ onAuthenticated }: CustomerAuthScreenProps)
                   <div className="flex gap-3">
                     <button
                       type="button"
-                      onClick={() => setStep('username')}
+                      onClick={() => setStep('mobile')}
                       className="flex-1 py-4 text-gray-500 font-semibold hover:bg-gray-50 rounded-xl transition-colors"
                     >
                       Back
@@ -324,7 +370,7 @@ export function CustomerAuthScreen({ onAuthenticated }: CustomerAuthScreenProps)
                       <div className="flex gap-3">
                         <button
                           type="button"
-                          onClick={() => setStep('username')}
+                          onClick={() => setStep('mobile')}
                           className="flex-1 py-4 text-gray-500 font-semibold hover:bg-gray-50 rounded-xl transition-colors"
                         >
                           Cancel

@@ -1,18 +1,21 @@
 import React, { useState } from 'react';
-import { User, Sparkles, Mail, Phone, Calendar } from 'lucide-react';
+import { User, Sparkles, Mail, Phone, Calendar, X } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import * as api from '@/utils/api';
 
 interface CustomerProfileSetupProps {
   onComplete: (profile: any) => void;
+  onExit?: () => void;
+  initialMobile?: string; // Mobile number from previous authentication step
+  initialName?: string; // Name from previous step if available
 }
 
-export function CustomerProfileSetup({ onComplete }: CustomerProfileSetupProps) {
+export function CustomerProfileSetup({ onComplete, onExit, initialMobile = '', initialName = '' }: CustomerProfileSetupProps) {
   const [formData, setFormData] = useState({
-    name: '',
+    name: initialName,
     email: '',
-    mobile: '',
+    mobile: initialMobile,
     birthday: ''
   });
   const [loading, setLoading] = useState(false);
@@ -92,7 +95,19 @@ export function CustomerProfileSetup({ onComplete }: CustomerProfileSetupProps) 
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full animate-in fade-in slide-in-from-bottom-4 duration-300 flex flex-col overflow-hidden">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full animate-in fade-in slide-in-from-bottom-4 duration-300 flex flex-col overflow-hidden relative">
+        {/* Exit Button */}
+        {onExit && (
+          <button
+            type="button"
+            onClick={onExit}
+            className="absolute top-4 right-4 z-10 w-8 h-8 rounded-full bg-white/20 backdrop-blur-sm hover:bg-white/30 flex items-center justify-center text-white transition-colors"
+            aria-label="Exit"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        )}
+
         {/* Header */}
         <div className="bg-gradient-to-r from-cyan-500 to-blue-600 p-6 text-center text-white flex-shrink-0">
           <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-full mx-auto flex items-center justify-center mb-3">
@@ -153,9 +168,16 @@ export function CustomerProfileSetup({ onComplete }: CustomerProfileSetupProps) 
               value={formData.mobile}
               onChange={(e) => setFormData(prev => ({ ...prev, mobile: e.target.value }))}
               placeholder="082 123 4567"
-              className="w-full"
+              className={`w-full ${initialMobile ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+              disabled={!!initialMobile}
+              readOnly={!!initialMobile}
               required
             />
+            {initialMobile && (
+              <p className="text-xs text-gray-500 mt-1">
+                Based on the mobile number you entered
+              </p>
+            )}
           </div>
 
           {/* Birthday (Optional) */}
