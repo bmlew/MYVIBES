@@ -1,5 +1,5 @@
-// MYVIBES Service Worker - v2.1.3
-const CACHE_VERSION = 'myvibes-v2.1.3';
+// MYVIBES Service Worker - v2.2.0
+const CACHE_VERSION = 'myvibes-v2.2.0';
 const CACHE_NAME = CACHE_VERSION; // Stable cache name to prevent loops
 
 console.log('🔄 [Service Worker] Loading version:', CACHE_VERSION);

@@ -1,26 +1,28 @@
-MYVIBES v2.1.2
-Build: 212
-Date: 2025-03-13
-Timestamp: 1710357600
+MYVIBES v2.2.0
+Build: 220
+Date: 2025-03-16
+Timestamp: 1710619200
 
-🎯 What's New in v2.1.2:
-✅ My Reservations Tab - View all your table bookings in one place
-✅ Reservation History - See upcoming & past reservations
-✅ Booking Details - Venue name, location, date, time, guest count
-✅ Status Tracking - Confirmed, pending, or cancelled reservations
-✅ User-specific Reservations - Filtered by your user ID
+🎯 What's New in v2.2.0:
+✅ Optimized Venue Detail Layout - More space for menus & specials
+✅ Reduced Header Height - Compact design for better content visibility
+✅ Fixed Scrolling Issues - Smooth scrolling in all venue tabs
+✅ Improved Menu Display - Better readability and spacing
+✅ Enhanced Tab Navigation - Menu, Specials, Events, Reviews, Leaderboard, About
 
 🔧 Technical Updates:
-- Added MyReservations component with filter tabs (Upcoming/Past/All)
-- New backend endpoint: GET /reservations/user/:userId
-- Updated reservation tracking to include user_id
-- Enhanced CustomerProfile with 3 tabs: Bookings, Achievements, Rewards
-- Improved reservation data structure with venue details
+- Reduced venue header image from 192px to 128px
+- Compressed venue info section with smaller fonts
+- Fixed overflow-y-auto conflicts between parent and child containers
+- Optimized button sizes and spacing (h-9 instead of default)
+- Added proper flex layout for tab content scrolling
+- Reduced padding throughout venue detail component
 
 🐛 Fixes:
-- Reservations now properly linked to user accounts
-- Added default tab to show Bookings first
-- Empty states for users with no reservations
+- Venue detail tabs now scroll properly
+- Fixed blank screen crash on venue click
+- Removed conflicting scroll containers
+- Improved mobile responsiveness
 
-If you see this file with version 2.1.2, the deployment is successful!
+If you see this file with version 2.2.0, the deployment is successful!
 Test at: /version-check.html
