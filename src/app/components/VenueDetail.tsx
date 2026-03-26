@@ -670,7 +670,7 @@ export function VenueDetail({ venueId, onBack, onReserve, onGetDirections, dista
           )}
         </TabsContent>
 
-        <TabsContent value="specials" className="flex-1 overflow-y-auto p-6 mt-0 pb-24">
+        <TabsContent value="specials" className="overflow-y-auto p-6 mt-0 pb-24">
           <h3 className="font-bold text-lg mb-4">Today's Specials</h3>
           {business.specials.length === 0 ? (
             <div className="text-center py-8 text-gray-500">

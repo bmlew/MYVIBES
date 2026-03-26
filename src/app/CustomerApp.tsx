@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef, lazy, Suspense, memo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef, lazy, Suspense, memo, startTransition } from 'react';
 import { 
   Utensils, 
   Bell, 
@@ -509,8 +509,10 @@ export function CustomerApp({ onExit }: CustomerAppProps = {}) {
     }
     
     console.log(`📍 Opening venue detail for: ${venueId}`);
-    setSelectedVenueId(venueId);
-    setCurrentView('venue-detail');
+    startTransition(() => {
+      setSelectedVenueId(venueId);
+      setCurrentView('venue-detail');
+    });
   }, []);
 
   // Increment special view count
@@ -1462,7 +1464,7 @@ export function CustomerApp({ onExit }: CustomerAppProps = {}) {
             <Suspense fallback={<ComponentLoader />}>
               <VenueDetail 
                 venueId={selectedVenueId}
-                onBack={() => setCurrentView('home')}
+                onBack={() => startTransition(() => setCurrentView('home'))}
               onReserve={(event) => {
                 if (event) {
                   setReservationInitialData({
@@ -1541,7 +1543,7 @@ export function CustomerApp({ onExit }: CustomerAppProps = {}) {
                   <div className="flex items-center gap-2">
                   <OnlineStatusBadge />
                   <button 
-                    onClick={() => setCurrentView('notifications')}
+                    onClick={() => startTransition(() => setCurrentView('notifications'))}
                     className="p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors relative"
                   >
                     <Bell className="w-5 h-5" />
@@ -2084,8 +2086,10 @@ export function CustomerApp({ onExit }: CustomerAppProps = {}) {
                   <div className="grid grid-cols-2 gap-2">
                     <button 
                       onClick={() => {
-                        setCurrentView('search');
-                        setSearchQuery('Live Music');
+                        startTransition(() => {
+                          setCurrentView('search');
+                          setSearchQuery('Live Music');
+                        });
                       }}
                       className="p-4 bg-white rounded-lg text-left border border-gray-100 hover:border-purple-500 hover:bg-purple-50 transition-colors"
                     >
@@ -2095,8 +2099,10 @@ export function CustomerApp({ onExit }: CustomerAppProps = {}) {
                     </button>
                     <button 
                       onClick={() => {
-                        setCurrentView('search');
-                        setSearchQuery('Wine Tasting');
+                        startTransition(() => {
+                          setCurrentView('search');
+                          setSearchQuery('Wine Tasting');
+                        });
                       }}
                       className="p-4 bg-white rounded-lg text-left border border-gray-100 hover:border-purple-500 hover:bg-purple-50 transition-colors"
                     >
@@ -2106,8 +2112,10 @@ export function CustomerApp({ onExit }: CustomerAppProps = {}) {
                     </button>
                     <button 
                       onClick={() => {
-                        setCurrentView('search');
-                        setSearchQuery('Themed');
+                        startTransition(() => {
+                          setCurrentView('search');
+                          setSearchQuery('Themed');
+                        });
                       }}
                       className="p-4 bg-white rounded-lg text-left border border-gray-100 hover:border-purple-500 hover:bg-purple-50 transition-colors"
                     >
@@ -2117,8 +2125,10 @@ export function CustomerApp({ onExit }: CustomerAppProps = {}) {
                     </button>
                     <button 
                       onClick={() => {
-                        setCurrentView('search');
-                        setSearchQuery('Brunch');
+                        startTransition(() => {
+                          setCurrentView('search');
+                          setSearchQuery('Brunch');
+                        });
                       }}
                       className="p-4 bg-white rounded-lg text-left border border-gray-100 hover:border-purple-500 hover:bg-purple-50 transition-colors"
                     >
@@ -2249,7 +2259,7 @@ export function CustomerApp({ onExit }: CustomerAppProps = {}) {
                   <Suspense fallback={<ComponentLoader />}>
                     <NotificationCenter 
                       userId={userProfile?.email || 'guest'}
-                      onClose={() => setCurrentView('home')}
+                      onClose={() => startTransition(() => setCurrentView('home'))}
                       onNotificationClick={(notification) => {
                         // Navigate to the business if it's a special/event notification
                         if (notification.business_id) {
@@ -2267,7 +2277,7 @@ export function CustomerApp({ onExit }: CustomerAppProps = {}) {
                   <Suspense fallback={<ComponentLoader />}>
                     <MyReservations 
                       userId={userProfile?.email || 'guest'}
-                      onClose={() => setCurrentView('profile')}
+                      onClose={() => startTransition(() => setCurrentView('profile'))}
                       onViewBusiness={(businessId) => {
                         openVenueDetail(businessId);
                       }}
@@ -2522,7 +2532,7 @@ export function CustomerApp({ onExit }: CustomerAppProps = {}) {
             <span className="text-xs font-medium">Home</span>
           </button>
           <button 
-            onClick={() => setCurrentView('search')}
+            onClick={() => startTransition(() => setCurrentView('search'))}
             className={`flex flex-col items-center gap-1 py-2 px-3 rounded-lg transition-colors ${currentView === 'search' ? 'text-blue-600 font-semibold' : 'text-gray-400 hover:text-gray-600'}`}
           >
             <Search className="w-5 h-5" />

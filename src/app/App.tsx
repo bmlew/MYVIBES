@@ -1,4 +1,4 @@
-import React, { useState, useEffect, lazy, Suspense } from 'react';
+import React, { useState, useEffect, lazy, Suspense, startTransition } from 'react';
 import { InstallPrompt } from './components/InstallPrompt';
 import { OfflineBanner } from './components/OfflineBanner';
 import { clearInvalidBusinessCache } from '@/utils/offlineStorage';
@@ -82,18 +82,55 @@ const LoadingFallback = () => {
 
 type AppMode = 'landing' | 'customer' | 'business' | 'roi' | 'admin';
 
+// Helper function to determine initial view from URL
+const getInitialView = (): 'landing' | 'customer-app' | 'business-dashboard' | 'business-auth' | 'platform-admin' | 'whatsapp-review' | 'faq' | 'popia' | 'disclaimers' | 'affiliate-portal' | 'investor-deck' | 'download' => {
+  const path = window.location.pathname;
+  
+  if (path === '/business-register' || path === '/business-register/') {
+    return 'business-auth';
+  }
+  if (path === '/download' || path === '/download/') {
+    return 'download';
+  }
+  if (path === '/app' || path === '/app/' || path === '/' || path === '') {
+    return 'customer-app';
+  }
+  if (path.startsWith('/review/')) {
+    return 'whatsapp-review';
+  }
+  
+  // Check if business is already authenticated
+  const authToken = localStorage.getItem('business_auth_token');
+  const storedBusinessName = localStorage.getItem('business_name');
+  if (authToken && storedBusinessName) {
+    return 'business-dashboard';
+  }
+  
+  return 'landing';
+};
+
 export default function App() {
-  const [currentView, setCurrentView] = useState<'landing' | 'customer-app' | 'business-dashboard' | 'business-auth' | 'platform-admin' | 'whatsapp-review' | 'faq' | 'popia' | 'disclaimers' | 'affiliate-portal' | 'investor-deck' | 'download'>('landing');
+  const [currentView, setCurrentView] = useState<'landing' | 'customer-app' | 'business-dashboard' | 'business-auth' | 'platform-admin' | 'whatsapp-review' | 'faq' | 'popia' | 'disclaimers' | 'affiliate-portal' | 'investor-deck' | 'download'>(getInitialView());
   
   console.log('🟦 Main App component rendered, currentView:', currentView);
-  const [reviewData, setReviewData] = useState<{ businessId?: string; customerName?: string; customerPhone?: string }>({});
-  
-  // Check if URL is for WhatsApp review
-  useEffect(() => {
+  const [reviewData, setReviewData] = useState<{ businessId?: string; customerName?: string; customerPhone?: string }>(() => {
+    // Initialize review data from URL on mount
     const path = window.location.pathname;
     const params = new URLSearchParams(window.location.search);
     
-    console.log('🌐 URL path detected:', path);
+    if (path.startsWith('/review/')) {
+      const businessId = path.replace('/review/', '').replace('/', '');
+      const customerName = params.get('name') || undefined;
+      const customerPhone = params.get('phone') || undefined;
+      return { businessId, customerName, customerPhone };
+    }
+    return {};
+  });
+  
+  // Handle referral codes and affiliate codes on mount
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const path = window.location.pathname;
     
     // Check for referral code
     const refCode = params.get('ref') || params.get('referral');
@@ -102,51 +139,13 @@ export default function App() {
       localStorage.setItem('myvibes_referral_code', refCode.toUpperCase());
     }
 
-    // Check if URL is /business-register (business registration with affiliate code)
+    // Check if URL is /business-register with affiliate code
     if (path === '/business-register' || path === '/business-register/') {
       console.log('🏢 Business registration URL detected');
       if (refCode) {
         console.log('🎯 Affiliate code detected for business registration:', refCode);
-        // Store it so BusinessAuth can read it
         localStorage.setItem('myvibes_affiliate_code_prefill', refCode.toUpperCase());
       }
-      setCurrentView('business-auth');
-      return;
-    }
-
-    // Check if URL is /download (smart app download redirect)
-    if (path === '/download' || path === '/download/') {
-      console.log('📱 Download app URL detected, showing smart redirect');
-      setCurrentView('download');
-      return;
-    }
-
-    // Check if URL is /app (customer PWA entry point) OR root
-    if (path === '/app' || path === '/app/' || path === '/' || path === '') {
-      console.log('🎯 Customer app URL detected (or root), showing customer app');
-      setCurrentView('customer-app');
-      return;
-    }
-
-    // Match /review/:businessId pattern
-    const reviewMatch = path.match(/^\/review\/([^/]+)$/);
-    if (reviewMatch) {
-      const businessId = reviewMatch[1];
-      
-      // Validate the business ID - reject invalid IDs like business-1, business-2, business-3 (simple sequential IDs only, max 3 digits)
-      if (businessId.match(/^business-[1-9]\d{0,2}$/)) {
-        console.error(`❌ Invalid business ID in URL: ${businessId}. Redirecting to landing page.`);
-        window.history.replaceState({}, '', '/');
-        setCurrentView('landing');
-        return;
-      }
-      
-      const customerName = params.get('name') || undefined;
-      const customerPhone = params.get('phone') || undefined;
-      
-      setReviewData({ businessId, customerName, customerPhone });
-      setCurrentView('whatsapp-review');
-      return;
     }
   }, []);
 
@@ -204,7 +203,7 @@ export default function App() {
     localStorage.removeItem('business_id');
     localStorage.removeItem('business_name');
     localStorage.removeItem('business_settings_cache');
-    setCurrentView('landing');
+    startTransition(() => setCurrentView('landing'));
   };
 
   return (
@@ -218,20 +217,20 @@ export default function App() {
       {currentView === 'landing' ? (
         <Suspense fallback={<LoadingFallback />}>
           <LandingPage 
-            onTryDemo={() => setCurrentView('customer-app')} 
-            onRegisterBusiness={() => setCurrentView('business-auth')}
-            onNavigate={(page) => setCurrentView(page)}
+            onTryDemo={() => startTransition(() => setCurrentView('customer-app'))} 
+            onRegisterBusiness={() => startTransition(() => setCurrentView('business-auth'))}
+            onNavigate={(page) => startTransition(() => setCurrentView(page))}
           />
         </Suspense>
       ) : currentView === 'customer-app' ? (
         <Suspense fallback={<LoadingFallback />}>
-          <CustomerApp onExit={() => setCurrentView('landing')} />
+          <CustomerApp onExit={() => startTransition(() => setCurrentView('landing'))} />
         </Suspense>
       ) : currentView === 'business-auth' ? (
         <Suspense fallback={<LoadingFallback />}>
           <BusinessAuth 
             onAuthSuccess={handleBusinessAuthSuccess} 
-            onBack={() => setCurrentView('landing')}
+            onBack={() => startTransition(() => setCurrentView('landing'))}
           />
         </Suspense>
       ) : currentView === 'business-dashboard' ? (
@@ -240,7 +239,7 @@ export default function App() {
         </Suspense>
       ) : currentView === 'roi' ? (
         <Suspense fallback={<LoadingFallback />}>
-          <ROICalculator onBack={() => setCurrentView('customer-app')} />
+          <ROICalculator onBack={() => startTransition(() => setCurrentView('customer-app'))} />
         </Suspense>
       ) : currentView === 'whatsapp-review' ? (
         <Suspense fallback={<LoadingFallback />}>
@@ -252,28 +251,28 @@ export default function App() {
         </Suspense>
       ) : currentView === 'faq' ? (
         <Suspense fallback={<LoadingFallback />}>
-          <FAQPage onBack={() => setCurrentView('landing')} />
+          <FAQPage onBack={() => startTransition(() => setCurrentView('landing'))} />
         </Suspense>
       ) : currentView === 'popia' ? (
         <Suspense fallback={<LoadingFallback />}>
-          <POPIAPage onBack={() => setCurrentView('landing')} />
+          <POPIAPage onBack={() => startTransition(() => setCurrentView('landing'))} />
         </Suspense>
       ) : currentView === 'disclaimers' ? (
         <Suspense fallback={<LoadingFallback />}>
-          <DisclaimersPage onBack={() => setCurrentView('landing')} />
+          <DisclaimersPage onBack={() => startTransition(() => setCurrentView('landing'))} />
         </Suspense>
       ) : currentView === 'affiliate-portal' ? (
         <Suspense fallback={<LoadingFallback />}>
-          <AffiliatePortal onBack={() => setCurrentView('landing')} />
+          <AffiliatePortal onBack={() => startTransition(() => setCurrentView('landing'))} />
         </Suspense>
       ) : currentView === 'investor-deck' ? (
         <Suspense fallback={<LoadingFallback />}>
-          <InvestorDeck onBack={() => setCurrentView('landing')} />
+          <InvestorDeck onBack={() => startTransition(() => setCurrentView('landing'))} />
         </Suspense>
       ) : currentView === 'platform-admin' ? (
         <ErrorBoundary>
           <Suspense fallback={<LoadingFallback />}>
-            <AdminDashboard onNavigate={setCurrentView} />
+            <AdminDashboard onNavigate={(page) => startTransition(() => setCurrentView(page))} />
           </Suspense>
         </ErrorBoundary>
       ) : currentView === 'download' ? (
@@ -283,9 +282,9 @@ export default function App() {
       ) : (
         <Suspense fallback={<LoadingFallback />}>
           <LandingPage 
-            onTryDemo={() => setCurrentView('customer-app')} 
-            onRegisterBusiness={() => setCurrentView('business-auth')}
-            onNavigate={(page) => setCurrentView(page)}
+            onTryDemo={() => startTransition(() => setCurrentView('customer-app'))} 
+            onRegisterBusiness={() => startTransition(() => setCurrentView('business-auth'))}
+            onNavigate={(page) => startTransition(() => setCurrentView(page))}
           />
         </Suspense>
       )}
