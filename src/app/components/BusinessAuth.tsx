@@ -72,12 +72,21 @@ export function BusinessAuth({ onAuthenticated, onAuthSuccess, onBack }: Busines
       localStorage.setItem('business_id', data.business_id);
       localStorage.setItem('business_name', data.business.name);
       
-      // Force reload to trigger App.tsx effect
-      window.location.reload();
+      // Call onAuthSuccess callback instead of forcing reload
+      console.log('✅ Login successful, calling onAuthSuccess callback');
+      if (onAuthSuccess) {
+        onAuthSuccess(data.business_id, data.business.name);
+      }
       
     } catch (err: any) {
       console.error('❌ Login client-side error:', err);
-      setError(err.message);
+      
+      // Special handling for orphaned accounts
+      if (err.message?.includes('Business account not found')) {
+        setError('Account setup incomplete. Auto-recovery attempted. Please try signing in again or contact support.');
+      } else {
+        setError(err.message);
+      }
     } finally {
       setLoading(false);
     }

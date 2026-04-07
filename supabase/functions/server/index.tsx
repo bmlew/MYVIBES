@@ -376,11 +376,32 @@ app.post("/make-server-175b2872/auth/business/register", async (c) => {
       updated_at: new Date().toISOString()
     };
 
-    // Store Business
-    await kv.set(`business:${businessId}`, business);
+    // Store Business - CRITICAL: Must succeed
+    try {
+      await kv.set(`business:${businessId}`, business);
+      console.log('✅ Business record created:', businessId);
+    } catch (kvError: any) {
+      console.error('❌ CRITICAL: Failed to create business record:', kvError);
+      // Try to clean up the auth user if KV fails
+      try {
+        await supabase.auth.admin.deleteUser(authData.user.id);
+        console.log('🧹 Cleaned up orphaned auth user');
+      } catch (cleanupError) {
+        console.error('⚠️ Failed to cleanup auth user:', cleanupError);
+      }
+      return c.json({ 
+        error: 'Failed to create business account. Please try again.' 
+      }, 500);
+    }
 
     // OPTIMIZATION: Create Fast Link Key
-    await kv.set(`link:user_business:${authData.user.id}`, { businessId: businessId });
+    try {
+      await kv.set(`link:user_business:${authData.user.id}`, { businessId: businessId });
+      console.log('✅ Link key created for user:', authData.user.id);
+    } catch (linkError) {
+      console.error('⚠️ Failed to create link key (non-critical):', linkError);
+      // Non-critical - getBusinessForUser will fall back to slow path
+    }
 
     if (validAffiliate) {
       validAffiliate.total_referrals = (validAffiliate.total_referrals || 0) + 1;
@@ -1283,11 +1304,104 @@ app.post("/make-server-175b2872/auth/business/signin", async (c) => {
     console.log('✅ Auth successful for user:', authData.user.id);
 
     // OPTIMIZED: Use helper to find business (checks fast link first)
-    const business = await getBusinessForUser(authData.user.id);
+    let business = await getBusinessForUser(authData.user.id);
 
     if (!business) {
       console.error('❌ Business not found for user:', authData.user.id);
-      return c.json({ error: 'Business account not found. Please register first.' }, 404);
+      console.log('🔄 Attempting to recover orphaned auth account...');
+      
+      // Check if user metadata has business info (from registration)
+      const metadata = authData.user.user_metadata;
+      if (metadata?.business_name) {
+        console.log('📝 Found business metadata, creating missing business record...');
+        
+        // Create the missing business record
+        const businessId = generateUUID();
+        const recoveredBusiness = {
+          id: businessId,
+          user_id: authData.user.id,
+          name: metadata.business_name,
+          owner_name: metadata.owner_name || '',
+          email: authData.user.email,
+          phone: metadata.phone || '',
+          address: '',
+          city: '',
+          description: '',
+          business_type: 'restaurant',
+          cuisine_types: [],
+          latitude: -26.1076,
+          longitude: 28.0567,
+          price_range: '$$',
+          logo_url: null,
+          cover_image_url: null,
+          is_active: false,
+          subscription_status: 'pending',
+          payment_status: 'pending',
+          subscription_plan: 'standard',
+          subscription_price: 499,
+          next_payment_due: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+          last_payment_date: new Date().toISOString(),
+          average_rating: 0,
+          total_reviews: 0,
+          total_views: 0,
+          affiliate_code: null,
+          referred_by: null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
+        
+        // Store the recovered business
+        await kv.set(`business:${businessId}`, recoveredBusiness);
+        await kv.set(`link:user_business:${authData.user.id}`, { businessId: businessId });
+        
+        console.log('✅ Business record recovered:', businessId);
+        business = recoveredBusiness;
+      } else {
+        // No metadata to recover from - create minimal business record
+        console.log('⚠️ No metadata available for recovery. User ID:', authData.user.id);
+        
+        // Create a minimal business record as last resort
+        const businessId = generateUUID();
+        const minimalBusiness = {
+          id: businessId,
+          user_id: authData.user.id,
+          name: `Business Account ${authData.user.email?.split('@')[0] || 'User'}`,
+          owner_name: '',
+          email: authData.user.email || '',
+          phone: '',
+          address: 'Not provided',
+          city: 'Johannesburg',
+          description: 'Please update your business information in settings',
+          business_type: 'restaurant',
+          cuisine_types: [],
+          latitude: -26.1076,
+          longitude: 28.0567,
+          price_range: '$$',
+          logo_url: null,
+          cover_image_url: null,
+          is_active: false,
+          subscription_status: 'pending',
+          payment_status: 'pending',
+          subscription_plan: 'standard',
+          subscription_price: 499,
+          next_payment_due: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+          last_payment_date: new Date().toISOString(),
+          average_rating: 0,
+          total_reviews: 0,
+          total_views: 0,
+          affiliate_code: null,
+          referred_by: null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          needs_setup: true // Flag to indicate this needs completion
+        };
+        
+        await kv.set(`business:${businessId}`, minimalBusiness);
+        await kv.set(`link:user_business:${authData.user.id}`, { businessId: businessId });
+        
+        console.log('✅ Minimal business record created:', businessId);
+        business = minimalBusiness;
+      }
     }
 
     console.log('✅ Business found:', business.id, business.name);
@@ -1303,6 +1417,135 @@ app.post("/make-server-175b2872/auth/business/signin", async (c) => {
   } catch (error: any) {
     console.error('❌ Sign in server error:', error);
     return c.json({ error: `Sign in failed: ${error.message || error}` }, 500);
+  }
+});
+
+// Business Account Recovery (for orphaned auth users)
+app.post("/make-server-175b2872/auth/business/recover", async (c) => {
+  try {
+    const body = await c.req.json();
+    const { email, password, business_name, owner_name, phone, address, city } = body;
+
+    console.log('🔄 Business account recovery attempt:', email);
+
+    if (!email || !password) {
+      return c.json({ error: 'Email and password are required' }, 400);
+    }
+
+    // Try to sign in with the credentials
+    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+      email,
+      password
+    });
+
+    if (authError) {
+      return c.json({ 
+        error: 'Invalid credentials. Cannot recover account.' 
+      }, 401);
+    }
+
+    // Check if business already exists
+    const existingBusiness = await getBusinessForUser(authData.user.id);
+    if (existingBusiness) {
+      return c.json({ 
+        error: 'Business account already exists. Please use regular sign in.',
+        business_id: existingBusiness.id
+      }, 400);
+    }
+
+    console.log('📝 Creating missing business record for user:', authData.user.id);
+
+    // Create the missing business record
+    const businessId = generateUUID();
+    const metadata = authData.user.user_metadata;
+    
+    const recoveredBusiness = {
+      id: businessId,
+      user_id: authData.user.id,
+      name: business_name || metadata?.business_name || 'My Business',
+      owner_name: owner_name || metadata?.owner_name || '',
+      email: authData.user.email,
+      phone: phone || metadata?.phone || '',
+      address: address || '',
+      city: city || '',
+      description: '',
+      business_type: 'restaurant',
+      cuisine_types: [],
+      latitude: -26.1076,
+      longitude: 28.0567,
+      price_range: '$$',
+      logo_url: null,
+      cover_image_url: null,
+      is_active: false,
+      subscription_status: 'pending',
+      payment_status: 'pending',
+      subscription_plan: 'standard',
+      subscription_price: 499,
+      next_payment_due: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      last_payment_date: new Date().toISOString(),
+      average_rating: 0,
+      total_reviews: 0,
+      total_views: 0,
+      affiliate_code: null,
+      referred_by: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    await kv.set(`business:${businessId}`, recoveredBusiness);
+    await kv.set(`link:user_business:${authData.user.id}`, { businessId: businessId });
+
+    console.log('✅ Business account recovered:', businessId);
+
+    const signedBusiness = await signBusinessUrls(recoveredBusiness);
+
+    return c.json({
+      success: true,
+      message: 'Business account recovered successfully!',
+      business_id: businessId,
+      access_token: authData.session.access_token,
+      business: signedBusiness
+    });
+  } catch (error: any) {
+    console.error('❌ Recovery error:', error);
+    return c.json({ error: `Recovery failed: ${error.message || error}` }, 500);
+  }
+});
+
+// Admin: Delete orphaned auth user (cleanup utility)
+app.delete("/make-server-175b2872/auth/business/cleanup/:userId", async (c) => {
+  try {
+    const userId = c.req.param('userId');
+    
+    console.log('🧹 Cleanup request for user:', userId);
+
+    // Verify this user has no business record
+    const business = await getBusinessForUser(userId);
+    if (business) {
+      return c.json({ 
+        error: 'User has a business record. Use normal deletion instead.',
+        business_id: business.id 
+      }, 400);
+    }
+
+    // Delete the orphaned auth user
+    const { error } = await supabase.auth.admin.deleteUser(userId);
+    
+    if (error) {
+      console.error('❌ Failed to delete user:', error);
+      return c.json({ error: error.message }, 500);
+    }
+
+    console.log('✅ Orphaned auth user deleted:', userId);
+
+    return c.json({
+      success: true,
+      message: 'Orphaned auth user deleted successfully',
+      user_id: userId
+    });
+  } catch (error: any) {
+    console.error('❌ Cleanup error:', error);
+    return c.json({ error: `Cleanup failed: ${error.message || error}` }, 500);
   }
 });
 

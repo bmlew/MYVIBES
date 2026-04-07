@@ -34,7 +34,8 @@ import {
   Clock,
   Trash2,
   Image as ImageIcon,
-  Video
+  Video,
+  AlertCircle
 } from 'lucide-react';
 import { PerformanceOverview } from '@/app/components/PerformanceOverview';
 import { RecentCheckIns } from '@/app/components/RecentCheckIns';
@@ -312,6 +313,9 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
   const [mlInsightsData, setMlInsightsData] = useState<any>(null);
   const [loadingMlInsights, setLoadingMlInsights] = useState(false);
   const [creatingSpecialIndex, setCreatingSpecialIndex] = useState<number | null>(null);
+  
+  // Account recovery state
+  const [needsSetup, setNeedsSetup] = useState(false);
 
   // Initialize default business_id if not set
   useEffect(() => {
@@ -389,6 +393,12 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
           
           // Extract business object from response
           const business = data.business || data;
+          
+          // Check if account needs setup
+          if (business.needs_setup === true) {
+            setNeedsSetup(true);
+            console.warn('⚠️ Business account needs setup completion');
+          }
           
           setSettingsFormData({
             name: business.name || '',
@@ -2195,6 +2205,29 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
           type={toast.type}
           onClose={hideToast}
         />
+      )}
+
+      {/* Account Recovery Warning Banner */}
+      {needsSetup && (
+        <div className="fixed top-0 left-0 right-0 bg-yellow-500 text-black px-4 py-3 z-[60] shadow-lg">
+          <div className="max-w-7xl mx-auto flex items-center justify-between gap-4 flex-wrap">
+            <div className="flex items-center gap-3">
+              <AlertCircle className="w-5 h-5 flex-shrink-0" />
+              <div className="text-sm font-medium">
+                <strong>Account Setup Incomplete:</strong> Your account was automatically recovered. Please update your business information in Settings to activate your account.
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                setCurrentView('settings');
+                setNeedsSetup(false);
+              }}
+              className="px-4 py-2 bg-black text-white rounded-lg text-sm font-medium hover:bg-gray-800 transition-colors whitespace-nowrap"
+            >
+              Complete Setup
+            </button>
+          </div>
+        </div>
       )}
 
       {/* Mobile Header */}
@@ -4171,6 +4204,7 @@ export function BusinessDashboard({ onLogout, businessName }: BusinessDashboardP
                         businessId={localStorage.getItem('business_id') || undefined}
                         onSuccess={showSuccess}
                         onError={showError}
+                        getAuthToken={getAuthToken}
                       />
 
                       {/* Performance Insights */}

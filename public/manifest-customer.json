@@ -1,12 +1,12 @@
 {
   "name": "MYVIBES - Discover Restaurants & Events",
   "short_name": "MYVIBES",
-  "version": "2.2.1",
-  "version_name": "2.2.1",
-  "version_code": 221,
+  "version": "2.2.5",
+  "version_name": "2.2.5",
+  "version_code": 225,
   "description": "Discover the best restaurants, bars, and events near you. Get exclusive deals, earn loyalty points, and find your next vibe.",
-  "id": "/app?v=2.2.1",
-  "start_url": "/app?v=2.2.1&ts=1710620400",
+  "id": "/app?v=2.2.5",
+  "start_url": "/app?v=2.2.5&ts=1710620400",
   "scope": "/",
   "display": "standalone",
   "background_color": "#0f172a",
@@ -57,19 +57,19 @@
       "name": "Find Restaurants",
       "short_name": "Restaurants",
       "description": "Discover nearby restaurants",
-      "url": "/app?v=2.2.1"
+      "url": "/app?v=2.2.5"
     },
     {
       "name": "Events Near Me",
       "short_name": "Events",
       "description": "Find local events and entertainment",
-      "url": "/app?v=2.2.1"
+      "url": "/app?v=2.2.5"
     },
     {
       "name": "My Points",
       "short_name": "Points",
       "description": "View your loyalty points and rewards",
-      "url": "/app?v=2.2.1"
+      "url": "/app?v=2.2.5"
     }
   ]
 }

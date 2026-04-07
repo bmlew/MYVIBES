@@ -47,9 +47,10 @@ interface PriceRecommendationsProps {
   businessId?: string;
   onSuccess?: (message: string) => void;
   onError?: (message: string) => void;
+  getAuthToken?: () => string; // Add this prop for authentication
 }
 
-export function PriceRecommendations({ businessId, onSuccess, onError }: PriceRecommendationsProps) {
+export function PriceRecommendations({ businessId, onSuccess, onError, getAuthToken }: PriceRecommendationsProps) {
   const [recommendations, setRecommendations] = useState<PriceRecommendation[]>([]);
   const [implementedRecs, setImplementedRecs] = useState<ImplementedRecommendation[]>([]);
   const [loading, setLoading] = useState(false);
@@ -310,13 +311,16 @@ export function PriceRecommendations({ businessId, onSuccess, onError }: PriceRe
           image_url: imageUrl
         };
 
+        // Get proper auth token (either from prop or fallback to publicAnonKey)
+        const authToken = getAuthToken ? getAuthToken() : publicAnonKey;
+
         // Create special in backend
         const response = await fetch(
           `https://${projectId}.supabase.co/functions/v1/make-server-175b2872/kv/specials`,
           {
             method: 'POST',
             headers: {
-              'Authorization': `Bearer ${publicAnonKey}`,
+              'Authorization': `Bearer ${authToken}`,
               'Content-Type': 'application/json'
             },
             body: JSON.stringify(specialData)
@@ -326,7 +330,10 @@ export function PriceRecommendations({ businessId, onSuccess, onError }: PriceRe
         if (!response.ok) {
           const error = await response.json();
           console.error('Failed to create special:', error);
-          alert('Failed to create special. Please try again.');
+          console.error('Request payload:', specialData);
+          console.error('Auth token being used:', authToken ? 'Token provided' : 'No token');
+          const errorMsg = `Failed to create special: ${error.error || 'Unknown error'}. Please check the console for details.`;
+          alert(errorMsg);
           setLoading(false);
           return;
         }

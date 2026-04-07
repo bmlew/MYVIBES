@@ -1,50 +1,23 @@
-import React, { useState, useEffect, lazy, Suspense, startTransition } from 'react';
+import React, { useState, useEffect, lazy, Suspense, startTransition, useRef } from 'react';
 import { InstallPrompt } from './components/InstallPrompt';
 import { OfflineBanner } from './components/OfflineBanner';
 import { clearInvalidBusinessCache } from '@/utils/offlineStorage';
 import '@/utils/fix-businesses'; // Import fix utilities for browser console
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { useRenderLoopDetector } from '@/hooks/useRenderLoopDetector';
 
 import { Toaster } from '@/app/components/ui/sonner';
 
-// Lazy load heavy components for better initial load performance with retry logic
-// Handle both default and named exports for robustness
-const CustomerApp = lazy(() => 
-  import('./CustomerApp')
-    .then(module => ({ default: module.CustomerApp || module.default }))
-    .catch(err => {
-      console.error('Error loading CustomerApp:', err);
-      // Retry after short delay
-      return new Promise(resolve => setTimeout(() => resolve(
-        import('./CustomerApp').then(module => ({ default: module.CustomerApp || module.default }))
-      ), 1000));
-    })
-);
+// Lazy load heavy components for better initial load performance
+// NOTE: All lazy components must be wrapped in Suspense boundaries
+// and state changes that trigger lazy loading must use startTransition()
+// to prevent "component suspended while responding to synchronous input" errors
+const CustomerApp = lazy(() => import('./CustomerApp'));
 
 const BusinessDashboard = lazy(() => import('./BusinessDashboard').then(m => ({ default: m.BusinessDashboard })));
-const BusinessAuth = lazy(() => 
-  import('./components/BusinessAuth')
-    .then(module => ({ default: module.BusinessAuth || module.default }))
-    .catch(err => {
-      console.error('Error loading BusinessAuth:', err);
-      // Retry after short delay
-      return new Promise(resolve => setTimeout(() => resolve(
-        import('./components/BusinessAuth').then(module => ({ default: module.BusinessAuth || module.default }))
-      ), 1000));
-    })
-);
+const BusinessAuth = lazy(() => import('./components/BusinessAuth').then(m => ({ default: m.BusinessAuth })));
 const ROICalculator = lazy(() => import('./components/ROICalculator').then(m => ({ default: m.ROICalculator })));
-const AdminDashboard = lazy(() => 
-  import('./AdminDashboard')
-    .then(module => ({ default: module.AdminDashboard || module.default }))
-    .catch(err => {
-      console.error('Error loading AdminDashboard:', err);
-      // Retry after short delay
-      return new Promise(resolve => setTimeout(() => resolve(
-        import('./AdminDashboard').then(module => ({ default: module.AdminDashboard || module.default }))
-      ), 1000));
-    })
-);
+const AdminDashboard = lazy(() => import('./AdminDashboard').then(m => ({ default: m.AdminDashboard })));
 const LandingPage = lazy(() => import('./LandingPage'));
 const WhatsAppReviewPage = lazy(() => import('./components/WhatsAppReviewPage').then(m => ({ default: m.WhatsAppReviewPage })));
 const FAQPage = lazy(() => import('./components/FAQPage').then(m => ({ default: m.FAQPage })));
@@ -86,33 +59,47 @@ type AppMode = 'landing' | 'customer' | 'business' | 'roi' | 'admin';
 const getInitialView = (): 'landing' | 'customer-app' | 'business-dashboard' | 'business-auth' | 'platform-admin' | 'whatsapp-review' | 'faq' | 'popia' | 'disclaimers' | 'affiliate-portal' | 'investor-deck' | 'download' => {
   const path = window.location.pathname;
   
+  // PRIORITY 1: Check if business is already authenticated (must be before URL checks)
+  const authToken = localStorage.getItem('business_auth_token');
+  const storedBusinessName = localStorage.getItem('business_name');
+  if (authToken && storedBusinessName) {
+    console.log('🏢 Business session detected, redirecting to dashboard');
+    return 'business-dashboard';
+  }
+  
+  // PRIORITY 2: Check specific URL routes
   if (path === '/business-register' || path === '/business-register/') {
     return 'business-auth';
   }
   if (path === '/download' || path === '/download/') {
     return 'download';
   }
-  if (path === '/app' || path === '/app/' || path === '/' || path === '') {
-    return 'customer-app';
-  }
   if (path.startsWith('/review/')) {
     return 'whatsapp-review';
   }
   
-  // Check if business is already authenticated
-  const authToken = localStorage.getItem('business_auth_token');
-  const storedBusinessName = localStorage.getItem('business_name');
-  if (authToken && storedBusinessName) {
-    return 'business-dashboard';
+  // PRIORITY 3: Default to customer app for root paths
+  if (path === '/app' || path === '/app/' || path === '/' || path === '') {
+    return 'customer-app';
   }
   
   return 'landing';
 };
 
 export default function App() {
-  const [currentView, setCurrentView] = useState<'landing' | 'customer-app' | 'business-dashboard' | 'business-auth' | 'platform-admin' | 'whatsapp-review' | 'faq' | 'popia' | 'disclaimers' | 'affiliate-portal' | 'investor-deck' | 'download'>(getInitialView());
+  // Circuit breaker: Detect infinite render loops
+  useRenderLoopDetector('App', 100);
   
-  console.log('🟦 Main App component rendered, currentView:', currentView);
+  // Always start with landing to avoid HMR suspense issues
+  const [currentView, setCurrentView] = useState<'landing' | 'customer-app' | 'business-dashboard' | 'business-auth' | 'platform-admin' | 'whatsapp-review' | 'faq' | 'popia' | 'disclaimers' | 'affiliate-portal' | 'investor-deck' | 'download'>('landing');
+  
+  const [isInitialized, setIsInitialized] = useState(false);
+  const [showLoading, setShowLoading] = useState(true);
+  
+  const renderCountRef = useRef(0);
+  renderCountRef.current += 1;
+  console.log(`🟦 Main App render #${renderCountRef.current}, currentView: ${currentView}, showLoading: ${showLoading}`);
+  
   const [reviewData, setReviewData] = useState<{ businessId?: string; customerName?: string; customerPhone?: string }>(() => {
     // Initialize review data from URL on mount
     const path = window.location.pathname;
@@ -148,6 +135,27 @@ export default function App() {
       }
     }
   }, []);
+  
+  // Initialize view after mount using startTransition to avoid suspense errors
+  // Add delay to let React HMR settle before loading lazy components
+  useEffect(() => {
+    if (!isInitialized) {
+      // Small delay to ensure HMR has completed before loading lazy components
+      const timer = setTimeout(() => {
+        const initialView = getInitialView();
+        console.log('🎬 App initialized, initial view:', initialView);
+        
+        // Use startTransition to prevent suspense errors on lazy components
+        startTransition(() => {
+          setShowLoading(false);
+          setCurrentView(initialView);
+          setIsInitialized(true);
+        });
+      }, 100); // 100ms delay for HMR to settle
+      
+      return () => clearTimeout(timer);
+    }
+  }, [isInitialized]);
 
   // Clear any old business-1 references from localStorage on app load
   useEffect(() => {
@@ -161,16 +169,8 @@ export default function App() {
     }
   }, []);
 
-  // Check if business is already authenticated on mount
-  useEffect(() => {
-    const authToken = localStorage.getItem('business_auth_token');
-    const storedBusinessName = localStorage.getItem('business_name');
-    
-    if (authToken && storedBusinessName) {
-      setCurrentView('business-dashboard');
-      localStorage.setItem('business_name', storedBusinessName);
-    }
-  }, []);
+  // Note: Business authentication check removed - getInitialView() already handles this
+  // to prevent conflicts between URL-based routing and localStorage state
 
   // Preload heavy components in background
   useEffect(() => {
@@ -213,79 +213,60 @@ export default function App() {
       <OfflineBanner />
       <Toaster />
 
-      {/* Render the appropriate view */}
-      {currentView === 'landing' ? (
-        <Suspense fallback={<LoadingFallback />}>
-          <LandingPage 
-            onTryDemo={() => startTransition(() => setCurrentView('customer-app'))} 
-            onRegisterBusiness={() => startTransition(() => setCurrentView('business-auth'))}
-            onNavigate={(page) => startTransition(() => setCurrentView(page))}
-          />
-        </Suspense>
-      ) : currentView === 'customer-app' ? (
-        <Suspense fallback={<LoadingFallback />}>
-          <CustomerApp onExit={() => startTransition(() => setCurrentView('landing'))} />
-        </Suspense>
-      ) : currentView === 'business-auth' ? (
-        <Suspense fallback={<LoadingFallback />}>
-          <BusinessAuth 
-            onAuthSuccess={handleBusinessAuthSuccess} 
-            onBack={() => startTransition(() => setCurrentView('landing'))}
-          />
-        </Suspense>
-      ) : currentView === 'business-dashboard' ? (
-        <Suspense fallback={<LoadingFallback />}>
-          <BusinessDashboard onLogout={handleBusinessLogout} businessName={localStorage.getItem('business_name') || ''} />
-        </Suspense>
-      ) : currentView === 'roi' ? (
-        <Suspense fallback={<LoadingFallback />}>
-          <ROICalculator onBack={() => startTransition(() => setCurrentView('customer-app'))} />
-        </Suspense>
-      ) : currentView === 'whatsapp-review' ? (
-        <Suspense fallback={<LoadingFallback />}>
-          <WhatsAppReviewPage 
-            businessId={reviewData.businessId || ''}
-            customerName={reviewData.customerName}
-            customerPhone={reviewData.customerPhone}
-          />
-        </Suspense>
-      ) : currentView === 'faq' ? (
-        <Suspense fallback={<LoadingFallback />}>
-          <FAQPage onBack={() => startTransition(() => setCurrentView('landing'))} />
-        </Suspense>
-      ) : currentView === 'popia' ? (
-        <Suspense fallback={<LoadingFallback />}>
-          <POPIAPage onBack={() => startTransition(() => setCurrentView('landing'))} />
-        </Suspense>
-      ) : currentView === 'disclaimers' ? (
-        <Suspense fallback={<LoadingFallback />}>
-          <DisclaimersPage onBack={() => startTransition(() => setCurrentView('landing'))} />
-        </Suspense>
-      ) : currentView === 'affiliate-portal' ? (
-        <Suspense fallback={<LoadingFallback />}>
-          <AffiliatePortal onBack={() => startTransition(() => setCurrentView('landing'))} />
-        </Suspense>
-      ) : currentView === 'investor-deck' ? (
-        <Suspense fallback={<LoadingFallback />}>
-          <InvestorDeck onBack={() => startTransition(() => setCurrentView('landing'))} />
-        </Suspense>
-      ) : currentView === 'platform-admin' ? (
-        <ErrorBoundary>
-          <Suspense fallback={<LoadingFallback />}>
-            <AdminDashboard onNavigate={(page) => startTransition(() => setCurrentView(page))} />
-          </Suspense>
-        </ErrorBoundary>
-      ) : currentView === 'download' ? (
-        <Suspense fallback={<LoadingFallback />}>
-          <DownloadApp />
-        </Suspense>
+      {/* Show loading screen during initialization to prevent HMR suspense issues */}
+      {showLoading ? (
+        <LoadingFallback />
       ) : (
         <Suspense fallback={<LoadingFallback />}>
-          <LandingPage 
-            onTryDemo={() => startTransition(() => setCurrentView('customer-app'))} 
-            onRegisterBusiness={() => startTransition(() => setCurrentView('business-auth'))}
-            onNavigate={(page) => startTransition(() => setCurrentView(page))}
-          />
+          {/* Render the appropriate view */}
+          {currentView === 'landing' ? (
+            <LandingPage 
+              onTryDemo={() => startTransition(() => setCurrentView('customer-app'))} 
+              onRegisterBusiness={() => startTransition(() => setCurrentView('business-auth'))}
+              onNavigate={(page) => startTransition(() => setCurrentView(page))}
+            />
+          ) : currentView === 'customer-app' ? (
+            <ErrorBoundary>
+              <CustomerApp onExit={() => startTransition(() => setCurrentView('landing'))} />
+            </ErrorBoundary>
+          ) : currentView === 'business-auth' ? (
+            <BusinessAuth 
+              onAuthSuccess={handleBusinessAuthSuccess} 
+              onBack={() => startTransition(() => setCurrentView('landing'))}
+            />
+          ) : currentView === 'business-dashboard' ? (
+            <BusinessDashboard onLogout={handleBusinessLogout} businessName={localStorage.getItem('business_name') || ''} />
+          ) : currentView === 'roi' ? (
+            <ROICalculator onBack={() => startTransition(() => setCurrentView('customer-app'))} />
+          ) : currentView === 'whatsapp-review' ? (
+            <WhatsAppReviewPage 
+              businessId={reviewData.businessId || ''}
+              customerName={reviewData.customerName}
+              customerPhone={reviewData.customerPhone}
+            />
+          ) : currentView === 'faq' ? (
+            <FAQPage onBack={() => startTransition(() => setCurrentView('landing'))} />
+          ) : currentView === 'popia' ? (
+            <POPIAPage onBack={() => startTransition(() => setCurrentView('landing'))} />
+          ) : currentView === 'disclaimers' ? (
+            <DisclaimersPage onBack={() => startTransition(() => setCurrentView('landing'))} />
+          ) : currentView === 'affiliate-portal' ? (
+            <AffiliatePortal onBack={() => startTransition(() => setCurrentView('landing'))} />
+          ) : currentView === 'investor-deck' ? (
+            <InvestorDeck onBack={() => startTransition(() => setCurrentView('landing'))} />
+          ) : currentView === 'platform-admin' ? (
+            <ErrorBoundary>
+              <AdminDashboard onNavigate={(page) => startTransition(() => setCurrentView(page))} />
+            </ErrorBoundary>
+          ) : currentView === 'download' ? (
+            <DownloadApp />
+          ) : (
+            <LandingPage 
+              onTryDemo={() => startTransition(() => setCurrentView('customer-app'))} 
+              onRegisterBusiness={() => startTransition(() => setCurrentView('business-auth'))}
+              onNavigate={(page) => startTransition(() => setCurrentView(page))}
+            />
+          )}
         </Suspense>
       )}
     </div>

@@ -26,6 +26,7 @@ import { Input } from './components/ui/input';
 import { calculateDistance } from './utils/distance';
 import { useOnlineStatus } from '@/hooks/useOnlineStatus';
 import { useDebounce } from '@/hooks/useDebounce';
+import { useRenderLoopDetector } from '@/hooks/useRenderLoopDetector';
 import * as api from '@/utils/api';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { ImageWithFallback } from './components/figma/ImageWithFallback';
@@ -125,10 +126,22 @@ interface CustomerAppProps {
   onExit?: () => void;
 }
 
-export function CustomerApp({ onExit }: CustomerAppProps = {}) {
-  // Performance: Only log in development
+export function CustomerApp({ onExit }: CustomerAppProps) {
+  // Circuit breaker: Detect infinite render loops
+  useRenderLoopDetector('CustomerApp', 100);
+  
+  // Performance: Track renders to detect loops
+  const renderCountRef = useRef(0);
+  renderCountRef.current += 1;
+  
   if (import.meta.env.DEV) {
-    console.log('🔵 CustomerApp component rendered');
+    console.log(`🔵 CustomerApp render #${renderCountRef.current}`);
+    
+    // Alert if rendering too frequently (possible loop)
+    if (renderCountRef.current > 50) {
+      console.error('🚨 INFINITE LOOP DETECTED IN CustomerApp! Over 50 renders.');
+      console.error('🚨 Check useEffect dependencies and state updates');
+    }
   }
   
   const [currentView, setCurrentView] = useState<View>('home');
@@ -343,9 +356,9 @@ export function CustomerApp({ onExit }: CustomerAppProps = {}) {
   // Debug: Track component mount/unmount
   useEffect(() => {
     console.log('🟢 CustomerApp MOUNTED');
-    console.log('📱 MYVIBES APP VERSION: v2.1.0');
-    console.log('📅 Build Date: 2025-03-13');
-    console.log('🔍 Check for "v2.1" next to logo to verify correct version');
+    console.log('📱 MYVIBES APP VERSION: v2.2.5');
+    console.log('📅 Build Date: 2025-04-07');
+    console.log('🔍 Check for "v2.2" next to logo to verify correct version');
     return () => {
       console.log('🔴 CustomerApp UNMOUNTED');
     };
@@ -1516,20 +1529,30 @@ export function CustomerApp({ onExit }: CustomerAppProps = {}) {
             {currentView !== 'profile' && (
               <div className="bg-gradient-to-r from-cyan-500 to-blue-600 text-white px-6 pb-4 flex-shrink-0">
               <div className="flex items-center justify-between mb-3">
-                <div>
-                  <div className="flex items-center gap-2 mb-1">
-                    <div className="bg-white/10 backdrop-blur-sm rounded-lg px-3 py-2 shadow-lg border border-white/20">
-                      <MyVibesLogo variant="white" className="h-10" />
+                <div className="flex items-center gap-3">
+                  {/* Back to Landing button */}
+                  <button
+                    onClick={handleExit}
+                    className="p-2 hover:bg-white/20 rounded-lg transition-colors"
+                    title="Back to Landing Page"
+                  >
+                    <ArrowLeft className="w-5 h-5" />
+                  </button>
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <div className="bg-white/10 backdrop-blur-sm rounded-lg px-3 py-2 shadow-lg border border-white/20">
+                        <MyVibesLogo variant="white" className="h-10" />
+                      </div>
+                      <span className="text-[8px] opacity-50 font-mono">v2.1</span>
                     </div>
-                    <span className="text-[8px] opacity-50 font-mono">v2.1</span>
+                    {/* Customer Name */}
+                    {userProfile && (
+                      <div className="text-sm font-medium mt-1 flex items-center gap-2">
+                        <User className="w-4 h-4 opacity-80" />
+                        <span>{userProfile.name || userProfile.username || 'Guest'}</span>
+                      </div>
+                    )}
                   </div>
-                  {/* Customer Name */}
-                  {userProfile && (
-                    <div className="text-sm font-medium mt-1 flex items-center gap-2">
-                      <User className="w-4 h-4 opacity-80" />
-                      <span>{userProfile.name || userProfile.username || 'Guest'}</span>
-                    </div>
-                  )}
                 </div>
                 <div className="flex flex-col items-end gap-2">
                   <div className="text-right">

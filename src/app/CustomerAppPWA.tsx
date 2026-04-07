@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { CustomerApp } from './CustomerApp';
+import CustomerApp from './CustomerApp';
 import { InstallPrompt } from './components/InstallPrompt';
 import { OfflineBanner } from './components/OfflineBanner';
 import { Toaster } from '@/app/components/ui/sonner';

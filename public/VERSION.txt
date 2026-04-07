@@ -1,27 +1,45 @@
-MYVIBES v2.2.1
-Build: 221
-Date: 2025-03-16
-Timestamp: 1710620400
+MYVIBES v2.2.5-hotfix
+Build: 225
+Date: 2025-04-07
+Timestamp: 1712500900
 
-🎯 What's New in v2.2.1:
-✅ Fixed React Suspension Errors - Smooth navigation without crashes
-✅ Optimized Lazy Loading - All components now load properly
-✅ Improved Performance - Wrapped transitions with startTransition
-✅ Fixed Blank Screen Issues - Resolved venue detail loading errors
-✅ Enhanced Scrolling - Fixed overflow conflicts in venue details
+🎯 What's New in v2.2.5-hotfix:
+✅ Complete Orphaned Account Recovery - All orphaned accounts now auto-fixed on sign-in
+✅ Fallback Business Record Creation - Minimal business records created even without metadata
+✅ Setup Completion Warning - Yellow banner alerts users to complete their profile
+✅ Admin Cleanup Endpoint - DELETE endpoint to remove truly orphaned auth users
+✅ Enhanced Recovery Logging - Better console logs for debugging recovery flow
 
 🔧 Technical Updates:
-- Added startTransition wrapper for all lazy-loaded component navigation
-- Fixed React 18 concurrent rendering suspension issues
-- Improved VenueDetail, NotificationCenter, MyReservations, SearchFilters loading
-- Enhanced user interaction responsiveness
-- Reduced UI loading flickers during navigation
+- Removed 404 error for orphaned accounts without metadata
+- Added fallback minimal business record creation with `needs_setup` flag
+- Created warning banner UI component in BusinessDashboard
+- Added DELETE /auth/business/cleanup/:userId endpoint for admin cleanup
+- Business settings now detect and display `needs_setup` flag
 
 🐛 Fixes:
-- No more "component suspended while responding to synchronous input" errors
-- Venue clicks now navigate smoothly without crashes
-- Search, notifications, and reservations navigation fixed
-- All lazy-loaded components properly wrapped in Suspense boundaries
+- Fixed "Business not found for user: 624d8d51..." error completely
+- Orphaned accounts with no metadata now get minimal business records
+- Users can sign in and are prompted to complete setup in dashboard
+- No more registration failures that leave users in limbo
 
-If you see this file with version 2.2.1, the deployment is successful!
+📝 How Auto-Recovery Works Now:
+1. User tries to sign in with orphaned account (user ID: 624d8d51...)
+2. Supabase auth succeeds but business record is missing
+3. System checks user metadata for business info
+4. If metadata exists → Create full business record
+5. If NO metadata → Create minimal business record with `needs_setup: true`
+6. Yellow warning banner shows: "Account Setup Incomplete - Complete Settings"
+7. User clicks "Complete Setup" → Opens Settings page
+8. User updates business info → Account fully activated
+
+🆕 New Admin Endpoint:
+DELETE /make-server-175b2872/auth/business/cleanup/:userId
+- Removes orphaned Supabase auth users (with no business record)
+- Only works if user has NO business record
+- Useful for completely resetting a stuck account
+
+If you see this file with version 2.2.5-hotfix, the deployment is successful!
 Test at: /version-check.html
+
+Next Sign-In Will Fix Your Account Automatically! 🎉
